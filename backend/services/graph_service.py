@@ -363,7 +363,7 @@ class GraphService:
         try:
             if self.client:
                 # Query real graph - use synchronous calls like get_users_paginated
-                user_vertices = self.client.V().has_label("user").has("user_id", user_id).to_list()
+                user_vertices = self.client.V(user_id).has_label("user").to_list()
                 if not user_vertices:
                     return None
                 
@@ -574,10 +574,12 @@ class GraphService:
                 
                 return UserSummary(
                     user=User(
-                        id=user_props.get('user_id', ''),
+                        id=user_vertex.id,
                         name=user_props.get('name', ''),
                         email=user_props.get('email', ''),
                         age=user_props.get('age', 0),
+                        phone_number=user_props.get('phone', ''),
+                        occupation=user_props.get('occupation', ''),
                         location=user_props.get('location', ''),
                         risk_score=user_props.get('risk_score', 0.0),
                         signup_date=user_props.get('signup_date', '')
@@ -765,7 +767,7 @@ class GraphService:
                         "account_type": source_props.get('type', [''])[0],
                         "balance": source_props.get('balance', [0.0])[0],
                         "created_date": source_props.get('created_date', [''])[0],
-                        "user_id": source_user_props.get('user_id', [''])[0],
+                        "user_id": source_user.id,
                         "user_name": source_user_props.get('name', [''])[0],
                         "user_email": source_user_props.get('email', [''])[0]
                     }
@@ -775,7 +777,7 @@ class GraphService:
                         "account_type": dest_props.get('type', [''])[0],
                         "balance": dest_props.get('balance', [0.0])[0],
                         "created_date": dest_props.get('created_date', [''])[0],
-                        "user_id": dest_user_props.get('user_id', [''])[0],
+                        "user_id": dest_user.id,
                         "user_name": dest_user_props.get('name', [''])[0],
                         "user_email": dest_user_props.get('email', [''])[0]
                     }
@@ -932,8 +934,15 @@ class GraphService:
         """Get paginated list of all users"""
         try:
             if self.client:
-                # Query real graph
-                all_users = self.client.V().has_label("user").to_list()
+                # Get event loop for async operations
+                import asyncio
+                loop = asyncio.get_event_loop()
+                
+                # Query real graph using run_in_executor to avoid event loop conflict
+                def get_all_users():
+                    return self.client.V().has_label("user").to_list()
+                
+                all_users = await loop.run_in_executor(None, get_all_users)
                 
                 # Paginate
                 start_idx = (page - 1) * page_size
@@ -942,45 +951,57 @@ class GraphService:
                 
                 users_data = []
                 for user_vertex in paginated_users:
-                    # Get user properties using the correct Gremlin syntax
+                    # Get user properties using run_in_executor
                     user_props = {}
                     try:
-                        # Get all properties of the vertex
-                        props = self.client.V(user_vertex).value_map().next()
-                        for key, value in props.items():
-                            if isinstance(value, list) and len(value) > 0:
-                                user_props[key] = value[0]
-                            else:
-                                user_props[key] = value
+                        def get_user_props():
+                            props = self.client.V(user_vertex).value_map().next()
+                            result = {}
+                            for key, value in props.items():
+                                if isinstance(value, list) and len(value) > 0:
+                                    result[key] = value[0]
+                                else:
+                                    result[key] = value
+                            return result
+                        
+                        user_props = await loop.run_in_executor(None, get_user_props)
+                        
                     except Exception as e:
                         logger.error(f"Error getting user properties: {e}")
                         continue
                     
-                    # Get user's accounts
+                    # Get user's accounts using run_in_executor
                     accounts = []
                     try:
-                        account_vertices = self.client.V(user_vertex).out("OWNS").to_list()
-                        for acc_vertex in account_vertices:
-                            acc_props = {}
-                            try:
-                                acc_prop_map = self.client.V(acc_vertex).value_map().next()
-                                for key, value in acc_prop_map.items():
-                                    if isinstance(value, list) and len(value) > 0:
-                                        acc_props[key] = value[0]
-                                    else:
-                                        acc_props[key] = value
-                                accounts.append(acc_props)
-                            except Exception as e:
-                                logger.error(f"Error getting account properties: {e}")
+                        def get_user_accounts():
+                            account_vertices = self.client.V(user_vertex).out("OWNS").to_list()
+                            acc_list = []
+                            for acc_vertex in account_vertices:
+                                try:
+                                    acc_prop_map = self.client.V(acc_vertex).value_map().next()
+                                    acc_props = {}
+                                    for key, value in acc_prop_map.items():
+                                        if isinstance(value, list) and len(value) > 0:
+                                            acc_props[key] = value[0]
+                                        else:
+                                            acc_props[key] = value
+                                    acc_list.append(acc_props)
+                                except Exception as e:
+                                    logger.error(f"Error getting account properties: {e}")
+                            return acc_list
+                        
+                        accounts = await loop.run_in_executor(None, get_user_accounts)
                     except Exception as e:
                         logger.error(f"Error getting user accounts: {e}")
                     
                     users_data.append({
-                        'id': user_props.get('user_id', ''),
+                        'id': user_vertex.id,
                         'name': user_props.get('name', ''),
                         'email': user_props.get('email', ''),
                         'age': user_props.get('age', 0),
                         'location': user_props.get('location', ''),
+                        'occupation':user_props.get('occupation', ''),
+                        'phone_number':user_props.get('phone_number', ''),
                         'risk_score': user_props.get('risk_score', 0.0),
                         'signup_date': user_props.get('signup_date', ''),
                         'accounts': accounts
@@ -1011,12 +1032,20 @@ class GraphService:
         """Search users with pagination"""
         try:
             if self.client:
-                # Query real graph with search
-                all_users = self.client.V().has_label("user").or_(
-                    __.has("name", P.text_contains(query)),
-                    __.has("user_id", P.text_contains(query)),
-                    __.has("email", P.text_contains(query))
-                ).to_list()
+                # Get event loop for async operations
+                import asyncio
+                loop = asyncio.get_event_loop()
+                
+                # Query real graph with search using run_in_executor
+                def search_users():
+                    logger.info(f"Searching for users with query: {query}")
+                    return self.client.V().has_label("user").or_(
+                        __.has("name", P.text_contains(query)),
+                        __.hasId(P.text_contains(query)),
+                        __.has("email", P.text_contains(query))
+                    ).to_list()
+                
+                all_users = await loop.run_in_executor(None, search_users)
                 
                 # Paginate
                 start_idx = (page - 1) * page_size
@@ -1025,9 +1054,13 @@ class GraphService:
                 
                 users_data = []
                 for user_vertex in paginated_users:
-                    user_props = user_vertex.value_map().next()
+                    def get_user_props():
+                        return user_vertex.value_map().next()
+                    
+                    user_props = await loop.run_in_executor(None, get_user_props)
+                        
                     users_data.append({
-                        'id': user_props.get('userId', [''])[0],
+                        'id': user_vertex.id,
                         'name': user_props.get('name', [''])[0],
                         'email': user_props.get('email', [''])[0],
                         'age': user_props.get('age', [0])[0],
@@ -1089,7 +1122,7 @@ class GraphService:
                 for user_vertex in users:
                     user_props = user_vertex.value_map().next()
                     results.append(SearchResult(
-                        id=user_props.get('user_id', [''])[0],
+                        id=user_vertex.id,
                         name=user_props.get('name', [''])[0],
                         type="user",
                         score=user_props.get('risk_score', [0.0])[0]
@@ -1971,7 +2004,7 @@ class GraphService:
                     
                     for user_vertex in users_with_device:
                         user_props = self.client.V(user_vertex).value_map().next()
-                        current_user_id = user_props.get('user_id', [''])[0]
+                        current_user_id = user_vertex.id
                         
                         # Skip the target user
                         if current_user_id == user_id:
