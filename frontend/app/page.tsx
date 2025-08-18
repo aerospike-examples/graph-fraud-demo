@@ -47,7 +47,7 @@ export default function Dashboard() {
   const seedData = async () => {
     setSeeding(true)
     try {
-      await api.post('/seed-data')
+      await api.post('/bulk-load-csv')
       await loadStats()
     } catch (error) {
       console.error('Failed to load data:', error)

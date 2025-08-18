@@ -32,7 +32,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         -l|--load-users)
-            LOAD_USERS=true
+            LOAD_USERS=false
             shift
             ;;
         *)
@@ -51,12 +51,12 @@ check_docker() {
         echo "❌ Docker is not installed. Please install Docker"
         exit 1
     fi
-    
+
     if ! docker info &> /dev/null; then
         echo "❌ Docker is not running. Please start Docker"
         exit 1
     fi
-    
+
     if ! command -v docker-compose &> /dev/null; then
         echo "❌ Docker Compose is not installed. Please install Docker Compose"
         exit 1
@@ -66,16 +66,16 @@ check_docker() {
 # Function to start Docker Compose containers
 start_docker_containers() {
     echo "🐳 Starting Docker Compose containers..."
-    
+
     # Check if docker-compose.yaml exists
     if [ ! -f "docker-compose.yaml" ]; then
         echo "❌ docker-compose.yaml not found in current directory"
         return 1
     fi
-    
+
     # Start containers in detached mode
     docker-compose up -d
-    
+
     if [ $? -eq 0 ]; then
         echo "✅ Docker containers started successfully"
         DOCKER_COMPOSE_STARTED=true
@@ -83,23 +83,23 @@ start_docker_containers() {
         echo "❌ Failed to start Docker containers"
         return 1
     fi
-    
+
     # Wait for containers to be healthy
     echo "⏳ Waiting for containers to be ready..."
     local max_attempts=60
     local attempt=1
-    
+
     while [ $attempt -le $max_attempts ]; do
         if docker-compose ps | grep -q "healthy"; then
             echo "✅ All containers are healthy"
             return 0
         fi
-        
+
         echo "   Attempt $attempt/$max_attempts - Waiting for containers to be healthy..."
         sleep 5
         attempt=$((attempt + 1))
     done
-    
+
     echo "⚠️  Some containers may not be fully ready, continuing anyway..."
     return 0
 }
@@ -126,18 +126,18 @@ wait_for_backend() {
     echo "⏳ Waiting for backend to be ready..."
     local max_attempts=30
     local attempt=1
-    
+
     while [ $attempt -le $max_attempts ]; do
         if curl -s http://localhost:4000/health > /dev/null 2>&1; then
             echo "✅ Backend is ready"
             return 0
         fi
-        
+
         echo "   Attempt $attempt/$max_attempts - Backend not ready yet..."
         sleep 2
         attempt=$((attempt + 1))
     done
-    
+
     echo "❌ Backend failed to start within expected time"
     return 1
 }
@@ -244,4 +244,4 @@ echo ""
 echo "Press Ctrl+C to stop all applications and containers"
 
 # Wait for both processes
-wait $BACKEND_PID $FRONTEND_PID 
+wait $BACKEND_PID $FRONTEND_PID

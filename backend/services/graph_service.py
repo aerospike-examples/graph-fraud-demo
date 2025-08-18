@@ -93,144 +93,270 @@ class GraphService:
             logger.error(f"Query execution failed: {e}")
             return []
 
-    async def seed_sample_data(self, num_users: int = None, num_transactions: int = None) -> Dict[str, int]:
-        """Load data from users.json file into the graph"""
-        try:
-            # Load users data from JSON file - try multiple possible paths
-            possible_paths = [
-                os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'users.json'),
-                os.path.join(os.getcwd(), 'data', 'users.json'),
-                os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'users.json')
-            ]
-            
-            users_file_path = None
-            for path in possible_paths:
-                if os.path.exists(path):
-                    users_file_path = path
-                    break
-            
-            if not users_file_path:
-                logger.error(f"Users data file not found. Tried paths: {possible_paths}")
-                return {"users": 0, "accounts": 0, "devices": 0, "transactions": 0, "error": "Users data file not found"}
-            
-            logger.info(f"Loading users from: {users_file_path}")
-            
-            with open(users_file_path, 'r') as f:
-                data = json.load(f)
-                self.users_data = data.get('users', [])
-            
-            logger.info(f"Loaded {len(self.users_data)} users from users.json")
-            
-            if self.client:
-                # Use real graph database - load data asynchronously
-                return await self._load_users_to_graph_async()
-            else:
-                # No graph client available
-                raise Exception("Graph client not available. Cannot load data without graph database connection.")
-                
-        except Exception as e:
-            logger.error(f"Error loading users data: {e}")
-            return {"users": 0, "accounts": 0, "devices": 0, "transactions": 0, "error": str(e)}
 
-    async def _load_users_to_graph_async(self) -> Dict[str, int]:
-        """Load users data from JSON into the real graph database asynchronously"""
-        users_created = 0
-        accounts_created = 0
-        devices_created = 0
-        transactions_created = 0
-        
+
+    async def bulk_load_csv_data(self, vertices_path: str = None, edges_path: str = None) -> Dict[str, Any]:
+        """Bulk load data from CSV files using Aerospike Graph bulk loader"""
         try:
-            logger.info("Loading data into graph asynchronously...")
+            if not self.client:
+                raise Exception("Graph client not available. Cannot bulk load data without graph database connection.")
             
-            # Run all Gremlin operations in a thread pool since they're blocking
+            # Default paths if not provided
+            if not vertices_path:
+                vertices_path = "/data/graph_csv/vertices"
+            if not edges_path:
+                edges_path = "/data/graph_csv/edges"
+            
+            logger.info(f"Starting bulk load with vertices path: {vertices_path}, edges path: {edges_path}")
+            
+            # Run bulk load operation in a thread pool since it's blocking
             loop = asyncio.get_event_loop()
             
-            # Clear existing data first
-            logger.info("Clearing existing data...")
-            await loop.run_in_executor(None, lambda: self.client.V().drop().iterate())
-            
-            # Load users and their accounts
-            for user_data in self.users_data:
+            def run_bulk_load():
                 try:
-                    # Create user vertex
-                    def create_user():
-                        return self.client.add_v("user").property("user_id", user_data['id']).property("name", user_data['name']).property("email", user_data['email']).property("phone", user_data.get('phone', '')).property("age", user_data['age']).property("location", user_data['location']).property("occupation", user_data.get('occupation', 'Unknown')).property("risk_score", user_data.get('risk_score', 0.0)).property("signup_date", user_data['signup_date']).next()
+                    # Clear existing data first
+                    logger.info("Clearing existing data before bulk load...")
+                    self.client.V().drop().iterate()
+                    logger.info("Existing data cleared successfully")
                     
-                    user_vertex = await loop.run_in_executor(None, create_user)
-                    users_created += 1
+                    # Execute bulk load using Aerospike Graph loader
+                    logger.info("Starting bulk load operation...")
+                    result = (self.client
+                             .with_("evaluationTimeout", 2000000)
+                             .call("aerospike.graphloader.admin.bulk-load.load")
+                             .with_("aerospike.graphloader.vertices", vertices_path)
+                             .with_("aerospike.graphloader.edges", edges_path)
+                             .next())
                     
-                    # Create accounts for this user
-                    for account_data in user_data.get('accounts', []):
-                        try:
-                            def create_account():
-                                return self.client.add_v("account").property("account_id", account_data['id']).property("type", account_data['type']).property("balance", account_data['balance']).property("status", "active").property("bank_name", "Demo Bank").property("created_date", account_data['created_date']).property("fraud_flag", account_data.get('fraud_flag', False)).next()
-                            
-                            account_vertex = await loop.run_in_executor(None, create_account)
-                            accounts_created += 1
-                            
-                            # Link user to account
-                            def create_ownership():
-                                return self.client.add_e("OWNS").from_(user_vertex).to(account_vertex).property("since", account_data['created_date']).iterate()
-                            
-                            await loop.run_in_executor(None, create_ownership)
-                        except Exception as e:
-                            logger.error(f"Error creating account {account_data['id']}: {e}")
-                            continue
-                    
-                    # Create devices for this user
-                    for device_data in user_data.get('devices', []):
-                        try:
-                            # Check if device already exists
-                            def find_device():
-                                return self.client.V().has_label("device").has("device_id", device_data['id']).to_list()
-                            
-                            existing_devices = await loop.run_in_executor(None, find_device)
-                            
-                            if existing_devices:
-                                # Device already exists, use it
-                                device_vertex = existing_devices[0]
-                            else:
-                                # Device doesn't exist, create it
-                                def create_device():
-                                    return self.client.add_v("device").property("device_id", device_data['id']).property("type", device_data['type']).property("os", device_data['os']).property("browser", device_data['browser']).property("fingerprint", device_data['fingerprint']).property("first_seen", device_data['first_seen']).property("last_login", device_data['last_login']).property("login_count", device_data['login_count']).property("fraud_flag", device_data.get('fraud_flag', False)).next()
-                                
-                                device_vertex = await loop.run_in_executor(None, create_device)
-                                devices_created += 1
-                            
-                            # Link user to device
-                            def create_device_usage():
-                                return self.client.add_e("USES_DEVICE").from_(user_vertex).to(device_vertex).property("first_login", device_data['first_seen']).property("last_login", device_data['last_login']).property("login_count", device_data['login_count']).iterate()
-                            
-                            await loop.run_in_executor(None, create_device_usage)
-                        except Exception as e:
-                            logger.error(f"Error creating device {device_data['id']}: {e}")
-                            continue
-                    
-                    # Note: Transactions are not created during data seeding
-                    # They should be generated manually through the transaction generator script
-                    logger.info(f"User {user_data['id']} accounts loaded - transactions will be generated manually")
-                        
+                    logger.info("Bulk load operation completed successfully")
+                    return {"success": True, "result": result}
                 except Exception as e:
-                    logger.error(f"Error creating user {user_data['id']}: {e}")
-                    continue
+                    logger.error(f"Bulk load failed: {e}")
+                    return {"success": False, "error": str(e)}
             
-            logger.info(f"Graph data loaded: {users_created} users, {accounts_created} accounts, {devices_created} devices, 0 transactions (transactions will be generated manually)")
+            bulk_load_result = await loop.run_in_executor(None, run_bulk_load)
+            
+            if bulk_load_result["success"]:
+                logger.info("Bulk load completed successfully")
+                
+                # Get statistics about loaded data
+                stats = await self._get_bulk_load_statistics()
+                
+                return {
+                    "success": True,
+                    "message": "Data bulk loaded successfully from CSV files",
+                    "vertices_path": vertices_path,
+                    "edges_path": edges_path,
+                    "statistics": stats,
+                    "bulk_load_result": bulk_load_result["result"]
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": bulk_load_result["error"],
+                    "vertices_path": vertices_path,
+                    "edges_path": edges_path
+                }
+                
+        except Exception as e:
+            logger.error(f"Error during bulk load: {e}")
             return {
-                "users": users_created,
-                "accounts": accounts_created,
-                "devices": devices_created,
-                "transactions": 0
+                "success": False,
+                "error": str(e),
+                "vertices_path": vertices_path if vertices_path else "default",
+                "edges_path": edges_path if edges_path else "default"
             }
+
+    async def _get_bulk_load_statistics(self) -> Dict[str, Any]:
+        """Get statistics about the loaded data after bulk load using Aerospike Graph Summary API"""
+        try:
+            loop = asyncio.get_event_loop()
+            
+            def get_summary():
+                try:
+                    # Use Aerospike Graph Summary API for efficient statistics
+                    logger.info("Retrieving graph summary using Aerospike Graph Summary API...")
+                    summary_result = self.client.call("aerospike.graph.admin.metadata.summary").next()
+                    
+                    # Parse the summary result which comes as a formatted string
+                    summary_lines = str(summary_result).split('\n')
+                    
+                    # Initialize statistics
+                    stats = {
+                        "total_vertices": 0,
+                        "total_edges": 0,
+                        "users": 0,
+                        "accounts": 0,
+                        "devices": 0,
+                        "owns_edges": 0,
+                        "uses_edges": 0,
+                        "vertex_counts_by_label": {},
+                        "edge_counts_by_label": {},
+                        "vertex_properties_by_label": {},
+                        "edge_properties_by_label": {},
+                        "supernode_count": 0,
+                        "supernode_counts_by_label": {}
+                    }
+                    
+                    # Parse summary output
+                    for line in summary_lines:
+                        line = line.strip()
+                        if "Total vertex count=" in line:
+                            stats["total_vertices"] = int(line.split("=")[1])
+                        elif "Vertex count by label=" in line:
+                            # Parse vertex counts: {user=1000, account=2500, device=1800}
+                            label_counts = line.split("=", 1)[1].strip("{}")
+                            for item in label_counts.split(", "):
+                                if "=" in item:
+                                    label, count = item.split("=")
+                                    count_val = int(count)
+                                    stats["vertex_counts_by_label"][label] = count_val
+                                    
+                                    # Map to our expected format
+                                    if label == "user":
+                                        stats["users"] = count_val
+                                    elif label == "account":
+                                        stats["accounts"] = count_val
+                                    elif label == "device":
+                                        stats["devices"] = count_val
+                        elif "Total edge count=" in line:
+                            stats["total_edges"] = int(line.split("=")[1])
+                        elif "Edge count by label=" in line:
+                            # Parse edge counts: {OWNS=2500, USES=3200}
+                            label_counts = line.split("=", 1)[1].strip("{}")
+                            for item in label_counts.split(", "):
+                                if "=" in item:
+                                    label, count = item.split("=")
+                                    count_val = int(count)
+                                    stats["edge_counts_by_label"][label] = count_val
+                                    
+                                    # Map to our expected format
+                                    if label == "OWNS":
+                                        stats["owns_edges"] = count_val
+                                    elif label == "USES":
+                                        stats["uses_edges"] = count_val
+                        elif "Vertex properties by label=" in line:
+                            # Parse vertex properties
+                            props_str = line.split("=", 1)[1]
+                            # This is more complex parsing, store as string for now
+                            stats["vertex_properties_summary"] = props_str
+                        elif "Edge properties by label=" in line:
+                            # Parse edge properties
+                            props_str = line.split("=", 1)[1]
+                            stats["edge_properties_summary"] = props_str
+                        elif "Total supernode count=" in line:
+                            stats["supernode_count"] = int(line.split("=")[1])
+                        elif "Supernode count by label=" in line:
+                            # Parse supernode counts
+                            label_counts = line.split("=", 1)[1].strip("{}")
+                            if label_counts:
+                                for item in label_counts.split(", "):
+                                    if "=" in item:
+                                        label, count = item.split("=")
+                                        stats["supernode_counts_by_label"][label] = int(count)
+                    
+                    logger.info(f"Graph summary retrieved: {stats['total_vertices']} vertices, {stats['total_edges']} edges")
+                    return stats
+                    
+                except Exception as e:
+                    logger.error(f"Error getting graph summary: {e}")
+                    return {
+                        "total_vertices": 0,
+                        "total_edges": 0,
+                        "users": 0,
+                        "accounts": 0,
+                        "devices": 0,
+                        "owns_edges": 0,
+                        "uses_edges": 0,
+                        "error": str(e)
+                    }
+            
+            return await loop.run_in_executor(None, get_summary)
             
         except Exception as e:
-            logger.error(f"Error loading data to graph: {e}")
+            logger.error(f"Error getting bulk load statistics: {e}")
             return {
-                "users": users_created,
-                "accounts": accounts_created,
-                "devices": devices_created,
-                "transactions": 0,
+                "total_vertices": 0,
+                "total_edges": 0,
+                "users": 0,
+                "accounts": 0,
+                "devices": 0,
+                "owns_edges": 0,
+                "uses_edges": 0,
                 "error": str(e)
             }
+
+    async def get_bulk_load_status(self) -> Dict[str, Any]:
+        """Get the status of the current bulk load operation using Aerospike Graph Status API"""
+        try:
+            if not self.client:
+                raise Exception("Graph client not available. Cannot check bulk load status without graph database connection.")
+            
+            logger.info("Checking bulk load status using Aerospike Graph Status API...")
+            
+            # Run status check in a thread pool since it's blocking
+            loop = asyncio.get_event_loop()
+            
+            def check_status():
+                try:
+                    # Use Aerospike Graph Status API to check bulk load progress
+                    status_result = self.client.call("aerospike.graphloader.admin.bulk-load.status").next()
+                    
+                    # Parse the status result
+                    status_info = {
+                        "step": status_result.get("step", "unknown"),
+                        "complete": status_result.get("complete", False),
+                        "status": status_result.get("status", "unknown"),
+                        "elements_written": status_result.get("elements-written"),
+                        "complete_partitions_percentage": status_result.get("complete-partitions-percentage"),
+                        "duplicate_vertex_ids": status_result.get("duplicate-vertex-ids"),
+                        "bad_entries": status_result.get("bad-entries"),
+                        "bad_edges": status_result.get("bad-edges"),
+                        "message": status_result.get("message"),
+                        "stacktrace": status_result.get("stacktrace")
+                    }
+                    
+                    # Clean up None values
+                    status_info = {k: v for k, v in status_info.items() if v is not None}
+                    
+                    logger.info(f"Bulk load status: {status_info['status']} - {status_info['step']}")
+                    
+                    return {
+                        "success": True,
+                        "status_info": status_info
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"Error checking bulk load status: {e}")
+                    return {
+                        "success": False,
+                        "error": str(e)
+                    }
+            
+            status_result = await loop.run_in_executor(None, check_status)
+            
+            if status_result["success"]:
+                return {
+                    "success": True,
+                    "message": "Bulk load status retrieved successfully",
+                    "status": status_result["status_info"]
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": status_result["error"],
+                    "message": "Failed to retrieve bulk load status"
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting bulk load status: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Error occurred while checking bulk load status"
+            }
+
+
 
     async def get_user_summary(self, user_id: str) -> Optional[UserSummary]:
         """Get user's profile, connected accounts, and transaction summary"""

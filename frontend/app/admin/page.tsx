@@ -32,8 +32,10 @@ import {
   MapPin,
   TrendingUp,
   Users,
-  CreditCard
+  CreditCard,
+  BarChart3
 } from 'lucide-react'
+import PerformanceDashboard from '@/components/PerformanceDashboard'
 
 interface Transaction {
   id: string
@@ -1003,7 +1005,7 @@ export default function AdminPage() {
 
       {/* Main Content with Tabs */}
       <Tabs defaultValue="generation" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="generation" className="flex items-center space-x-2">
             <Activity className="w-4 h-4" />
             <span>Transaction Generation</span>
@@ -1016,7 +1018,16 @@ export default function AdminPage() {
             <Shield className="w-4 h-4" />
             <span>Fraud Pattern</span>
           </TabsTrigger>
+          <TabsTrigger value="performance" className="flex items-center space-x-2">
+            <BarChart3 className="w-4 h-4" />
+            <span>Performance</span>
+          </TabsTrigger>
         </TabsList>
+
+        {/* Performance Monitoring Tab */}
+        <TabsContent value="performance" className="space-y-6">
+          <PerformanceDashboard />
+        </TabsContent>
 
         {/* Transaction Generation Tab */}
         <TabsContent value="generation" className="space-y-6">
@@ -1038,7 +1049,7 @@ export default function AdminPage() {
                   <Input
                     type="number"
                     min="1"
-                    max="100"
+                    max="50"
                     value={generationRate}
                     onChange={(e) => setGenerationRate(parseInt(e.target.value) || 1)}
                     disabled={isGenerating}

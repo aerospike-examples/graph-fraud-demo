@@ -8,9 +8,11 @@ involves accounts that have been previously flagged as fraudulent.
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Dict, Any, List
 from services.graph_service import GraphService
+from services.performance_monitor import performance_monitor
 
 # Setup logging
 logger = logging.getLogger('fraud_detection.rt1')
@@ -24,6 +26,8 @@ class RT1FraudService:
     async def check_transaction(self, transaction: Dict[str, Any]) -> Dict[str, Any]:
         """
         Check if transaction involves flagged accounts (RT1)
+        1. RT1 checks if the sender or receiver (accounts)of a transaction is flagged as fraudulent.
+        2. If sender or receiver accounts have other transactions with accounts flagged as fraud - calculate a fraud score based on the number of such connections
         
         Args:
             transaction: Transaction data
@@ -31,6 +35,7 @@ class RT1FraudService:
         Returns:
             Dict with fraud detection results
         """
+        start_time = time.time()
         try:
             if not self.graph_service.client:
                 logger.warning("⚠️ Graph client not available for RT1 fraud detection")
@@ -44,7 +49,9 @@ class RT1FraudService:
             def get_account_ids():
                 try:
                     # Find the transaction vertex
+                    # tx_vertex = self.graph_service.client.V().has_label("transaction").has("transaction_id", transaction['id']).next()
                     tx_vertex = self.graph_service.client.V().has_label("transaction").has("transaction_id", transaction['id']).next()
+                    
                     
                     # Get sender account (incoming TRANSFERS_TO edge)
                     sender_accounts = self.graph_service.client.V(tx_vertex).in_("TRANSFERS_TO").has_label("account").valueMap("account_id").to_list()
@@ -71,14 +78,12 @@ class RT1FraudService:
                     sender_flagged = (self.graph_service.client.V()
                                     .has_label("account")
                                     .has("account_id", sender_account_id)
-                                    .has("fraudFlag", True)
-                                    .valueMap("account_id", "fraudFlag", "flagReason", "user_id")
+                                    .has("fraud_flag", True)
                                     .to_list())
                     
                     if sender_flagged:
                         flagged_connections.extend([{
                             "account_id": conn.get("account_id", [""])[0],
-                            "flag_reason": conn.get("flagReason", ["Unknown"])[0],
                             "user_id": conn.get("user_id", [""])[0],
                             "role": "sender"
                         } for conn in sender_flagged])
@@ -87,8 +92,7 @@ class RT1FraudService:
                     receiver_flagged = (self.graph_service.client.V()
                                       .has_label("account")
                                       .has("account_id", receiver_account_id)
-                                      .has("fraudFlag", True)
-                                      .valueMap("account_id", "fraudFlag", "flagReason", "user_id")
+                                      .has("fraud_flag", True)
                                       .to_list())
                     
                     if receiver_flagged:
@@ -125,13 +129,22 @@ class RT1FraudService:
                     }
                 }
                 
+                execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+                performance_monitor.record_rt1_performance(execution_time, success=True)
+                
                 logger.warning(f"🚨 RT1 FRAUD DETECTED: Transaction {transaction['id']} - {reason} (Score: {fraud_score})")
                 return fraud_result
             else:
+                execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+                performance_monitor.record_rt1_performance(execution_time, success=True)
+                
                 logger.info(f"✅ RT1 CHECK PASSED: Transaction {transaction['id']} - No flagged account connections")
                 return {"is_fraud": False, "reason": "No flagged accounts involved"}
                 
         except Exception as e:
+            execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+            performance_monitor.record_rt1_performance(execution_time, success=False)
+            
             logger.error(f"❌ Error in RT1 fraud detection for transaction {transaction.get('id', 'unknown')}: {e}")
             return {"is_fraud": False, "reason": f"Detection error: {str(e)}"}
     

@@ -173,7 +173,7 @@ class TransactionGeneratorService:
             logger.warning("Transaction generation is already running")
             return False
             
-        self.generation_rate = max(1, min(5, rate))  # Clamp between 1-5
+        self.generation_rate = rate  # Clamp between 1-5
         self.is_running = True
         self.transaction_counter = 0
         
