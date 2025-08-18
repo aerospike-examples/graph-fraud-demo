@@ -362,12 +362,10 @@ class GraphService:
         """Get user's profile, connected accounts, and transaction summary"""
         try:
             if self.client:
+                logger.info(f"Getting user summary for user {user_id}")
                 # Query real graph - use synchronous calls like get_users_paginated
-                user_vertices = self.client.V(user_id).has_label("user").to_list()
-                if not user_vertices:
-                    return None
+                user_vertex = self.client.V(user_id).has_label("user").to_list()
                 
-                user_vertex = user_vertices[0]
                 user_props = {}
                 
                 # Get user properties using the same approach as get_users_paginated
@@ -400,7 +398,7 @@ class GraphService:
                     ))
 
                 # Get user's devices
-                device_vertices = self.client.V(user_vertex).out("USES_DEVICE").to_list()
+                device_vertices = self.client.V(user_vertex).out("USES").to_list()
                 devices = []
                 for device_vertex in device_vertices:
                     device_props = {}
