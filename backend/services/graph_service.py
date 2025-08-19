@@ -358,92 +358,198 @@ class GraphService:
                 "message": "Error occurred while checking bulk load status"
             }
 
+    def get_vertex(self, user_id: str):
+        return self.client.V(user_id).to_list()
+    
+    def get_out_edge(self, vertex, edge_label: str):
+        return self.client.V(vertex).out(edge_label).to_list()
+    
+    def get_out_out_edge(self, vertex, edge_label1: str, edge_label2: str):
+        return self.client.V(vertex).out(edge_label1).out(edge_label2).to_list()
+    
+    def get_out_in_edge(self, vertex, edge_label1: str, edge_label2: str):
+        return self.client.V(vertex).out(edge_label1).in_(edge_label2).to_list()
+    
+    def get_in_edge(self, vertex, edge_label: str):
+        return self.client.V(vertex).in_(edge_label).to_list()    
+    
+    async def get_user_devices(self, user_id: str):
+        """Get all devices for a specific user"""
+        try:
+            loop = asyncio.get_event_loop()
+            device_vertices = await loop.run_in_executor(None, lambda: self.get_out_edge(str(user_id), "USES"))
+            devices = []
+            #logger.info(f"Device vertices: {device_vertices}")
+            for device_vertex in device_vertices:
+                # Extract device properties using the helper method
+                devices.append(Device(
+                    id=str(device_vertex.id),
+                    type=self.get_property_value(device_vertex, 'type', ''),
+                    os=self.get_property_value(device_vertex, 'os', ''),
+                    browser=self.get_property_value(device_vertex, 'browser', ''),
+                    fingerprint=self.get_property_value(device_vertex, 'fingerprint', ''),
+                    first_seen=self.get_property_value(device_vertex, 'first_seen', ''),
+                    last_login=self.get_property_value(device_vertex, 'last_login', ''),
+                    login_count=self.get_property_value(device_vertex, 'login_count', 0),
+                    fraud_flag=self.get_property_value(device_vertex, 'fraud_flag', False)
+                ))
+            #logger.info(f"Device Details: {devices}")
+            return devices
+        except Exception as e:
+            logger.error(f"Error getting user devices: {e}")
+            return []
 
+    async def get_user_accounts(self, user_id: str):
+        """Get all accounts for a specific user"""
+        try:
+            loop = asyncio.get_event_loop()
+            account_vertices = await loop.run_in_executor(None, lambda: self.get_out_edge(str(user_id), "OWNS"))
+            accounts = []
+            for acc_vertex in account_vertices:
+                # Extract account properties using the helper method
+                #logger.info(f"Account vertex properties: {acc_vertex.properties}")  
+                accounts.append(Account(
+                    id=str(acc_vertex.id),
+                    user_id=user_id,
+                    account_type=self.get_property_value(acc_vertex, 'type', 'checking'),
+                    balance=self.get_property_value(acc_vertex, 'balance', 0.0),
+                    bank_name=self.get_property_value(acc_vertex, 'bank_name', 'DEFAULT_BANK'),
+                    created_date=self.get_property_value(acc_vertex, 'created_date', ''),
+                    status=self.get_property_value(acc_vertex, 'status', 'DEFAULT_STATUS'),
+                    fraud_flag=self.get_property_value(acc_vertex, 'fraud_flag', False)
+                ))
+            #logger.info(f"Account Details: {accounts}")
+            return accounts
+        except Exception as e:
+            logger.error(f"Error getting user accounts: {e}")
+            return []
+
+    async def get_user_data(self, user_id: str):
+        """Get user vertex and extract user properties"""
+        try:
+            loop = asyncio.get_event_loop()
+            user_vertex = await loop.run_in_executor(None, lambda: self.get_vertex(user_id))
+            if not user_vertex:
+                return None, None
+
+            user_vertex = user_vertex[0] 
+             
+            # Extract user properties using the helper method
+            user_props = {
+                'user_id': str(user_vertex.id),
+                'name': self.get_property_value(user_vertex, 'name', 'Unknown'),
+                'email': self.get_property_value(user_vertex, 'email', ''),
+                'phone': self.get_property_value(user_vertex, 'phone', ''),
+                'occupation': self.get_property_value(user_vertex, 'occupation', ''),
+                'age': self.get_property_value(user_vertex, 'age', 0),
+                'location': self.get_property_value(user_vertex, 'location', ''),
+                'signup_date': self.get_property_value(user_vertex, 'signup_date', ''),
+                'risk_score': self.get_property_value(user_vertex, 'risk_score', 0.0)
+            }
+            
+            return user_vertex, user_props
+        except Exception as e:
+            logger.error(f"Error getting user data: {e}")
+            return None, None
+
+    async def get_user_transactions(self, user_id: str):
+        """Get all transactions for a specific user (both sent and received)"""
+        try:
+            loop = asyncio.get_event_loop()
+            
+            # Find transactions where user's accounts are senders (TRANSFERS_TO edges)
+            sender_transaction_vertices = await loop.run_in_executor(None, lambda: self.get_out_out_edge(str(user_id), "OWNS", "TRANSFERS_TO"))
+            logger.info(f"Found {len(sender_transaction_vertices)} sent transactions")
+            
+            # Find transactions where user's accounts are receivers (incoming TRANSFERS_FROM edges)
+            receiver_transaction_vertices = await loop.run_in_executor(None, lambda: self.get_out_in_edge(str(user_id), "OWNS", "TRANSFERS_FROM"))
+            logger.info(f"Found {len(receiver_transaction_vertices)} received transactions")
+            
+            return sender_transaction_vertices, receiver_transaction_vertices
+        except Exception as e:
+            logger.error(f"Error getting user transactions: {e}")
+            return [], []
+
+    async def get_transaction_account_info(self, account_vertex):
+        """Get account info from account vertex"""
+        if not account_vertex:
+            return {"account_id": "Unknown", "user_name": "Unknown"}
+            
+        try:
+            loop = asyncio.get_event_loop()
+            # Account ID is the vertex ID
+            account_id = str(account_vertex.id)
+            
+            # Get user who owns this account using helper function
+            user_vertices = await loop.run_in_executor(None, lambda: self.get_in_edge(account_vertex, "OWNS"))
+            user_name = "Unknown"
+            
+            if user_vertices:
+                user_name = self.get_property_value(user_vertices[0], 'name', 'Unknown')
+                
+            return {
+                "account_id": account_id,
+                "user_name": user_name
+            }
+        except Exception as e:
+            logger.error(f"Error getting account info: {e}")
+            return {"account_id": "Unknown", "user_name": "Unknown"}
+
+    async def get_transaction_fraud_info(self, trans_vertex):
+        """Get fraud detection info for a transaction"""
+        try:
+            # Check for fraud detection results using helper function
+            loop = asyncio.get_event_loop()
+            fraud_results = await loop.run_in_executor(None, lambda: self.get_out_edge(trans_vertex, "flagged_by"))
+            is_fraud = len(fraud_results) > 0
+            fraud_score = 0.0
+            fraud_rules = []
+            
+            for fraud_result in fraud_results:
+                fraud_score = max(fraud_score, self.get_property_value(fraud_result, 'fraud_score', 0.0))
+                rule = self.get_property_value(fraud_result, 'rule', '')
+                if rule:
+                    fraud_rules.append(rule)
+            
+            return {
+                'is_fraud': is_fraud,
+                'fraud_score': fraud_score,
+                'fraud_rules': fraud_rules
+            }
+        except Exception as e:
+            logger.error(f"Error getting fraud info: {e}")
+            return {
+                'is_fraud': False,
+                'fraud_score': 0.0,
+                'fraud_rules': []
+            }
 
     async def get_user_summary(self, user_id: str) -> Optional[UserSummary]:
         """Get user's profile, connected accounts, and transaction summary"""
         try:
             if self.client:
                 logger.info(f"Getting user summary for user {user_id}")
-                # Query real graph - use synchronous calls like get_users_paginated
-                user_vertex = self.client.V(user_id).has_label("user").to_list()
-                
-                user_props = {}
-                
-                # Get user properties using the same approach as get_users_paginated
-                props = self.client.V(user_vertex).value_map().next()
-                for key, value in props.items():
-                    if isinstance(value, list) and len(value) > 0:
-                        user_props[key] = value[0]
-                    else:
-                        user_props[key] = value
+                # Get user vertex and properties
+                user_vertex, user_props = await self.get_user_data(user_id)
+                if not user_vertex or not user_props:
+                    return None
                 
                 # Get user's accounts
-                account_vertices = self.client.V(user_vertex).out("OWNS").to_list()
-                accounts = []
-                for acc_vertex in account_vertices:
-                    acc_props = {}
-                    acc_prop_map = self.client.V(acc_vertex).value_map().next()
-                    for key, value in acc_prop_map.items():
-                        if isinstance(value, list) and len(value) > 0:
-                            acc_props[key] = value[0]
-                        else:
-                            acc_props[key] = value
-                    
-                    accounts.append(Account(
-                        id=acc_props.get('account_id', ''),
-                        user_id=user_id,
-                        account_type=acc_props.get('type', 'checking'),
-                        balance=acc_props.get('balance', 0.0),
-                        created_date=acc_props.get('created_date', ''),
-                        fraud_flag=acc_props.get('fraud_flag', False)
-                    ))
+                accounts = await self.get_user_accounts(user_id)
 
                 # Get user's devices
-                device_vertices = self.client.V(user_vertex).out("USES").to_list()
-                devices = []
-                for device_vertex in device_vertices:
-                    device_props = {}
-                    device_prop_map = self.client.V(device_vertex).value_map().next()
-                    for key, value in device_prop_map.items():
-                        if isinstance(value, list) and len(value) > 0:
-                            device_props[key] = value[0]
-                        else:
-                            device_props[key] = value
-                    
-                    devices.append(Device(
-                        id=device_props.get('device_id', ''),
-                        type=device_props.get('type', ''),
-                        os=device_props.get('os', ''),
-                        browser=device_props.get('browser', ''),
-                        fingerprint=device_props.get('fingerprint', ''),
-                        first_seen=device_props.get('first_seen', ''),
-                        last_login=device_props.get('last_login', ''),
-                        login_count=device_props.get('login_count', 0),
-                        fraud_flag=device_props.get('fraud_flag', False)
-                    ))
+                devices = await self.get_user_devices(user_id)
                 
                 # Get transaction summary - find transactions where user's accounts are sender or receiver
-                # Find transactions where user's accounts are senders (TRANSFERS_TO edges)
                 logger.info(f"Looking for transactions for user {user_id}")
                 
-                try:
-                    sender_transaction_vertices = self.client.V(user_vertex).out("OWNS").out("TRANSFERS_TO").to_list()
-                    logger.info(f"Found {len(sender_transaction_vertices)} sent transactions")
-                    
-                    # Find transactions where user's accounts are receivers (incoming TRANSFERS_FROM edges)
-                    receiver_transaction_vertices = self.client.V(user_vertex).out("OWNS").in_("TRANSFERS_FROM").to_list()
-                    logger.info(f"Found {len(receiver_transaction_vertices)} received transactions")
-                    
-                    # Combine and deduplicate transaction vertices
-                    all_transaction_vertices = list(set(sender_transaction_vertices + receiver_transaction_vertices))
-                    total_transactions = len(all_transaction_vertices)
-                    logger.info(f"Total unique transactions: {total_transactions}")
-                    
-                except Exception as e:
-                    logger.error(f"Error querying transactions: {e}")
-                    all_transaction_vertices = []
-                    total_transactions = 0
+                # Get user's transactions (both sent and received)
+                sender_transaction_vertices, receiver_transaction_vertices = await self.get_user_transactions(user_id)
+                
+                # Combine and deduplicate transaction vertices
+                all_transaction_vertices = list(set(sender_transaction_vertices + receiver_transaction_vertices))
+                total_transactions = len(all_transaction_vertices)
+                logger.info(f"Total unique transactions: {total_transactions}")
                 
                 # Build recent transactions list with full transaction details
                 recent_transactions = []
@@ -453,97 +559,55 @@ class GraphService:
                 for trans_vertex in all_transaction_vertices[-10:]:  # Get last 10 transactions
                     try:
                         # Get transaction properties
-                        trans_props = {}
-                        trans_prop_map = self.client.V(trans_vertex).value_map().next()
-                        for key, value in trans_prop_map.items():
-                            if isinstance(value, list) and len(value) > 0:
-                                trans_props[key] = value[0]
-                            else:
-                                trans_props[key] = value
+                        trans_props = {
+                            'transaction_id': str(trans_vertex.id),  # Transaction ID is the vertex ID
+                            'amount': self.get_property_value(trans_vertex, 'amount', 0.0),
+                            'currency': self.get_property_value(trans_vertex, 'currency', 'INR'),
+                            'timestamp': self.get_property_value(trans_vertex, 'timestamp', ''),
+                            'location': self.get_property_value(trans_vertex, 'location', ''),
+                            'type': self.get_property_value(trans_vertex, 'type', ''),
+                            'status': self.get_property_value(trans_vertex, 'status', 'completed')
+                        }
                         
                         # Determine if this is a sent or received transaction for this user
-                        # Check if any of user's accounts are connected via TRANSFERS_TO (sent)
-                        user_accounts_sent = self.client.V(user_vertex).out("OWNS").out("TRANSFERS_TO").has("transaction_id", trans_props.get('transaction_id', '')).to_list()
-                        is_sent = len(user_accounts_sent) > 0
+                        # Check if this transaction is in the sender_transaction_vertices list
+                        is_sent = any(str(tx.id) == trans_props['transaction_id'] for tx in sender_transaction_vertices)
                         
-                        # Get sender and receiver information with user details
-                        sender_account_vertices = self.client.V(trans_vertex).in_("TRANSFERS_TO").to_list()
-                        receiver_account_vertices = self.client.V(trans_vertex).out("TRANSFERS_FROM").to_list()
+                        # Get sender and receiver account information
+                        loop = asyncio.get_event_loop()
+                        sender_account_vertices = await loop.run_in_executor(None, lambda: self.get_in_edge(trans_vertex, "TRANSFERS_TO"))
+                        receiver_account_vertices = await loop.run_in_executor(None, lambda: self.get_out_edge(trans_vertex, "TRANSFERS_FROM"))
                         
-                        sender_info = {"account_id": "Unknown", "user_name": "Unknown"}
-                        receiver_info = {"account_id": "Unknown", "user_name": "Unknown"}
+                        # Extract account and user info using helper function
+                        sender_info = await self.get_transaction_account_info(sender_account_vertices[0] if sender_account_vertices else None)
+                        receiver_info = await self.get_transaction_account_info(receiver_account_vertices[0] if receiver_account_vertices else None)
                         
-                        if sender_account_vertices:
-                            sender_account_props = self.client.V(sender_account_vertices[0]).value_map().next()
-                            sender_account_id = sender_account_props.get('account_id', ['Unknown'])[0] if isinstance(sender_account_props.get('account_id'), list) else sender_account_props.get('account_id', 'Unknown')
-                            sender_info["account_id"] = sender_account_id
-                            
-                            # Get sender user information
-                            sender_user_vertices = self.client.V(sender_account_vertices[0]).in_("OWNS").to_list()
-                            logger.info(f"Found {len(sender_user_vertices)} sender user vertices for account {sender_account_id}")
-                            if sender_user_vertices:
-                                sender_user_props = self.client.V(sender_user_vertices[0]).value_map().next()
-                                sender_user_name = sender_user_props.get('name', ['Unknown'])[0] if isinstance(sender_user_props.get('name'), list) else sender_user_props.get('name', 'Unknown')
-                                sender_info["user_name"] = sender_user_name
-                                logger.info(f"Sender user name: {sender_user_name}")
+                        # Get fraud detection info
+                        fraud_info = await self.get_transaction_fraud_info(trans_vertex)
                         
-                        if receiver_account_vertices:
-                            receiver_account_props = self.client.V(receiver_account_vertices[0]).value_map().next()
-                            receiver_account_id = receiver_account_props.get('account_id', ['Unknown'])[0] if isinstance(receiver_account_props.get('account_id'), list) else receiver_account_props.get('account_id', 'Unknown')
-                            receiver_info["account_id"] = receiver_account_id
-                            
-                            # Get receiver user information
-                            receiver_user_vertices = self.client.V(receiver_account_vertices[0]).in_("OWNS").to_list()
-                            logger.info(f"Found {len(receiver_user_vertices)} receiver user vertices for account {receiver_account_id}")
-                            if receiver_user_vertices:
-                                receiver_user_props = self.client.V(receiver_user_vertices[0]).value_map().next()
-                                receiver_user_name = receiver_user_props.get('name', ['Unknown'])[0] if isinstance(receiver_user_props.get('name'), list) else receiver_user_props.get('name', 'Unknown')
-                                receiver_info["user_name"] = receiver_user_name
-                                logger.info(f"Receiver user name: {receiver_user_name}")
-                        
-                        # Check for fraud detection results
-                        fraud_results = self.client.V(trans_vertex).out("flagged_by").to_list()
-                        is_fraud = len(fraud_results) > 0
-                        fraud_score = 0.0
-                        fraud_rules = []
-                        
-                        for fraud_result in fraud_results:
-                            fraud_props = self.client.V(fraud_result).value_map().next()
-                            score = fraud_props.get('fraud_score', [0.0])
-                            if isinstance(score, list) and score:
-                                fraud_score = max(fraud_score, score[0])
-                            rule = fraud_props.get('rule', ['Unknown'])
-                            if isinstance(rule, list) and rule:
-                                fraud_rules.append(rule[0])
-                        
-                        # Create enhanced transaction dictionary with all fields
-                        transaction_amount = trans_props.get('amount', 0.0)
-                        
-                        # For display: negative if user sent money, positive if user received money
+                        # Calculate display amount (negative if sent, positive if received)
+                        transaction_amount = trans_props['amount']
                         display_amount = -transaction_amount if is_sent else transaction_amount
                         
-                        logger.info(f"Creating transaction with sender_name: {sender_info['user_name']}, receiver_name: {receiver_info['user_name']}, is_sent: {is_sent}, amount: {display_amount}")
-                        
+                        # Create transaction dictionary
                         transaction_dict = {
-                            "id": trans_props.get('transaction_id', ''),
+                            "id": trans_props['transaction_id'],
                             "sender_id": sender_info["account_id"],
                             "receiver_id": receiver_info["account_id"],
-                            "amount": display_amount,  # Use display amount with proper sign
-                            "currency": trans_props.get('currency', 'INR'),
-                            "timestamp": trans_props.get('timestamp', ''),
-                            "location": trans_props.get('location', ''),
-                            "status": trans_props.get('status', 'completed'),
-                            "fraud_score": fraud_score,
+                            "amount": display_amount,
+                            "currency": trans_props['currency'],
+                            "timestamp": trans_props['timestamp'],
+                            "location": trans_props['location'],
+                            "status": trans_props['status'],
+                            "fraud_score": fraud_info['fraud_score'],
                             # Enhanced fields for frontend
                             "sender_name": sender_info["user_name"],
                             "receiver_name": receiver_info["user_name"],
-                            "is_fraud": is_fraud,
-                            "fraud_rules": fraud_rules,
+                            "is_fraud": fraud_info['is_fraud'],
+                            "fraud_rules": fraud_info['fraud_rules'],
                             "direction": "sent" if is_sent else "received",
                             "original_amount": transaction_amount
                         }
-                        
-                        logger.info(f"Created transaction dict with enhanced fields: {transaction_dict}")
                         
                         # Update totals with original amount (not display amount)
                         if is_sent:
@@ -578,7 +642,7 @@ class GraphService:
                         name=user_props.get('name', ''),
                         email=user_props.get('email', ''),
                         age=user_props.get('age', 0),
-                        phone_number=user_props.get('phone', ''),
+                        phone=user_props.get('phone', ''),
                         occupation=user_props.get('occupation', ''),
                         location=user_props.get('location', ''),
                         risk_score=user_props.get('risk_score', 0.0),
@@ -586,7 +650,7 @@ class GraphService:
                     ),
                     accounts=accounts,
                     devices=devices,
-                    recent_transactions=recent_transactions,  # This is now a list of dicts with custom fields
+                    recent_transactions=recent_transactions,
                     total_transactions=total_transactions,
                     total_amount_sent=total_amount_sent,
                     total_amount_received=total_amount_received,
@@ -594,64 +658,8 @@ class GraphService:
                     connected_users=connected_users
                 )
             else:
-                # Mock mode - return data from loaded users
-                user_data = next((u for u in self.users_data if u['id'] == user_id), None)
-                if not user_data:
-                    return None
-                
-                accounts = []
-                for acc_data in user_data.get('accounts', []):
-                    accounts.append(Account(
-                        id=acc_data['id'],
-                        user_id=user_id,
-                        account_type=acc_data['type'],
-                        balance=acc_data['balance'],
-                        created_date=acc_data['created_date']
-                    ))
-                
-                devices = []
-                for device_data in user_data.get('devices', []):
-                    devices.append(Device(
-                        id=device_data['id'],
-                        type=device_data['type'],
-                        os=device_data['os'],
-                        browser=device_data['browser'],
-                        fingerprint=device_data['fingerprint'],
-                        first_seen=device_data['first_seen'],
-                        last_login=device_data['last_login'],
-                        login_count=device_data['login_count']
-                    ))
-                
-                # Calculate fraud risk level based on risk score
-                risk_score = user_data.get('risk_score', 0.0)
-                if risk_score < 25:
-                    fraud_risk_level = FraudRiskLevel.LOW
-                elif risk_score < 50:
-                    fraud_risk_level = FraudRiskLevel.MEDIUM
-                elif risk_score < 75:
-                    fraud_risk_level = FraudRiskLevel.HIGH
-                else:
-                    fraud_risk_level = FraudRiskLevel.CRITICAL
-                
-                return UserSummary(
-                    user=User(
-                        id=user_data['id'],
-                        name=user_data['name'],
-                        email=user_data['email'],
-                        age=user_data['age'],
-                        location=user_data['location'],
-                        risk_score=user_data.get('risk_score', 0.0),
-                        signup_date=user_data['signup_date']
-                    ),
-                    accounts=accounts,
-                    devices=devices,
-                    recent_transactions=[],  # No transactions in mock mode
-                    total_transactions=0,
-                    total_amount_sent=0.0,
-                    total_amount_received=0.0,
-                    fraud_risk_level=fraud_risk_level,
-                    connected_users=[]
-                )
+                logger.error("No graph client available. Cannot get user summary without graph database connection.")
+                return None
                 
         except Exception as e:
             logger.error(f"Error getting user summary: {e}")
@@ -663,87 +671,68 @@ class GraphService:
             if self.client:
                 # Query real graph - look for transaction vertex
                 loop = asyncio.get_event_loop()
-                
                 logger.info(f"Looking for transaction with ID: {transaction_id}")
-                
-                def get_transaction_vertex():
-                    return self.client.V().has_label("transaction").has("transaction_id", transaction_id).to_list()
-                
-                transaction_vertices = await loop.run_in_executor(None, get_transaction_vertex)
-                logger.info(f"Found {len(transaction_vertices)} transaction vertices")
+                       
+                transaction_vertices = await loop.run_in_executor(None, lambda: self.get_vertex(transaction_id))
+                #logger.info(f"Found {len(transaction_vertices)} transaction vertices")
                 
                 if not transaction_vertices:
                     return None
                 
                 transaction_vertex = transaction_vertices[0]
                 
-                def get_transaction_props():
-                    try:
-                        logger.info(f"Getting properties for transaction vertex: {transaction_vertex}")
-                        props = self.client.V(transaction_vertex).value_map().next()
-                        logger.info(f"Successfully got transaction properties: {props}")
-                        return props
-                    except Exception as e:
-                        logger.error(f"Error getting transaction properties: {e}")
-                        raise e
-                
-                transaction_props = await loop.run_in_executor(None, get_transaction_props)
+                transaction_props = {
+                    'transaction_id': str(transaction_vertex.id),  # Use T.id
+                    'amount': self.get_property_value(transaction_vertex, 'amount', 0.0),
+                    'currency': self.get_property_value(transaction_vertex, 'currency', ''),
+                    'timestamp': self.get_property_value(transaction_vertex, 'timestamp', ''),
+                    'location': self.get_property_value(transaction_vertex, 'location', ''),
+                    'type': self.get_property_value(transaction_vertex, 'type', ''),
+                    'status': self.get_property_value(transaction_vertex, 'status', '')
+                }
+                #logger.info(f"Transaction properties: {transaction_props}")
                 
                 # Get source and destination accounts from TRANSFERS_TO and TRANSFERS_FROM edges
-                def get_source_account():
-                    return self.client.V(transaction_vertex).in_("TRANSFERS_TO").to_list()
+                source_account = await loop.run_in_executor(None, lambda: self.get_in_edge(str(transaction_vertex.id), "TRANSFERS_TO"))
+                dest_account = await loop.run_in_executor(None, lambda: self.get_out_edge(str(transaction_vertex.id), "TRANSFERS_FROM"))
                 
-                def get_dest_account():
-                    return self.client.V(transaction_vertex).out("TRANSFERS_FROM").to_list()
-                
-                source_accounts = await loop.run_in_executor(None, get_source_account)
-                dest_accounts = await loop.run_in_executor(None, get_dest_account)
-                
-                source_account = source_accounts[0] if source_accounts else None
-                dest_account = dest_accounts[0] if dest_accounts else None
-                
-                logger.info(f"Found source accounts: {len(source_accounts)}, dest accounts: {len(dest_accounts)}")
-                
-               
+                #logger.info(f"Found source accounts: {len(source_account)}, dest accounts: {len(dest_account)}")
                 
                 # Only proceed if we have both accounts AND their users
                 if source_account and dest_account:
-                    def get_source_props():
-                        return self.client.V(source_account).value_map().next()
-                    
-                    def get_dest_props():
-                        return self.client.V(dest_account).value_map().next()
-                    
-                    source_props = await loop.run_in_executor(None, get_source_props)
-                    dest_props = await loop.run_in_executor(None, get_dest_props)
+                    # Get account IDs directly from T.id
+                    source_account_id = str(source_account[0].id) if source_account else ''
+                    dest_account_id = str(dest_account[0].id) if dest_account else ''
+                     
+                    # Get other account properties 
+                    source_props = {
+                        'type': self.get_property_value(source_account[0], 'type', 'checking') if source_account else 'checking',
+                        'balance': self.get_property_value(source_account[0], 'balance', 0.0) if source_account else 0.0,
+                        'created_date': self.get_property_value(source_account[0], 'created_date', '') if source_account else ''
+                    }
+                    dest_props = {
+                        'type': self.get_property_value(dest_account[0], 'type', 'checking') if dest_account else 'checking',
+                        'balance': self.get_property_value(dest_account[0], 'balance', 0.0) if dest_account else 0.0,
+                        'created_date': self.get_property_value(dest_account[0], 'created_date', '') if dest_account else ''
+                    }
                     
                     # Get user information for source account
-                    def get_source_user():
-                        return self.client.V(source_account).in_("OWNS").to_list()
-                    
-                    source_users = await loop.run_in_executor(None, get_source_user)
+                    source_users = await loop.run_in_executor(None, lambda: self.get_in_edge(source_account[0].id, "OWNS"))
                     source_user = source_users[0] if source_users else None
                     
                     # Get user information for destination account
-                    def get_dest_user():
-                        return self.client.V(dest_account).in_("OWNS").to_list()
-                    
-                    dest_users = await loop.run_in_executor(None, get_dest_user)
+                    dest_users = await loop.run_in_executor(None, lambda: self.get_in_edge(dest_account[0].id, "OWNS"))   
                     dest_user = dest_users[0] if dest_users else None
                     
-                    # Get user properties
-                    source_user_props = {}
-                    dest_user_props = {}
-                    
-                    if source_user:
-                        def get_source_user_props():
-                            return self.client.V(source_user).value_map().next()
-                        source_user_props = await loop.run_in_executor(None, get_source_user_props)
-                    
-                    if dest_user:
-                        def get_dest_user_props():
-                            return self.client.V(dest_user).value_map().next()
-                        dest_user_props = await loop.run_in_executor(None, get_dest_user_props)
+                    # Get user properties directly from vertices we already have
+                    source_user_props = {
+                        'name': self.get_property_value(source_user, 'name', '') if source_user else '',
+                        'email': self.get_property_value(source_user, 'email', '') if source_user else ''
+                    }
+                    dest_user_props = {
+                        'name': self.get_property_value(dest_user, 'name', '') if dest_user else '',
+                        'email': self.get_property_value(dest_user, 'email', '') if dest_user else ''
+                    }
                     
                     # Only return data if we have BOTH users - no mock data
                     if not source_user or not dest_user:
@@ -752,80 +741,69 @@ class GraphService:
                     
                     # Build transaction data - ONLY from database properties
                     transaction_data = {
-                        "id": transaction_props.get('transaction_id', [''])[0],
-                        "amount": transaction_props.get('amount', [0.0])[0],
-                        "currency": transaction_props.get('currency', [''])[0],
-                        "timestamp": transaction_props.get('timestamp', [''])[0],
+                        "id": transaction_props.get('transaction_id', ''),
+                        "amount": transaction_props.get('amount', 0.0),
+                        "currency": transaction_props.get('currency', ''),
+                        "timestamp": transaction_props.get('timestamp', ''),
                         "status": transaction_props.get('status', [''])[0],
                         "transaction_type": transaction_props.get('type', [''])[0],
                         "location_city": transaction_props.get('location', [''])[0]
                     }
-                    
+                    #logger.info(f"Transaction data: {transaction_data}")
                     # Build account data - ONLY from database properties
                     source_account_data = {
-                        "id": source_props.get('account_id', [''])[0],
-                        "account_type": source_props.get('type', [''])[0],
-                        "balance": source_props.get('balance', [0.0])[0],
-                        "created_date": source_props.get('created_date', [''])[0],
+                        "id": source_account_id,
+                        "account_type": source_props.get('type', ''),
+                        "balance": source_props.get('balance', 0.0),
+                        "created_date": source_props.get('created_date', ''),
                         "user_id": source_user.id,
-                        "user_name": source_user_props.get('name', [''])[0],
-                        "user_email": source_user_props.get('email', [''])[0]
+                        "user_name": source_user_props.get('name', ''),
+                        "user_email": source_user_props.get('email', '')
                     }
-                    
+                   # logger.info(f"Source account data: {source_account_data}")
                     destination_account_data = {
-                        "id": dest_props.get('account_id', [''])[0],
-                        "account_type": dest_props.get('type', [''])[0],
-                        "balance": dest_props.get('balance', [0.0])[0],
-                        "created_date": dest_props.get('created_date', [''])[0],
+                        "id": dest_account_id,
+                        "account_type": dest_props.get('type', ''),
+                        "balance": dest_props.get('balance', 0.0),
+                        "created_date": dest_props.get('created_date', ''),
                         "user_id": dest_user.id,
-                        "user_name": dest_user_props.get('name', [''])[0],
-                        "user_email": dest_user_props.get('email', [''])[0]
+                        "user_name": dest_user_props.get('name', ''),
+                        "user_email": dest_user_props.get('email', '')
                     }
-                  
+                  #  logger.info(f"Destination account data: {destination_account_data}")
                     # Get fraud results - look for flagged_by edges to fraud check results
-                    def get_fraud_results():
-                        try:
-                            logger.info(f"Looking for fraud results for transaction vertex: {transaction_vertex}")
-                            fraud_result_vertices = self.client.V(transaction_vertex).out("flagged_by").to_list()
-                            logger.info(f"Found {len(fraud_result_vertices)} fraud result vertices")
-                            fraud_results = []
-                            
-                            for fraud_vertex in fraud_result_vertices:
-                                logger.info(f"Processing fraud vertex: {fraud_vertex}")
-                                fraud_props = self.client.V(fraud_vertex).value_map().next()
-                                logger.info(f"Fraud vertex properties: {fraud_props}")
-                                
-                                # Extract properties
-                                fraud_result = {}
-                                for key, value in fraud_props.items():
-                                    if isinstance(value, list) and len(value) > 0:
-                                        fraud_result[key] = value[0]
-                                    else:
-                                        fraud_result[key] = value
-                                
-                                fraud_results.append(fraud_result)
-                            
-                            logger.info(f"Found {len(fraud_results)} fraud results for transaction {transaction_id}")
-                            return fraud_results
-                        
-                        except Exception as e:
-                            logger.error(f"Error getting fraud results for transaction {transaction_id}: {e}")
-                            return []
+                    # fraud_results = await loop.run_in_executor(None, lambda: self.get_out_edge(transaction_vertex, "flagged_by"))
+                    # logger.info(f"Found {len(fraud_results)} fraud result vertices")
+                    # fraud_results = []
                     
-                    fraud_results = await loop.run_in_executor(None, get_fraud_results)
+                    # for fraud_vertex in fraud_results:
+                    #     logger.info(f"Processing fraud vertex: {fraud_vertex}")
+                    #     fraud_props = await loop.run_in_executor(None, lambda: self.get_property_value(fraud_vertex, 'fraud_score', 0.0))
+                    #     logger.info(f"Fraud vertex properties: {fraud_props}")
+                        
+                    #     # Extract properties
+                    #     fraud_result = {
+                    #         'fraud_score': fraud_props,
+                    #         'fraud_rules': fraud_props.get('fraud_rules', []),
+                    #         'is_fraud': fraud_props.get('is_fraud', False)
+                    #     }
+                    #     fraud_results.append(fraud_result)
+                            
+                    # logger.info(f"Found {len(fraud_results)} fraud results for transaction {transaction_id}")
                     
                     return {
                         "transaction": transaction_data,
                         "source_account": source_account_data,
-                        "destination_account": destination_account_data,
-                        "fraud_results": fraud_results
+                        "destination_account": destination_account_data
+                        # "fraud_results": fraud_results
                     }
                 else:
                     # No mock data - return None if we don't have complete real data
                     logger.warning(f"Transaction {transaction_id} found but missing source/destination accounts or users - returning None")
                     return None
             else:
-                # Mock mode - no transactions available
+                # No graph client available
+                raise Exception("Graph client not available. Cannot get transaction detail without graph database connection.")
                 return None
                 
         except Exception as e:
@@ -997,7 +975,7 @@ class GraphService:
                         'age': user_props.get('age', 0),
                         'location': user_props.get('location', ''),
                         'occupation':user_props.get('occupation', ''),
-                        'phone_number':user_props.get('phone_number', ''),
+                        'phone':user_props.get('phone', ''),
                         'risk_score': user_props.get('risk_score', 0.0),
                         'signup_date': user_props.get('signup_date', ''),
                         'accounts': accounts
@@ -1476,63 +1454,6 @@ class GraphService:
         except Exception as e:
             logger.error(f"Error in get_user_transactions_paginated: {e}")
             raise Exception(f"Failed to get user transactions: {e}")
-
-    async def get_user_accounts(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get all accounts for a specific user"""
-        try:
-            if self.client:
-                # Query real graph for user's accounts
-                # This would need to be implemented to query the graph database
-                # For now, return empty result
-                return []
-            else:
-                # No graph client available
-                raise Exception("Graph client not available. Cannot get user accounts without graph database connection.")
-        except Exception as e:
-            logger.error(f"Error in get_user_accounts: {e}")
-            raise Exception(f"Failed to get user accounts: {e}")
-
-    async def delete_all_data(self) -> Dict[str, Any]:
-        """Delete all data from the graph database"""
-        try:
-            if self.client:
-                # Delete all vertices and edges using thread pool
-                logger.info("Deleting all vertices and edges from graph database...")
-                
-                import asyncio
-                loop = asyncio.get_event_loop()
-                
-                # Delete all edges first
-                def delete_edges():
-                    return self.client.E().drop().to_list()
-                
-                edges_deleted = await loop.run_in_executor(None, delete_edges)
-                logger.info(f"Deleted {len(edges_deleted)} edges")
-                
-                # Delete all vertices
-                def delete_vertices():
-                    return self.client.V().drop().to_list()
-                
-                vertices_deleted = await loop.run_in_executor(None, delete_vertices)
-                logger.info(f"Deleted {len(vertices_deleted)} vertices")
-                
-                return {
-                    "message": "All data deleted successfully",
-                    "edges_deleted": len(edges_deleted),
-                    "vertices_deleted": len(vertices_deleted)
-                }
-            else:
-                # Mock mode - clear in-memory data
-                logger.info("Mock mode: Clearing in-memory data")
-                self.users_data = []
-                return {
-                    "message": "Mock data cleared successfully",
-                    "edges_deleted": 0,
-                    "vertices_deleted": 0
-                }
-        except Exception as e:
-            logger.error(f"Error deleting all data: {e}")
-            return {"error": str(e)}
 
 
     async def flag_account(self, account_id: str, reason: str) -> bool:

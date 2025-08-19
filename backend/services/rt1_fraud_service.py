@@ -46,9 +46,11 @@ class RT1FraudService:
             # Get event loop for async operations
             loop = asyncio.get_event_loop()
             
+
             # We already have the account IDs in the transaction, no need to fetch them from the graph
             sender_account_id = transaction.get('account_id', '')
             receiver_account_id = transaction.get('receiver_account_id', '')
+
             
             if not sender_account_id or not receiver_account_id:
                 logger.warning(f"⚠️ Missing account IDs in transaction: sender={sender_account_id}, receiver={receiver_account_id}")
@@ -59,15 +61,9 @@ class RT1FraudService:
             def check_flagged_connections():
                 try:
                     flagged_connections = []
-                    
-                    # OPTIMIZATION: Using Gremlin's repeat() and times() for efficient multi-hop traversal
-                    # This replaces multiple chained .both() calls with more efficient repeat operations
-                    
-                    # Level 0: Check if sender account is directly flagged
                     sender_flagged = (self.graph_service.client.V(sender_account_id)
                                     .has("fraud_flag", True)
-                                    .hasNext())
-                    
+                                    .hasNext())   
                     if sender_flagged:
                         flagged_connections.append({
                             "account_id": sender_account_id,
@@ -76,7 +72,6 @@ class RT1FraudService:
                             "fraud_score": 100
                         })
                     
-                    # Level 0: Check if receiver account is directly flagged
                     receiver_flagged = (self.graph_service.client.V(receiver_account_id)
                                       .has("fraud_flag", True)
                                       .hasNext())

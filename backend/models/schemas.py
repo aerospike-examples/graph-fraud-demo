@@ -27,6 +27,8 @@ class User(BaseModel):
     name: str
     email: str
     age: int
+    phone: str
+    occupation: str
     signup_date: datetime
     location: str
     risk_score: float = Field(ge=0, le=100)
@@ -37,7 +39,9 @@ class Account(BaseModel):
     user_id: str
     account_type: str
     balance: float
+    bank_name: str = ""
     created_date: datetime
+    status: str = "active"
     is_active: bool = True
     fraud_flag: bool = False
 
@@ -47,8 +51,8 @@ class Device(BaseModel):
     os: str
     browser: str
     fingerprint: str
-    first_seen: str
-    last_login: str
+    first_seen: datetime
+    last_login: datetime
     login_count: int
     fraud_flag: bool = False
 
