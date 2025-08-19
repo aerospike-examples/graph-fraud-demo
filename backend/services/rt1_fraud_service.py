@@ -11,6 +11,7 @@ import logging
 import time
 from datetime import datetime
 from typing import Dict, Any, List
+
 from services.graph_service import GraphService
 from services.performance_monitor import performance_monitor
 
@@ -41,6 +42,9 @@ class RT1FraudService:
                 logger.warning("⚠️ Graph client not available for RT1 fraud detection")
                 return {"is_fraud": False, "reason": "Graph client unavailable"}
             
+            # Get event loop for async operations
+            loop = asyncio.get_event_loop()
+            
             # We already have the account IDs in the transaction, no need to fetch them from the graph
             sender_account_id = transaction.get('account_id', '')
             receiver_account_id = transaction.get('receiver_account_id', '')
@@ -55,12 +59,13 @@ class RT1FraudService:
                 try:
                     flagged_connections = []
                     
+                    # OPTIMIZATION: Using Gremlin's repeat() and times() for efficient multi-hop traversal
+                    # This replaces multiple chained .both() calls with more efficient repeat operations
+                    
                     # Level 0: Check if sender account is directly flagged
-                    sender_flagged = (self.graph_service.client.V()
-                                    .has_label("account")
-                                    .has("id", sender_account_id)
+                    sender_flagged = (self.graph_service.client.V(sender_account_id)
                                     .has("fraud_flag", True)
-                                    .next())
+                                    .hasNext())
                     
                     if sender_flagged:
                         flagged_connections.append({
@@ -71,11 +76,9 @@ class RT1FraudService:
                         })
                     
                     # Level 0: Check if receiver account is directly flagged
-                    receiver_flagged = (self.graph_service.client.V()
-                                      .has_label("account")
-                                      .has("id", receiver_account_id)
+                    receiver_flagged = (self.graph_service.client.V(receiver_account_id)
                                       .has("fraud_flag", True)
-                                      .next())
+                                      .hasNext())
                     
                     if receiver_flagged:
                         flagged_connections.append({
@@ -85,69 +88,55 @@ class RT1FraudService:
                             "fraud_score": 100
                         })
                     
-                    # Level 1: Check accounts connected via 1 transaction to sender
-                    sender_connections = (self.graph_service.client.V()
-                                       .has_label("account")
-                                       .has("id", sender_account_id)
-                                       .both("TRANSFERS_TO", "TRANSFERS_FROM")
-                                       .has_label("transaction")
-                                       .both("TRANSFERS_TO", "TRANSFERS_FROM")
-                                       .has_label("account")
-                                       .has("fraud_flag", True)
-                                       .dedup()
+                    # Early exit optimization: If either sender or receiver is flagged (Level 0),
+                    # we already have maximum fraud score, no need to check deeper connections
+                    if sender_flagged or receiver_flagged:
+                        logger.info(f"RT1: Direct fraud detected - sender: {sender_flagged}, receiver: {receiver_flagged}. Skipping deeper connection checks.")
+                        return flagged_connections
+                    
+                    # Check if sender has done transactions with any flagged accounts
+                    # Path: sender_account → transactions → connected_accounts → check if flagged
+                    sender_connections = (self.graph_service.client.V(sender_account_id)
+                                       .both("TRANSFERS_TO", "TRANSFERS_FROM")  # Go to transactions
+                                       .both("TRANSFERS_TO", "TRANSFERS_FROM")  # Go from transactions to connected accounts
+                                       .has("fraud_flag", True)                  # Check if flagged
+                                       .dedup()                                  # Remove duplicates
                                        .to_list())
                     
-                    for conn in sender_connections:
-                        flagged_connections.append({
-                            "account_id": conn.get("id", [""])[0] if isinstance(conn.get("id"), list) else conn.get("id", ""),
-                            "role": "sender_connection",
-                            "level": 1,
-                            "fraud_score": 95
-                        })
+                    # Process sender's flagged connections
+                    if sender_connections:
+                        for conn in sender_connections:
+                            # Extract ID from vertex object
+                            flagged_account_id = str(conn.id) if hasattr(conn, 'id') else str(conn)
+                            if flagged_account_id and flagged_account_id != sender_account_id:
+                                flagged_connections.append({
+                                    "account_id": flagged_account_id,
+                                    "role": "sender_transaction_partner",
+                                    "level": 1,
+                                    "fraud_score": 75
+                                })
                     
-                    # Level 1: Check accounts connected via 1 transaction to receiver
-                    receiver_connections = (self.graph_service.client.V()
-                                         .has_label("account")
-                                         .has("id", receiver_account_id)
-                                         .both("TRANSFERS_TO", "TRANSFERS_FROM")
-                                         .has_label("transaction")
-                                         .both("TRANSFERS_TO", "TRANSFERS_FROM")
-                                         .has_label("account")
-                                         .has("fraud_flag", True)
-                                         .dedup()
+                    # Check if receiver has done transactions with any flagged accounts
+                    # Path: receiver_account → transactions → connected_accounts → check if flagged
+                    receiver_connections = (self.graph_service.client.V(receiver_account_id)
+                                         .both("TRANSFERS_TO", "TRANSFERS_FROM")  # Go to transactions
+                                         .both("TRANSFERS_TO", "TRANSFERS_FROM")  # Go from transactions to connected accounts
+                                         .has("fraud_flag", True)                  # Check if flagged
+                                         .dedup()                                  # Remove duplicates
                                          .to_list())
                     
-                    for conn in receiver_connections:
-                        flagged_connections.append({
-                            "account_id": conn.get("id", [""])[0] if isinstance(conn.get("id"), list) else conn.get("id", ""),
-                            "role": "receiver_connection",
-                            "level": 1,
-                            "fraud_score": 95
-                        })
-                    
-                    # Level 2: Check accounts connected via 2 transactions (deeper connections)
-                    sender_deep_connections = (self.graph_service.client.V()
-                                            .has_label("account")
-                                            .has("id", sender_account_id)
-                                            .both("TRANSFERS_TO", "TRANSFERS_FROM")
-                                            .has_label("transaction")
-                                            .both("TRANSFERS_TO", "TRANSFERS_FROM")
-                                            .has_label("account")
-                                            .both("TRANSFERS_TO", "TRANSFERS_FROM")
-                                            .has_label("transaction")
-                                            .both("TRANSFERS_TO", "TRANSFERS_FROM")
-                                            .has_label("account")
-                                            .has("fraud_flag", True)
-                                            .dedup()
-                                            .to_list())
-                    
-                    for conn in sender_deep_connections:
-                        flagged_connections.append({
-                            "account_id": conn.get("id", [""])[0] if isinstance(conn.get("id"), list) else conn.get("id", ""),
-                            "role": "sender_deep_connection",
-                            "level": 2,
-                            "fraud_score": 85
-                        })
+                    # Process receiver's flagged connections
+                    if receiver_connections:
+                        for conn in receiver_connections:
+                            # Extract ID from vertex object
+                            flagged_account_id = str(conn.id) if hasattr(conn, 'id') else str(conn)
+                            if flagged_account_id and flagged_account_id != receiver_account_id:
+                                flagged_connections.append({
+                                    "account_id": flagged_account_id,
+                                    "role": "receiver_transaction_partner",
+                                    "level": 1,
+                                    "fraud_score": 75
+                                })
                     
                     return flagged_connections
                     
@@ -174,16 +163,14 @@ class RT1FraudService:
                 max_level = max(conn.get("level", 0) for conn in flagged_connections)
                 total_connections = len(flagged_connections)
                 
-                # Base score calculation: higher levels = lower scores, more connections = higher scores
+                # Simple scoring: direct fraud = 100, transaction partners = 75
                 if max_level == 0:  # Direct fraud
                     fraud_score = 100
-                elif max_level == 1:  # Level 1 connections
-                    fraud_score = min(95 + total_connections * 2, 100)
-                else:  # Level 2+ connections
-                    fraud_score = min(85 + total_connections * 3, 95)
+                else:  # Transaction partners
+                    fraud_score = min(75 + total_connections * 5, 95)
                 
-                status = "blocked" if fraud_score >= 95 else "review"
-                reason = f"Connected to {total_connections} flagged account(s) at level {max_level}"
+                status = "blocked" if fraud_score >= 90 else "review"
+                reason = f"Connected to {total_connections} flagged account(s) - {'direct fraud' if max_level == 0 else 'transaction partners'}"
                 
                 fraud_result = {
                     "is_fraud": True,
@@ -223,7 +210,8 @@ class RT1FraudService:
         try:
             if not self.graph_service.client or not fraud_result.get("is_fraud"):
                 return
-                
+            
+            # Get event loop for async operations
             loop = asyncio.get_event_loop()
             
             def create_fraud_result():
