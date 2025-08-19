@@ -859,20 +859,71 @@ class GraphService:
             logger.error(f"Error getting all accounts: {e}")
             return []
 
+    def get_graph_summary(self) -> Dict[str, Any]:
+        """Get graph summary using Aerospike Graph admin API - reusable method"""
+        try:
+            if not self.client:
+                logger.warning("No graph client available for summary")
+                return {}
+                
+            logger.info("Getting graph summary using Aerospike Graph admin API")
+            summary_result = self.client.call("aerospike.graph.admin.metadata.summary").next()
+            logger.debug(f"Raw graph summary result: {summary_result}")
+            
+            # Parse and structure the summary data
+            parsed_summary = {
+                'total_vertex_count': summary_result.get('Total vertex count', 0),
+                'total_edge_count': summary_result.get('Total edge count', 0),
+                'total_supernode_count': summary_result.get('Total supernode count', 0),
+                'vertex_counts': summary_result.get('Vertex count by label', {}),
+                'edge_counts': summary_result.get('Edge count by label', {}),
+                'supernode_counts': summary_result.get('Supernode count by label', {}),
+                'vertex_properties': summary_result.get('Vertex properties by label', {}),
+                'edge_properties': summary_result.get('Edge properties by label', {}),
+                'raw_summary': summary_result  # Include raw data for advanced use cases
+            }
+            
+            logger.info(f"Parsed graph summary - Vertices: {parsed_summary['total_vertex_count']}, Edges: {parsed_summary['total_edge_count']}")
+            return parsed_summary
+            
+        except Exception as e:
+            logger.error(f"Error getting graph summary: {e}")
+            return {}
+
     def get_dashboard_stats_sync(self) -> DashboardStats:
-        """Get dashboard statistics synchronously"""
+        """Get dashboard statistics using Aerospike Graph summary API"""
         try:
             if self.client:
-                # Query real graph
-                total_users = len(self.client.V().has_label("user").to_list())
-                total_transactions = len(self.client.V().has_label("transaction").to_list())
+                # Get graph summary using the reusable method
+                graph_summary = self.get_graph_summary()
+                if graph_summary:
+                    vertex_counts = graph_summary['vertex_counts']
+                    total_users = vertex_counts.get('user', 0)
+                    total_transactions = vertex_counts.get('transaction', 0)
+                    total_accounts = vertex_counts.get('account', 0)
+                    total_devices = vertex_counts.get('device', 0)
+                    
+                    logger.info(f"Dashboard stats from summary: users={total_users}, transactions={total_transactions}, accounts={total_accounts}, devices={total_devices}")
+                else:
+                    total_users = total_transactions = total_accounts = total_devices = 0
                 
-                # Get flagged transactions (high risk transactions)
-                flagged_transactions = len(self.client.V().has_label("transaction").has("amount", P.gte(10000)).to_list())
+                # For flagged transactions and total amount, we still need separate queries
+                # as these require filtering and aggregation
+                flagged_transactions = 0
+                total_amount = 0.0
                 
-                # Calculate total amount
-                transaction_vertices = self.client.V().has_label("transaction").to_list()
-                total_amount = sum(vertex.value_map().next().get('amount', [0.0])[0] for vertex in transaction_vertices)
+                if total_transactions > 0:
+                    try:
+                        # Get flagged transactions (high risk transactions)
+                        flagged_transactions = len(self.client.V().has_label("transaction").has("amount", P.gte(10000)).to_list())
+                        
+                        # Calculate total amount using optimized query
+                        amount_results = self.client.V().has_label("transaction").values("amount").to_list()
+                        total_amount = sum(amount for amount in amount_results if amount is not None)
+                        
+                    except Exception as e:
+                        logger.warning(f"Error getting detailed transaction stats: {e}")
+                        # Continue with basic stats from summary
                 
                 fraud_rate = (flagged_transactions / total_transactions * 100) if total_transactions > 0 else 0
                 
@@ -898,6 +949,11 @@ class GraphService:
                 fraud_detection_rate=0.0,
                 graph_health="error"
             )
+
+    async def get_graph_summary_async(self) -> Dict[str, Any]:
+        """Get graph summary asynchronously - reusable method"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.get_graph_summary)
 
     async def get_dashboard_stats(self) -> DashboardStats:
         """Get dashboard statistics asynchronously"""
@@ -1125,33 +1181,7 @@ class GraphService:
         except Exception as e:
             logger.error(f"Error searching users: {e}")
             return []
-
-    async def search_transactions(self, query: str) -> List[SearchResult]:
-        """Search transactions and return simplified results"""
-        try:
-            if self.client:
-                # Query real graph
-                transactions = self.client.V().has_label("transaction").has("transaction_id", P.text_contains(query)).to_list()
-                
-                results = []
-                for transaction_vertex in transactions:
-                    transaction_props = transaction_vertex.value_map().next()
-                    results.append(SearchResult(
-                        id=transaction_props.get('transaction_id', [''])[0],
-                        name=f"Transaction {transaction_props.get('transaction_id', [''])[0]}",
-                        type="transaction",
-                        score=0.0
-                    ))
-                
-                return results
-            else:
-                # Mock mode - no transactions available
-                return []
-                
-        except Exception as e:
-            logger.error(f"Error searching transactions: {e}")
-            return []
-
+            
     async def update_transaction_status(self, transaction_id: str, status: str) -> bool:
         """Update transaction status"""
         try:
@@ -1208,37 +1238,32 @@ class GraphService:
                 transactions_data = []
                 for transaction_vertex in paginated_transactions:
                     try:
-                        # Get transaction properties using the same approach as get_users_paginated
-                        transaction_props = {}
-                        props = self.client.V(transaction_vertex).value_map().next()
-                        for key, value in props.items():
-                            if isinstance(value, list) and len(value) > 0:
-                                transaction_props[key] = value[0]
-                            else:
-                                transaction_props[key] = value
+                        # Extract transaction properties directly from vertex object
+                        transaction_props = {
+                            'transaction_id': str(transaction_vertex.id),  # Use T.id
+                            'amount': self.get_property_value(transaction_vertex, 'amount', 0.0),
+                            'currency': self.get_property_value(transaction_vertex, 'currency', ''),
+                            'timestamp': self.get_property_value(transaction_vertex, 'timestamp', ''),
+                            'location': self.get_property_value(transaction_vertex, 'location', ''),
+                            'type': self.get_property_value(transaction_vertex, 'type', ''),
+                            'status': self.get_property_value(transaction_vertex, 'status', '')
+                        }
                         
                         # Get the sender account that initiated this transaction
                         try:
-                            logger.info(f"Looking for sender account that initiated transaction {transaction_props.get('transaction_id', 'unknown')}")
+                         #   logger.info(f"Looking for sender account that initiated transaction {transaction_props.get('transaction_id', 'unknown')}")
                             
                             # Try to find the sender account using the TRANSFERS_TO edge
                             sender_account_vertices = self.client.V(transaction_vertex).in_("TRANSFERS_TO").to_list()
-                            logger.info(f"Found {len(sender_account_vertices)} sender account vertices")
+                          #  logger.info(f"Found {len(sender_account_vertices)} sender account vertices")
                             
                             if sender_account_vertices:
                                 sender_account_vertex = sender_account_vertices[0]
-                                logger.info(f"Found sender account vertex: {sender_account_vertex}")
+                           #     logger.info(f"Found sender account vertex: {sender_account_vertex}")
                                 
-                                sender_account_props = {}
-                                sender_acc_prop_map = self.client.V(sender_account_vertex).value_map().next()
-                                for key, value in sender_acc_prop_map.items():
-                                    if isinstance(value, list) and len(value) > 0:
-                                        sender_account_props[key] = value[0]
-                                    else:
-                                        sender_account_props[key] = value
-                                logger.info(f"Sender account properties: {sender_account_props}")
-                                sender_id = sender_account_props.get('account_id', 'Unknown')
-                                logger.info(f"Sender ID: {sender_id}")
+                                # Get sender account ID directly from T.id
+                                sender_id = str(sender_account_vertex.id)
+                            #    logger.info(f"Sender ID: {sender_id}")
                             else:
                                 logger.warning("No sender account vertices found")
                                 sender_id = 'Unknown'
@@ -1249,26 +1274,19 @@ class GraphService:
                         
                         # Get the receiver account that received this transaction
                         try:
-                            logger.info(f"Looking for receiver account for transaction {transaction_props.get('transaction_id', 'unknown')}")
+                            #logger.info(f"Looking for receiver account for transaction {transaction_props.get('transaction_id', 'unknown')}")
                             
                             # Try to find the receiver account using the TRANSFERS_FROM edge
                             receiver_account_vertices = self.client.V(transaction_vertex).out("TRANSFERS_FROM").to_list()
-                            logger.info(f"Found {len(receiver_account_vertices)} receiver account vertices")
+                            #logger.info(f"Found {len(receiver_account_vertices)} receiver account vertices")
                             
                             if receiver_account_vertices:
                                 receiver_account_vertex = receiver_account_vertices[0]
-                                logger.info(f"Found receiver account vertex: {receiver_account_vertex}")
+                             #   logger.info(f"Found receiver account vertex: {receiver_account_vertex}")
                                 
-                                receiver_account_props = {}
-                                receiver_acc_prop_map = self.client.V(receiver_account_vertex).value_map().next()
-                                for key, value in receiver_acc_prop_map.items():
-                                    if isinstance(value, list) and len(value) > 0:
-                                        receiver_account_props[key] = value[0]
-                                    else:
-                                        receiver_account_props[key] = value
-                                logger.info(f"Receiver account properties: {receiver_account_props}")
-                                receiver_id = receiver_account_props.get('account_id', 'Unknown')
-                                logger.info(f"Receiver ID: {receiver_id}")
+                                # Get receiver account ID directly from T.id
+                                receiver_id = str(receiver_account_vertex.id)
+                              #  logger.info(f"Receiver ID: {receiver_id}")
                             else:
                                 logger.warning("No receiver account vertices found")
                                 receiver_id = 'Unknown'
@@ -1300,7 +1318,7 @@ class GraphService:
                                 fraud_reason = fraud_result_props.get('reason', '')
                                 is_fraud = fraud_score >= 75  # Consider score >= 75 as fraud
                                 
-                                logger.info(f"Found fraud result for transaction {transaction_props.get('transaction_id', 'unknown')}: score={fraud_score}, status={fraud_status}")
+                               # logger.info(f"Found fraud result for transaction {transaction_props.get('transaction_id', 'unknown')}: score={fraud_score}, status={fraud_status}")
                         except Exception as e:
                             logger.debug(f"No fraud results found for transaction {transaction_props.get('transaction_id', 'unknown')}: {e}")
                             # No fraud results found, use defaults
@@ -1355,10 +1373,7 @@ class GraphService:
                 loop = asyncio.get_event_loop()
                 
                 def search_transactions():
-                    return self.client.V().has_label("transaction").or_(
-                        __.has("transaction_id", P.text_contains(query)),
-                        __.has("location_city", P.text_contains(query))
-                    ).to_list()
+                    return self.client.V(query).to_list()
                 
                 all_transactions = await loop.run_in_executor(None, search_transactions)
                 

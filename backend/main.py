@@ -286,14 +286,53 @@ async def get_transactions(
 
 @app.get("/transactions/search")
 async def search_transactions(
-    query: str = Query(..., description="Search term for transaction ID, sender, or receiver"),
+    query: str = Query(..., description="Transaction ID to search for"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(12, ge=1, le=100, description="Number of transactions per page")
 ):
-    """Search transactions by ID, sender, or receiver with pagination"""
+    """Search transactions by exact transaction ID"""
     try:
-        results = await graph_service.search_transactions_paginated(query, page, page_size)
-        return results
+        # Get the single transaction detail
+        transaction_detail = await graph_service.get_transaction_detail(query)
+        
+        if transaction_detail:
+            # Flatten the nested structure to match frontend expectations
+            transaction = transaction_detail.get("transaction", {})
+            source_account = transaction_detail.get("source_account", {})
+            destination_account = transaction_detail.get("destination_account", {})
+            
+            flattened_transaction = {
+                "id": transaction.get("id", ""),
+                "sender_id": source_account.get("id", ""),
+                "receiver_id": destination_account.get("id", ""),
+                "amount": transaction.get("amount", 0.0),
+                "currency": transaction.get("currency", "INR"),
+                "timestamp": transaction.get("timestamp", ""),
+                "location": transaction.get("location_city", ""),
+                "status": transaction.get("status", "completed"),
+                "fraud_score": 0.0,  # TODO: Needs to be updated when fraud results are enabled
+                "transaction_type": transaction.get("transaction_type", "transfer"),
+                "is_fraud": False,   # TODO: Needs to be updated when fraud results are enabled
+                "fraud_status": "CLEAN",
+                "fraud_reason": "",
+                "device_id": None
+            }
+            
+            # Return in the same paginated format expected by frontend
+            return {
+                "transactions": [flattened_transaction],
+                "total_transactions": 1,
+                "current_page": 1,
+                "total_pages": 1
+            }
+        else:
+            # No transaction found
+            return {
+                "transactions": [],
+                "total_transactions": 0,
+                "current_page": 1,
+                "total_pages": 0
+            }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to search transactions: {str(e)}")
 
@@ -373,21 +412,23 @@ async def create_manual_transaction(
             from_account_id=from_account_id,
             to_account_id=to_account_id,
             amount=amount,
-            transaction_type=transaction_type
+            transaction_type=transaction_type,
+            generation_type="MANUAL"
         )
         
-        if result.get("success"):
-            logger.info(f"✅ Manual transaction created: {result['transaction_id']}")
+        if result:
+            logger.info(f"✅ Transaction created: {result['id']}")
             return {
-                "message": "Manual transaction created successfully",
-                "transaction_id": result["transaction_id"],
-                "from_account": from_account_id,
-                "to_account": to_account_id,
-                "amount": amount,
-                "type": transaction_type
+                "message": "Transaction created successfully",
+                "transaction_id": result["id"],
+                "from_account": result["account_id"],
+                "to_account": result["receiver_account_id"],
+                "amount": result["amount"],
+                "type": result["transaction_type"]
             }
         else:
-            raise HTTPException(status_code=400, detail=result.get("error", "Failed to create transaction"))
+            logger.error("❌ Failed to create manual transaction")
+            raise HTTPException(status_code=400, detail="Failed to create transaction")
             
     except HTTPException:
         raise

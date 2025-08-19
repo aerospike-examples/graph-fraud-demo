@@ -495,7 +495,7 @@ const availablePatterns: ExtendedFraudPattern[] = [
 
 export default function AdminPage() {
   const [isGenerating, setIsGenerating] = useState(false)
-  const [generationRate, setGenerationRate] = useState(5)
+  const [generationRate, setGenerationRate] = useState(1)
   const [stats, setStats] = useState<GenerationStats>({
     isRunning: false,
     totalGenerated: 0,

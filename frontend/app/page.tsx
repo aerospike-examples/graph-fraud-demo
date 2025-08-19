@@ -161,7 +161,8 @@ export default function Dashboard() {
           <CardContent>
             <div className="flex items-center gap-2">
               <Badge 
-                variant={stats?.graph_health === 'healthy' ? 'default' : 'destructive'}
+                variant={stats?.graph_health === 'connected' ? 'default' : 'destructive'}
+                className={stats?.graph_health === 'connected' ? 'bg-green-600 hover:bg-green-700' : ''}
               >
                 {stats?.graph_health || 'unknown'}
               </Badge>
@@ -190,30 +191,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            Quick Actions
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <Button variant="outline" className="h-20 flex-col gap-2">
-              <Users className="h-6 w-6" />
-              <span>User Explorer</span>
-            </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2">
-              <CreditCard className="h-6 w-6" />
-              <span>Transaction Explorer</span>
-            </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2">
-              <AlertTriangle className="h-6 w-6" />
-              <span>Fraud Patterns</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+
     </div>
   )
 } 
