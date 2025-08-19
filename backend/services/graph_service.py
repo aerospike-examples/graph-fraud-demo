@@ -28,6 +28,13 @@ class GraphService:
         self.client = None
         self.connection = None
         self.users_data = []
+    
+    def get_property_value(self, vertex, key, default=None):
+        """Helper function to get property value from vertex"""
+        for prop in vertex.properties:
+            if prop.key == key:
+                return prop.value
+        return default
         
     def connect_sync(self):
         """Synchronous connection to Aerospike Graph (to be called outside async context)"""
@@ -114,11 +121,6 @@ class GraphService:
             
             def run_bulk_load():
                 try:
-                    # Clear existing data first
-                    logger.info("Clearing existing data before bulk load...")
-                    self.client.V().drop().iterate()
-                    logger.info("Existing data cleared successfully")
-                    
                     # Execute bulk load using Aerospike Graph loader
                     logger.info("Starting bulk load operation...")
                     result = (self.client
@@ -128,7 +130,7 @@ class GraphService:
                              .with_("aerospike.graphloader.edges", edges_path)
                              .next())
                     
-                    logger.info("Bulk load operation completed successfully")
+                    logger.info("Bulk load operation started successfully")
                     return {"success": True, "result": result}
                 except Exception as e:
                     logger.error(f"Bulk load failed: {e}")
@@ -841,40 +843,36 @@ class GraphService:
                 
                 account_vertices = await loop.run_in_executor(None, get_accounts)
                 accounts = []
+                logger.info(f"Found {len(account_vertices)} account vertices")
                 
                 for account_vertex in account_vertices:
                     try:
-                        # Get account properties
-                        def get_account_props():
-                            return self.client.V(account_vertex).value_map().next()
+                        # Access properties directly from vertex (no additional DB calls needed)
+                        account_id = str(account_vertex.id)
+                        account_type = self.get_property_value(account_vertex, 'type', '')
                         
-                        account_props = await loop.run_in_executor(None, get_account_props)
+                        # # Get associated user
+                        # def get_user():
+                        #     return account_vertex.in_("OWNS").to_list()
                         
-                        # Get associated user
-                        def get_user():
-                            return self.client.V(account_vertex).in_("OWNS").to_list()
+                        # users = await loop.run_in_executor(None, get_user)
+                        # user_name = "Unknown"
                         
-                        users = await loop.run_in_executor(None, get_user)
-                        user_name = "Unknown"
-                        
-                        if users:
-                            def get_user_props():
-                                return self.client.V(users[0]).value_map().next()
-                            
-                            user_props = await loop.run_in_executor(None, get_user_props)
-                            user_name = user_props.get('name', ['Unknown'])[0]
+                        # if users:
+                        #     # Access user name directly from user vertex
+                        #     user_vertex = users[0]
+                        #     user_name = self.get_property_value(user_vertex, 'name', 'Unknown')
                         
                         accounts.append({
-                            "account_id": account_props.get('account_id', [''])[0],
-                            "account_type": account_props.get('type', [''])[0],
-                            "balance": account_props.get('balance', [0.0])[0],
-                            "user_name": user_name
+                            "account_id": account_id,
+                            "account_type": account_type
+                            # "user_name": user_name
                         })
                         
                     except Exception as e:
                         logger.error(f"Error processing account: {e}")
                         continue
-                
+                        
                 return accounts
             else:
                 return []

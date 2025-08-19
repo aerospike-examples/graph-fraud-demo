@@ -95,8 +95,6 @@ interface FraudResult {
 interface Account {
   account_id: string
   account_type: string
-  balance: number
-  user_name: string
   fraud_flag?: boolean
 }
 
@@ -540,14 +538,12 @@ export default function AdminPage() {
   // Filter accounts based on search
   const filteredFromAccounts = accounts.filter(account => 
     account.account_id.toLowerCase().includes(fromAccountSearch.toLowerCase()) ||
-    account.user_name.toLowerCase().includes(fromAccountSearch.toLowerCase()) ||
     account.account_type.toLowerCase().includes(fromAccountSearch.toLowerCase())
   )
   
   const filteredToAccounts = accounts.filter(account => 
     account.account_id !== fromAccount &&
     (account.account_id.toLowerCase().includes(toAccountSearch.toLowerCase()) ||
-     account.user_name.toLowerCase().includes(toAccountSearch.toLowerCase()) ||
      account.account_type.toLowerCase().includes(toAccountSearch.toLowerCase()))
   )
 
@@ -1235,12 +1231,12 @@ export default function AdminPage() {
                                 className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
                                 onClick={() => {
                                   setFromAccount(account.account_id)
-                                  setFromAccountSearch(`${account.account_id} - ${account.user_name} (${account.account_type})`)
+                                  setFromAccountSearch(`${account.account_id} (${account.account_type})`)
                                   setShowFromDropdown(false)
                                 }}
                               >
                                 <div className="font-medium">{account.account_id}</div>
-                                <div className="text-gray-500 text-xs">{account.user_name} • {account.account_type}</div>
+                                <div className="text-gray-500 text-xs">{account.account_type}</div>
                               </div>
                             ))
                           ) : (
@@ -1301,12 +1297,12 @@ export default function AdminPage() {
                                 className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
                                 onClick={() => {
                                   setToAccount(account.account_id)
-                                  setToAccountSearch(`${account.account_id} - ${account.user_name} (${account.account_type})`)
+                                  setToAccountSearch(`${account.account_id} (${account.account_type})`)
                                   setShowToDropdown(false)
                                 }}
                               >
                                 <div className="font-medium">{account.account_id}</div>
-                                <div className="text-gray-500 text-xs">{account.user_name} • {account.account_type}</div>
+                                <div className="text-gray-500 text-xs">{account.account_type}</div>
                               </div>
                             ))
                           ) : (

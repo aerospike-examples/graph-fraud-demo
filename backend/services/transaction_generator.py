@@ -7,6 +7,8 @@ from enum import Enum
 import json
 import uuid
 import os
+from gremlin_python.process.traversal import T
+
 
 # Import local modules
 from models.schemas import Transaction
@@ -368,7 +370,7 @@ class TransactionGeneratorService:
                 def find_sender_account():
                     try:
                         logger.info(f"Looking for sender account with ID: {transaction['account_id']}")
-                        account = self.graph_service.client.V().has_label("account").has("account_id", transaction['account_id']).next()
+                        account = self.graph_service.client.V(str(transaction['account_id'])).next()
                         logger.info(f"Found sender account vertex: {account}")
                         return account
                     except Exception as e:
@@ -384,7 +386,7 @@ class TransactionGeneratorService:
                             return None
                         
                         logger.info(f"Looking for receiver account with ID: {receiver_account_id}")
-                        account = self.graph_service.client.V().has_label("account").has("account_id", receiver_account_id).next()
+                        account = self.graph_service.client.V(str(receiver_account_id)).next()
                         logger.info(f"Found receiver account vertex: {account}")
                         return account
                     except Exception as e:
@@ -395,22 +397,25 @@ class TransactionGeneratorService:
                 receiver_account_vertex = await loop.run_in_executor(None, find_receiver_account)
                 
                 if sender_account_vertex and receiver_account_vertex:
-                    # Create transaction vertex
-                    def create_transaction_vertex():
-                        return self.graph_service.client.add_v("transaction").property("transaction_id", transaction['id']).property("amount", transaction['amount']).property("currency", transaction['currency']).property("timestamp", transaction['timestamp']).property("location", transaction.get('location', 'Unknown')).property("type", transaction['transaction_type']).property("status", transaction.get('status', 'completed')).next()
+                    # Create transaction vertex and both edges in one Gremlin query
+                    def create_transaction_and_edges():
+                        return self.graph_service.client.add_v("transaction") \
+                            .property(T.id, transaction['id'])\
+                            .property("amount", transaction['amount'])\
+                            .property("currency", transaction['currency'])\
+                            .property("timestamp", transaction['timestamp'])\
+                            .property("location", transaction.get('location', 'Unknown'))\
+                            .property("type", transaction['transaction_type'])\
+                            .property("status", transaction.get('status', 'completed'))\
+                            .as_("tx")\
+                            .V(sender_account_vertex.id)\
+                            .add_e("TRANSFERS_TO").to("tx")\
+                            .V(receiver_account_vertex.id)\
+                            .add_e("TRANSFERS_FROM").from_("tx")\
+                            .select("tx")\
+                            .next()
                     
-                    transaction_vertex = await loop.run_in_executor(None, create_transaction_vertex)
-                    
-                    # Create edge from sender account to transaction
-                    def create_sender_edge():
-                        return self.graph_service.client.add_e("TRANSFERS_TO").from_(sender_account_vertex).to(transaction_vertex).iterate()
-                    
-                    # Create edge from transaction to receiver account
-                    def create_receiver_edge():
-                        return self.graph_service.client.add_e("TRANSFERS_FROM").from_(transaction_vertex).to(receiver_account_vertex).iterate()
-                    
-                    await loop.run_in_executor(None, create_sender_edge)
-                    await loop.run_in_executor(None, create_receiver_edge)
+                    transaction_vertex = await loop.run_in_executor(None, create_transaction_and_edges)
                     
                     logger.info(f"✅ Transaction {transaction['id']} stored in graph database with both sender and receiver edges")
                 else:
@@ -449,6 +454,7 @@ class TransactionGeneratorService:
     async def create_manual_transaction(self, from_account_id: str, to_account_id: str, amount: float, transaction_type: str = "transfer") -> Dict[str, Any]:
         """Create a manual transaction between specified accounts"""
         try:
+            logger.info(f"Creating manual transaction from {from_account_id} to {to_account_id} amount {amount}")
             # Validate accounts exist
             if not await self._validate_account_exists(from_account_id):
                 return {"success": False, "error": f"Source account {from_account_id} not found"}
@@ -461,18 +467,17 @@ class TransactionGeneratorService:
                 return {"success": False, "error": "Source and destination accounts cannot be the same"}
             
             # Get user_id from sender account
-            user_id = await self._get_user_id_from_account(from_account_id)
-            logger.info(f"Retrieved user_id '{user_id}' for account {from_account_id}")
+            # user_id = await self._get_user_id_from_account(from_account_id)
+            # logger.info(f"Retrieved user_id '{user_id}' for account {from_account_id}")
             
-            if not user_id:
-                logger.warning(f"No user_id found for account {from_account_id}, using empty string")
-                user_id = ""
+            # if not user_id:
+            #     logger.warning(f"No user_id found for account {from_account_id}, using empty string")
+            #     user_id = ""
             
             # Create transaction data
             transaction_id = str(uuid.uuid4())
             transaction = {
                 "id": transaction_id,
-                "user_id": user_id,
                 "account_id": from_account_id,
                 "receiver_account_id": to_account_id,
                 "amount": round(amount, 2),
@@ -515,7 +520,8 @@ class TransactionGeneratorService:
                 loop = asyncio.get_event_loop()
                 
                 def check_account():
-                    accounts = self.graph_service.client.V().has_label("account").has("account_id", account_id).to_list()
+                    accounts = self.graph_service.client.V(str(account_id)).to_list()
+                    # logger.info(f"Account {account_id} exists: {accounts}")
                     return len(accounts) > 0
                 
                 return await loop.run_in_executor(None, check_account)
@@ -532,19 +538,11 @@ class TransactionGeneratorService:
                 
                 def get_user_id():
                     try:
-                        # Find the account vertex
-                        account_vertex = self.graph_service.client.V().has_label("account").has("account_id", account_id).next()
-                        
-                        # Get the user who owns this account
-                        users = self.graph_service.client.V(account_vertex).in_("OWNS").has_label("user").valueMap("user_id").to_list()
-                        
+                        # Account ID is a vertex ID - access directly
+                        users = self.graph_service.client.V(account_id).in_("OWNS").to_list()
+                        logger.info(f"User query result for account {account_id}: {users}")
                         if users and len(users) > 0:
-                            user_props = users[0]
-                            if user_props and "user_id" in user_props:
-                                user_id_list = user_props.get("user_id", [])
-                                if user_id_list and len(user_id_list) > 0:
-                                    return user_id_list[0]
-                        
+                            return str(users[0])
                         logger.warning(f"No user found for account {account_id}")
                         return ""
                     except Exception as e:

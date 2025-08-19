@@ -368,6 +368,7 @@ async def create_manual_transaction(
 ):
     """Create a manual transaction between specific accounts"""
     try:
+        logger.info(f"Attempting to create manual transaction from {from_account_id} to {to_account_id} amount {amount}")
         result = await transaction_generator.create_manual_transaction(
             from_account_id=from_account_id,
             to_account_id=to_account_id,
