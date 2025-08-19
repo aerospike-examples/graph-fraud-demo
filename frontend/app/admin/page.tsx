@@ -32,8 +32,10 @@ import {
   MapPin,
   TrendingUp,
   Users,
-  CreditCard
+  CreditCard,
+  BarChart3
 } from 'lucide-react'
+import PerformanceDashboard from '@/components/PerformanceDashboard'
 
 interface Transaction {
   id: string
@@ -93,8 +95,6 @@ interface FraudResult {
 interface Account {
   account_id: string
   account_type: string
-  balance: number
-  user_name: string
   fraud_flag?: boolean
 }
 
@@ -538,14 +538,12 @@ export default function AdminPage() {
   // Filter accounts based on search
   const filteredFromAccounts = accounts.filter(account => 
     account.account_id.toLowerCase().includes(fromAccountSearch.toLowerCase()) ||
-    account.user_name.toLowerCase().includes(fromAccountSearch.toLowerCase()) ||
     account.account_type.toLowerCase().includes(fromAccountSearch.toLowerCase())
   )
   
   const filteredToAccounts = accounts.filter(account => 
     account.account_id !== fromAccount &&
     (account.account_id.toLowerCase().includes(toAccountSearch.toLowerCase()) ||
-     account.user_name.toLowerCase().includes(toAccountSearch.toLowerCase()) ||
      account.account_type.toLowerCase().includes(toAccountSearch.toLowerCase()))
   )
 
@@ -1003,7 +1001,7 @@ export default function AdminPage() {
 
       {/* Main Content with Tabs */}
       <Tabs defaultValue="generation" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="generation" className="flex items-center space-x-2">
             <Activity className="w-4 h-4" />
             <span>Transaction Generation</span>
@@ -1016,7 +1014,16 @@ export default function AdminPage() {
             <Shield className="w-4 h-4" />
             <span>Fraud Pattern</span>
           </TabsTrigger>
+          <TabsTrigger value="performance" className="flex items-center space-x-2">
+            <BarChart3 className="w-4 h-4" />
+            <span>Performance</span>
+          </TabsTrigger>
         </TabsList>
+
+        {/* Performance Monitoring Tab */}
+        <TabsContent value="performance" className="space-y-6">
+          <PerformanceDashboard />
+        </TabsContent>
 
         {/* Transaction Generation Tab */}
         <TabsContent value="generation" className="space-y-6">
@@ -1038,7 +1045,7 @@ export default function AdminPage() {
                   <Input
                     type="number"
                     min="1"
-                    max="100"
+                    max="50"
                     value={generationRate}
                     onChange={(e) => setGenerationRate(parseInt(e.target.value) || 1)}
                     disabled={isGenerating}
@@ -1224,12 +1231,12 @@ export default function AdminPage() {
                                 className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
                                 onClick={() => {
                                   setFromAccount(account.account_id)
-                                  setFromAccountSearch(`${account.account_id} - ${account.user_name} (${account.account_type})`)
+                                  setFromAccountSearch(`${account.account_id} (${account.account_type})`)
                                   setShowFromDropdown(false)
                                 }}
                               >
                                 <div className="font-medium">{account.account_id}</div>
-                                <div className="text-gray-500 text-xs">{account.user_name} • {account.account_type}</div>
+                                <div className="text-gray-500 text-xs">{account.account_type}</div>
                               </div>
                             ))
                           ) : (
@@ -1290,12 +1297,12 @@ export default function AdminPage() {
                                 className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
                                 onClick={() => {
                                   setToAccount(account.account_id)
-                                  setToAccountSearch(`${account.account_id} - ${account.user_name} (${account.account_type})`)
+                                  setToAccountSearch(`${account.account_id} (${account.account_type})`)
                                   setShowToDropdown(false)
                                 }}
                               >
                                 <div className="font-medium">{account.account_id}</div>
-                                <div className="text-gray-500 text-xs">{account.user_name} • {account.account_type}</div>
+                                <div className="text-gray-500 text-xs">{account.account_type}</div>
                               </div>
                             ))
                           ) : (

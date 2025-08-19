@@ -28,6 +28,7 @@ wheels/
 MANIFEST
 
 # Virtual environments
+.venv/
 venv/
 env/
 ENV/
@@ -148,4 +149,4 @@ aerospike.conf
 
 # Project specific
 run_app.sh.bak
-start_with_logs.sh.bak 
+start_with_logs.sh.bak

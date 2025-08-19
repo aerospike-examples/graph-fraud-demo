@@ -9,9 +9,11 @@ within a specified time window (supernode pattern).
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Dict, Any, List
 from services.graph_service import GraphService
+from services.performance_monitor import performance_monitor
 from config.rt3_config import RT3_CONFIG
 
 # Setup logging
@@ -33,6 +35,7 @@ class RT3FraudService:
         Returns:
             Dict with fraud detection results
         """
+        start_time = time.time()
         try:
             if not self.graph_service.client:
                 logger.warning("⚠️ Graph client not available for RT3 fraud detection")
@@ -130,13 +133,22 @@ class RT3FraudService:
                     }
                 }
                 
+                execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+                performance_monitor.record_rt3_performance(execution_time, success=True)
+                
                 logger.warning(f"🚨 RT3 FRAUD DETECTED: Transaction {transaction['id']} - {reason} (Score: {fraud_score})")
                 return fraud_result
             else:
+                execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+                performance_monitor.record_rt3_performance(execution_time, success=True)
+                
                 logger.info(f"✅ RT3 CHECK PASSED: Transaction {transaction['id']} - Receiver account within normal connection limits ({unique_sender_count} senders)")
                 return {"is_fraud": False, "reason": f"Normal connection pattern ({unique_sender_count} senders)"}
                 
         except Exception as e:
+            execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+            performance_monitor.record_rt3_performance(execution_time, success=False)
+            
             logger.error(f"❌ Error in RT3 fraud detection for transaction {transaction.get('id', 'unknown')}: {e}")
             return {"is_fraud": False, "reason": f"Detection error: {str(e)}"}
     

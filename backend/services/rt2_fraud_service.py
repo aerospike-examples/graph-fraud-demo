@@ -9,8 +9,11 @@ This service implements real-time fraud detection based on flagged devices:
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+from services.graph_service import GraphService
+from services.performance_monitor import performance_monitor
 
 # Setup logging
 logger = logging.getLogger('fraud_detection.rt2')
@@ -33,6 +36,7 @@ class RT2FraudService:
         Returns:
             Dict containing fraud check results
         """
+        start_time = time.time()
         try:
             if not self.enabled or not self.graph_service.client:
                 return {"is_fraud": False, "reason": "RT2 disabled or no graph client"}
@@ -70,6 +74,9 @@ class RT2FraudService:
                     }
                 }
                 
+                execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+                performance_monitor.record_rt2_performance(execution_time, success=True)
+                
                 logger.warning(f"🚨 RT2 FRAUD DETECTED: Transaction {transaction.get('id')} involves flagged devices in transaction network: {flagged_devices}")
                 
                 # Create fraud check result in graph
@@ -77,10 +84,16 @@ class RT2FraudService:
                 
                 return fraud_result
             else:
+                execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+                performance_monitor.record_rt2_performance(execution_time, success=True)
+                
                 logger.info(f"✅ RT2: Transaction {transaction.get('id')} passed flagged device check in transaction network")
                 return {"is_fraud": False, "reason": "No flagged devices connected to transaction network"}
                 
         except Exception as e:
+            execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+            performance_monitor.record_rt2_performance(execution_time, success=False)
+            
             logger.error(f"❌ RT2: Error checking transaction {transaction.get('id', 'unknown')}: {e}")
             return {"is_fraud": False, "reason": f"RT2 check failed: {str(e)}"}
     

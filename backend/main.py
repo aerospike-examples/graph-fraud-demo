@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
 import asyncio
+import time
 from datetime import datetime, timedelta
 import random
 import uuid
@@ -11,6 +12,7 @@ import sys
 import argparse
 
 from services.graph_service import GraphService
+from services.performance_monitor import performance_monitor
 
 from services.transaction_generator import get_transaction_generator
 from models.schemas import (
@@ -63,28 +65,30 @@ async def lifespan(app: FastAPI):
             logger.error(f"Error during data deletion: {e}")
     
     if args and args.load_users:
-        logger.info("📂 Loading data from users.json...")
+        logger.info("📂 Bulk loading data from CSV files...")
         try:
-            result = await graph_service.seed_sample_data()
-            if "error" in result:
+            result = await graph_service.bulk_load_csv_data()
+            if not result["success"]:
                 logger.error(f"Failed to load data: {result['error']}")
             else:
-                logger.info(f"✅ Data loaded successfully: {result['users']} users, {result['accounts']} accounts, {result['devices']} devices, {result['transactions']} transactions (transactions will be generated manually)")
+                stats = result["statistics"]
+                logger.info(f"✅ Data bulk loaded successfully: {stats['users']} users, {stats['accounts']} accounts, {stats['devices']} devices, {stats['total_edges']} edges")
         except Exception as e:
             logger.error(f"Error during data loading: {e}")
     
-    # Only automatically load users.json data if AUTO_LOAD_DATA is set to true and no flags are specified
+    # Only automatically load CSV data if AUTO_LOAD_DATA is set to true and no flags are specified
     auto_load_data = os.getenv('AUTO_LOAD_DATA', 'false').lower() == 'true'
     logger.info(f"AUTO_LOAD_DATA environment variable: {auto_load_data}")
     
     if auto_load_data and (not args or (not args.delete and not args.load_users)):
-        logger.info("Loading users.json data into graph database...")
+        logger.info("Bulk loading CSV data into graph database...")
         try:
-            result = await graph_service.seed_sample_data()
-            if "error" in result:
+            result = await graph_service.bulk_load_csv_data()
+            if not result["success"]:
                 logger.error(f"Failed to load data: {result['error']}")
             else:
-                logger.info(f"✅ Data loaded successfully: {result['users']} users, {result['accounts']} accounts, {result['devices']} devices, {result['transactions']} transactions (transactions will be generated manually)")
+                stats = result["statistics"]
+                logger.info(f"✅ Data bulk loaded successfully: {stats['users']} users, {stats['accounts']} accounts, {stats['devices']} devices, {stats['total_edges']} edges")
         except Exception as e:
             logger.error(f"Error during data loading: {e}")
     elif not args or (not args.delete and not args.load_users):
@@ -127,20 +131,54 @@ async def health_check():
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/seed-data")
-async def seed_data():
-    """Load users, accounts, and devices from users.json file into the graph (no transactions)"""
+
+@app.post("/bulk-load-csv")
+async def bulk_load_csv_data(vertices_path: Optional[str] = None, edges_path: Optional[str] = None):
+    """Bulk load data from CSV files using Aerospike Graph bulk loader"""
     try:
-        result = await graph_service.seed_sample_data()
-        return {
-            "message": "Users, accounts, and devices loaded successfully from users.json (transactions must be generated manually)",
-            "users_created": result["users"],
-            "accounts_created": result["accounts"],
-            "devices_created": result["devices"],
-            "transactions_created": result["transactions"]
-        }
+        result = await graph_service.bulk_load_csv_data(vertices_path, edges_path)
+        
+        if result["success"]:
+            return {
+                "message": result["message"],
+                "vertices_path": result["vertices_path"],
+                "edges_path": result["edges_path"],
+                "statistics": result["statistics"],
+                "bulk_load_result": result.get("bulk_load_result")
+            }
+        else:
+            raise HTTPException(
+                status_code=500, 
+                detail={
+                    "error": result["error"],
+                    "vertices_path": result["vertices_path"],
+                    "edges_path": result["edges_path"]
+                }
+            )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to bulk load CSV data: {str(e)}")
+
+@app.get("/bulk-load-status")
+async def get_bulk_load_status():
+    """Get the status of the current bulk load operation"""
+    try:
+        result = await graph_service.get_bulk_load_status()
+        
+        if result["success"]:
+            return {
+                "message": result["message"],
+                "status": result["status"]
+            }
+        else:
+            return {
+                "message": result["message"],
+                "error": result["error"],
+                "status": None
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get bulk load status: {str(e)}")
 
 
 
@@ -287,7 +325,7 @@ async def update_transaction_status(
 
 # Transaction Generation Endpoints
 @app.post("/transaction-generation/start")
-async def start_transaction_generation(rate: int = Query(1, ge=1, le=5, description="Generation rate (1-5 transactions per second)")):
+async def start_transaction_generation(rate: int = Query(1, ge=1, le=50, description="Generation rate (1-50 transactions per second)")):
     """Start transaction generation at specified rate"""
     try:
         success = await transaction_generator.start_generation(rate)
@@ -330,6 +368,7 @@ async def create_manual_transaction(
 ):
     """Create a manual transaction between specific accounts"""
     try:
+        logger.info(f"Attempting to create manual transaction from {from_account_id} to {to_account_id} amount {amount}")
         result = await transaction_generator.create_manual_transaction(
             from_account_id=from_account_id,
             to_account_id=to_account_id,
@@ -498,6 +537,174 @@ async def get_user_connected_devices(user_id: str = Path(..., description="User 
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get connected device users: {str(e)}")
+
+# Performance Monitoring Endpoints
+@app.get("/performance/stats")
+async def get_performance_stats(time_window: int = Query(5, ge=1, le=60, description="Time window in minutes")):
+    """Get performance statistics for all fraud detection methods"""
+    try:
+        stats = performance_monitor.get_all_stats(time_window)
+        return {
+            "performance_stats": stats,
+            "time_window_minutes": time_window,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to get performance stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get performance stats: {str(e)}")
+
+@app.get("/performance/timeline")
+async def get_performance_timeline(minutes: int = Query(5, ge=1, le=60, description="Timeline window in minutes")):
+    """Get timeline data for performance charts"""
+    try:
+        timeline_data = performance_monitor.get_recent_timeline_data(minutes)
+        return {
+            "timeline_data": timeline_data,
+            "time_window_minutes": minutes,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to get performance timeline: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get performance timeline: {str(e)}")
+
+@app.post("/performance/test/rt1")
+async def test_rt1_performance(transaction_count: int = Query(10, ge=1, le=100, description="Number of test transactions")):
+    """Test RT1 performance with sample transactions"""
+    try:
+        # Generate test transactions and measure RT1 performance
+        test_results = []
+        for i in range(transaction_count):
+            # Create a mock transaction for testing
+            test_transaction = {
+                "id": f"test_rt1_{i}_{uuid.uuid4().hex[:8]}",
+                "account_id": f"test_account_{i}",
+                "receiver_account_id": f"test_receiver_{i}",
+                "amount": random.uniform(10, 1000),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Get RT1 service and test it
+            rt1_service = transaction_generator.rt1_service
+            start_time = time.time()
+            result = await rt1_service.check_transaction(test_transaction)
+            execution_time = (time.time() - start_time) * 1000
+            
+            test_results.append({
+                "transaction_id": test_transaction["id"],
+                "execution_time_ms": round(execution_time, 2),
+                "success": result.get("is_fraud") is not None,
+                "fraud_detected": result.get("is_fraud", False)
+            })
+        
+        avg_time = sum(r["execution_time_ms"] for r in test_results) / len(test_results)
+        
+        return {
+            "test_type": "RT1",
+            "transaction_count": transaction_count,
+            "results": test_results,
+            "average_execution_time_ms": round(avg_time, 2),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to test RT1 performance: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to test RT1 performance: {str(e)}")
+
+@app.post("/performance/test/rt2")
+async def test_rt2_performance(transaction_count: int = Query(10, ge=1, le=100, description="Number of test transactions")):
+    """Test RT2 performance with sample transactions"""
+    try:
+        # Generate test transactions and measure RT2 performance
+        test_results = []
+        for i in range(transaction_count):
+            # Create a mock transaction for testing
+            test_transaction = {
+                "id": f"test_rt2_{i}_{uuid.uuid4().hex[:8]}",
+                "account_id": f"test_account_{i}",
+                "receiver_account_id": f"test_receiver_{i}",
+                "amount": random.uniform(10, 1000),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Get RT2 service and test it
+            rt2_service = transaction_generator.rt2_service
+            start_time = time.time()
+            result = await rt2_service.check_transaction_fraud(test_transaction)
+            execution_time = (time.time() - start_time) * 1000
+            
+            test_results.append({
+                "transaction_id": test_transaction["id"],
+                "execution_time_ms": round(execution_time, 2),
+                "success": result.get("is_fraud") is not None,
+                "fraud_detected": result.get("is_fraud", False)
+            })
+        
+        avg_time = sum(r["execution_time_ms"] for r in test_results) / len(test_results)
+        
+        return {
+            "test_type": "RT2",
+            "transaction_count": transaction_count,
+            "results": test_results,
+            "average_execution_time_ms": round(avg_time, 2),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to test RT2 performance: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to test RT2 performance: {str(e)}")
+
+@app.post("/performance/test/rt3")
+async def test_rt3_performance(transaction_count: int = Query(10, ge=1, le=100, description="Number of test transactions")):
+    """Test RT3 performance with sample transactions"""
+    try:
+        # Generate test transactions and measure RT3 performance
+        test_results = []
+        for i in range(transaction_count):
+            # Create a mock transaction for testing
+            test_transaction = {
+                "id": f"test_rt3_{i}_{uuid.uuid4().hex[:8]}",
+                "account_id": f"test_account_{i}",
+                "receiver_account_id": f"test_receiver_{i}",
+                "amount": random.uniform(10, 1000),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Get RT3 service and test it
+            rt3_service = transaction_generator.rt3_service
+            start_time = time.time()
+            result = await rt3_service.check_transaction(test_transaction)
+            execution_time = (time.time() - start_time) * 1000
+            
+            test_results.append({
+                "transaction_id": test_transaction["id"],
+                "execution_time_ms": round(execution_time, 2),
+                "success": result.get("is_fraud") is not None,
+                "fraud_detected": result.get("is_fraud", False)
+            })
+        
+        avg_time = sum(r["execution_time_ms"] for r in test_results) / len(test_results)
+        
+        return {
+            "test_type": "RT3",
+            "transaction_count": transaction_count,
+            "results": test_results,
+            "average_execution_time_ms": round(avg_time, 2),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to test RT3 performance: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to test RT3 performance: {str(e)}")
+
+@app.post("/performance/reset")
+async def reset_performance_metrics():
+    """Reset all performance metrics"""
+    try:
+        performance_monitor.reset_metrics()
+        return {
+            "message": "Performance metrics reset successfully",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to reset performance metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset performance metrics: {str(e)}")
 
 if __name__ == "__main__":
     args = parse_arguments() # Parse arguments here
