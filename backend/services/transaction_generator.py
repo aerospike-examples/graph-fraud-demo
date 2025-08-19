@@ -366,37 +366,11 @@ class TransactionGeneratorService:
             if self.graph_service.client:
                 loop = asyncio.get_event_loop()
                 
-                # Find sender account vertex
-                def find_sender_account():
-                    try:
-                        logger.info(f"Looking for sender account with ID: {transaction['account_id']}")
-                        account = self.graph_service.client.V(str(transaction['account_id'])).next()
-                        logger.info(f"Found sender account vertex: {account}")
-                        return account
-                    except Exception as e:
-                        logger.error(f"Error finding sender account {transaction['account_id']}: {e}")
-                        return None
+                # We already have the account IDs, no need to fetch the vertices again
+                sender_account_id = transaction['account_id']
+                receiver_account_id = transaction.get('receiver_account_id')
                 
-                # Find receiver account vertex
-                def find_receiver_account():
-                    try:
-                        receiver_account_id = transaction.get('receiver_account_id')
-                        if not receiver_account_id or receiver_account_id == 'unknown':
-                            logger.warning(f"No valid receiver account ID found: {receiver_account_id}")
-                            return None
-                        
-                        logger.info(f"Looking for receiver account with ID: {receiver_account_id}")
-                        account = self.graph_service.client.V(str(receiver_account_id)).next()
-                        logger.info(f"Found receiver account vertex: {account}")
-                        return account
-                    except Exception as e:
-                        logger.error(f"Error finding receiver account {transaction.get('receiver_account_id')}: {e}")
-                        return None
-                
-                sender_account_vertex = await loop.run_in_executor(None, find_sender_account)
-                receiver_account_vertex = await loop.run_in_executor(None, find_receiver_account)
-                
-                if sender_account_vertex and receiver_account_vertex:
+                if sender_account_id and receiver_account_id and receiver_account_id != 'unknown':
                     # Create transaction vertex and both edges in one Gremlin query
                     def create_transaction_and_edges():
                         return self.graph_service.client.add_v("transaction") \
@@ -408,9 +382,9 @@ class TransactionGeneratorService:
                             .property("type", transaction['transaction_type'])\
                             .property("status", transaction.get('status', 'completed'))\
                             .as_("tx")\
-                            .V(sender_account_vertex.id)\
+                            .V(sender_account_id)\
                             .add_e("TRANSFERS_TO").to("tx")\
-                            .V(receiver_account_vertex.id)\
+                            .V(receiver_account_id)\
                             .add_e("TRANSFERS_FROM").from_("tx")\
                             .select("tx")\
                             .next()
@@ -419,10 +393,10 @@ class TransactionGeneratorService:
                     
                     logger.info(f"✅ Transaction {transaction['id']} stored in graph database with both sender and receiver edges")
                 else:
-                    if not sender_account_vertex:
-                        logger.warning(f"⚠️ Sender account {transaction['account_id']} not found in graph database, skipping storage")
-                    if not receiver_account_vertex:
-                        logger.warning(f"⚠️ Receiver account {transaction.get('receiver_account_id')} not found in graph database, skipping storage")
+                    if not sender_account_id:
+                        logger.warning(f"⚠️ Sender account ID not found in transaction: {sender_account_id}")
+                    if not receiver_account_id or receiver_account_id == 'unknown':
+                        logger.warning(f"⚠️ Receiver account ID not found in transaction: {receiver_account_id}")
                 
         except Exception as e:
             logger.error(f"❌ Error storing transaction in graph: {e}")
@@ -466,13 +440,7 @@ class TransactionGeneratorService:
             if from_account_id == to_account_id:
                 return {"success": False, "error": "Source and destination accounts cannot be the same"}
             
-            # Get user_id from sender account
-            # user_id = await self._get_user_id_from_account(from_account_id)
-            # logger.info(f"Retrieved user_id '{user_id}' for account {from_account_id}")
             
-            # if not user_id:
-            #     logger.warning(f"No user_id found for account {from_account_id}, using empty string")
-            #     user_id = ""
             
             # Create transaction data
             transaction_id = str(uuid.uuid4())

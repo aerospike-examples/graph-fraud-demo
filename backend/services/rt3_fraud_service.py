@@ -41,24 +41,12 @@ class RT3FraudService:
                 logger.warning("⚠️ Graph client not available for RT3 fraud detection")
                 return {"is_fraud": False, "reason": "Graph client unavailable"}
             
-            # Get receiver account ID from graph relationship
-            # transaction --TRANSFERS_FROM--> receiver_account
+            # We already have the receiver account ID in the transaction, no need to fetch it from the graph
+            receiver_account_id = transaction.get('receiver_account_id', '')
             
-            loop = asyncio.get_event_loop()
-            
-            def get_receiver_account_id():
-                try:
-                    # Find the transaction vertex
-                    tx_vertex = self.graph_service.client.V().has_label("transaction").has("transaction_id", transaction['id']).next()
-                    
-                    # Get receiver account (outgoing TRANSFERS_FROM edge)
-                    receiver_accounts = self.graph_service.client.V(tx_vertex).out("TRANSFERS_FROM").has_label("account").valueMap("account_id").to_list()
-                    return receiver_accounts[0].get("account_id", [""])[0] if receiver_accounts else ""
-                except Exception as e:
-                    logger.error(f"Error getting receiver account ID: {e}")
-                    return ""
-            
-            receiver_account_id = await loop.run_in_executor(None, get_receiver_account_id)
+            if not receiver_account_id:
+                logger.warning(f"⚠️ Missing receiver account ID in transaction: {receiver_account_id}")
+                return {"is_fraud": False, "reason": "Missing receiver account information"}
             logger.info(f"🔍 RT3 CHECK: Analyzing receiver account {receiver_account_id} for supernode patterns")
             
             def count_unique_senders():
@@ -69,7 +57,7 @@ class RT3FraudService:
                     # Count unique sender accounts that have sent transactions to this receiver
                     # in the last N days using proper Gremlin traversal
                     unique_senders_query = f"""
-                    g.V().has_label("account").has("account_id", "{receiver_account_id}")
+                    g.V().has_label("account").has("id", "{receiver_account_id}")
                     .in_("TRANSFERS_TO")
                     .has("timestamp", P.gte("{lookback_timestamp}"))
                     .in_("TRANSFERS_TO")
@@ -81,12 +69,12 @@ class RT3FraudService:
                     
                     # Get sample sender account details for reporting
                     sender_details_query = f"""
-                    g.V().has_label("account").has("account_id", "{receiver_account_id}")
+                    g.V().has_label("account").has("id", "{receiver_account_id}")
                     .in_("TRANSFERS_TO")
                     .has("timestamp", P.gte("{lookback_timestamp}"))
                     .in_("TRANSFERS_TO")
                     .dedup()
-                    .valueMap("account_id", "user_id")
+                    .valueMap("id", "user_id")
                     .limit(100)
                     .toList()
                     """
