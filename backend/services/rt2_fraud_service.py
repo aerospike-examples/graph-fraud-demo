@@ -115,7 +115,7 @@ class RT2FraudService:
                 def find_connected_accounts():
                     try:
                         # Find the account vertex
-                        account_vertices = self.graph_service.client.V().has_label("account").has("account_id", account_id).to_list()
+                        account_vertices = self.graph_service.client.V(account_id).to_list()
                         if not account_vertices:
                             logger.warning(f"⚠️ RT2: Account {account_id} not found in graph")
                             return []
@@ -125,31 +125,27 @@ class RT2FraudService:
                         
                         # Find accounts that received money FROM this account
                         # account --TRANSFERS_TO--> transaction --TRANSFERS_FROM--> connected_account
-                        outgoing_connected_accounts = (self.graph_service.client.V(account_vertex)
+                        outgoing_connected_accounts = (self.graph_service.client.V(account_id)
                                                      .out("TRANSFERS_TO")
                                                      .out("TRANSFERS_FROM")
-                                                     .has_label("account")
-                                                     .valueMap("account_id")
+                                                     .has_label("account").dedup()
                                                      .to_list())
                         
-                        for acc_props in outgoing_connected_accounts:
-                            acc_id = acc_props.get('account_id', ['Unknown'])
-                            if isinstance(acc_id, list) and acc_id:
-                                connected_account_ids.append(acc_id[0])
+                        for acc_vertex in outgoing_connected_accounts:
+                            acc_id = str(acc_vertex.id)  # Get account ID directly from T.id
+                            connected_account_ids.append(acc_id)
                         
                         # Find accounts that sent money TO this account
                         # connected_account --TRANSFERS_TO--> transaction --TRANSFERS_FROM--> account
                         incoming_connected_accounts = (self.graph_service.client.V(account_vertex)
                                                      .in_("TRANSFERS_FROM")
                                                      .in_("TRANSFERS_TO")
-                                                     .has_label("account")
-                                                     .valueMap("account_id")
+                                                     .has_label("account").dedup()
                                                      .to_list())
                         
-                        for acc_props in incoming_connected_accounts:
-                            acc_id = acc_props.get('account_id', ['Unknown'])
-                            if isinstance(acc_id, list) and acc_id:
-                                connected_account_ids.append(acc_id[0])
+                        for acc_vertex in incoming_connected_accounts:
+                            acc_id = str(acc_vertex.id)  # Get account ID directly from T.id
+                            connected_account_ids.append(acc_id)
                         
                         logger.info(f"🔍 RT2: Account {account_id} has {len(connected_account_ids)} connected accounts")
                         return connected_account_ids
@@ -187,7 +183,7 @@ class RT2FraudService:
                 def check_account_devices():
                     try:
                         # Find the account vertex
-                        account_vertices = self.graph_service.client.V().has_label("account").has("account_id", account_id).to_list()
+                        account_vertices = self.graph_service.client.V(account_id).to_list()
                         if not account_vertices:
                             logger.warning(f"⚠️ RT2: Account {account_id} not found in graph")
                             return []
@@ -195,7 +191,7 @@ class RT2FraudService:
                         account_vertex = account_vertices[0]
                         
                         # Get the user who owns this account
-                        user_vertices = self.graph_service.client.V(account_vertex).in_("OWNS").to_list()
+                        user_vertices = self.graph_service.client.V(account_id).in_("OWNS").to_list()
                         if not user_vertices:
                             logger.warning(f"⚠️ RT2: No user found for account {account_id}")
                             return []
@@ -207,18 +203,11 @@ class RT2FraudService:
                         
                         account_flagged_devices = []
                         for device_vertex in device_vertices:
-                            # Get device properties
-                            device_props = self.graph_service.client.V(device_vertex).value_map().next()
-                            
-                            # Check if device is flagged
-                            fraud_flag = device_props.get('fraud_flag', [False])
-                            if isinstance(fraud_flag, list):
-                                fraud_flag = fraud_flag[0] if fraud_flag else False
+                            # Get device properties directly from vertex object
+                            fraud_flag = self.graph_service.get_property_value(device_vertex, 'fraud_flag', False)
                             
                             if fraud_flag:
-                                device_id = device_props.get('device_id', ['Unknown'])
-                                if isinstance(device_id, list):
-                                    device_id = device_id[0] if device_id else 'Unknown'
+                                device_id = str(device_vertex.id)  # Get device ID directly from T.id
                                 account_flagged_devices.append(device_id)
                                 logger.info(f"🔍 RT2: Found flagged device {device_id} connected to account {account_id}")
                         
@@ -249,7 +238,7 @@ class RT2FraudService:
             def create_fraud_result():
                 try:
                     # Find the transaction vertex
-                    transaction_vertex = self.graph_service.client.V().has_label("transaction").has("transaction_id", transaction['id']).next()
+                    transaction_vertex = self.graph_service.client.V(transaction['id']).next()
                     
                     # Create FraudCheckResult vertex
                     fraud_result_vertex = (self.graph_service.client.add_v("FraudCheckResult")

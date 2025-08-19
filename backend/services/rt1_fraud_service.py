@@ -46,10 +46,9 @@ class RT1FraudService:
             # Get event loop for async operations
             loop = asyncio.get_event_loop()
             
-
             # We already have the account IDs in the transaction, no need to fetch them from the graph
-            sender_account_id = transaction.get('account_id', '')
-            receiver_account_id = transaction.get('receiver_account_id', '')
+            sender_account_id = transaction['account_id']
+            receiver_account_id = transaction['receiver_account_id']
 
             
             if not sender_account_id or not receiver_account_id:

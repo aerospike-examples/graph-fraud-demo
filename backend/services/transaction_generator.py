@@ -119,13 +119,28 @@ class TransactionGeneratorService:
         self.indian_fraud_locations = ['Jamtara', 'Bharatpur', 'Alwar', 'Mewat', 'Nuh']
         
         # Normal locations (Indian cities)
+        # self.normal_locations = [
+        #     'Mumbai, Maharashtra', 'Delhi, Delhi', 'Bangalore, Karnataka', 'Hyderabad, Telangana', 
+        #     'Chennai, Tamil Nadu', 'Kolkata, West Bengal', 'Pune, Maharashtra', 'Ahmedabad, Gujarat',
+        #     'Jaipur, Rajasthan', 'Surat, Gujarat', 'Lucknow, Uttar Pradesh', 'Kanpur, Uttar Pradesh',
+        #     'Nagpur, Maharashtra', 'Visakhapatnam, Andhra Pradesh', 'Indore, Madhya Pradesh',
+        #     'Thane, Maharashtra', 'Bhopal, Madhya Pradesh', 'Patna, Bihar', 'Vadodara, Gujarat',
+        #     'Ghaziabad, Uttar Pradesh', 'Ludhiana, Punjab', 'Agra, Uttar Pradesh', 'Nashik, Maharashtra'
+        # ]
+        
         self.normal_locations = [
-            'Mumbai, Maharashtra', 'Delhi, Delhi', 'Bangalore, Karnataka', 'Hyderabad, Telangana', 
-            'Chennai, Tamil Nadu', 'Kolkata, West Bengal', 'Pune, Maharashtra', 'Ahmedabad, Gujarat',
-            'Jaipur, Rajasthan', 'Surat, Gujarat', 'Lucknow, Uttar Pradesh', 'Kanpur, Uttar Pradesh',
-            'Nagpur, Maharashtra', 'Visakhapatnam, Andhra Pradesh', 'Indore, Madhya Pradesh',
-            'Thane, Maharashtra', 'Bhopal, Madhya Pradesh', 'Patna, Bihar', 'Vadodara, Gujarat',
-            'Ghaziabad, Uttar Pradesh', 'Ludhiana, Punjab', 'Agra, Uttar Pradesh', 'Nashik, Maharashtra'
+            'New York, New York', 'Los Angeles, California', 'Chicago, Illinois', 'Houston, Texas',
+            'Phoenix, Arizona', 'Philadelphia, Pennsylvania', 'San Antonio, Texas', 'San Diego, California',
+            'Dallas, Texas', 'San Jose, California', 'Austin, Texas', 'Jacksonville, Florida',
+            'Fort Worth, Texas', 'Columbus, Ohio', 'Charlotte, North Carolina', 'San Francisco, California',
+            'Indianapolis, Indiana', 'Seattle, Washington', 'Denver, Colorado', 'Washington, District of Columbia',
+            'Boston, Massachusetts', 'El Paso, Texas', 'Nashville, Tennessee', 'Detroit, Michigan',
+            'Oklahoma City, Oklahoma', 'Portland, Oregon', 'Las Vegas, Nevada', 'Memphis, Tennessee',
+            'Louisville, Kentucky', 'Baltimore, Maryland', 'Milwaukee, Wisconsin', 'Albuquerque, New Mexico',
+            'Tucson, Arizona', 'Fresno, California', 'Sacramento, California', 'Mesa, Arizona',
+            'Kansas City, Missouri', 'Atlanta, Georgia', 'Long Beach, California', 'Colorado Springs, Colorado',
+            'Raleigh, North Carolina', 'Miami, Florida', 'Virginia Beach, Virginia', 'Omaha, Nebraska',
+            'Oakland, California', 'Minneapolis, Minnesota', 'Tulsa, Oklahoma', 'Arlington, Texas'
         ]
         
         # Transaction types
@@ -175,7 +190,7 @@ class TransactionGeneratorService:
             logger.warning("Transaction generation is already running")
             return False
             
-        self.generation_rate = rate  # Clamp between 1-5
+        self.generation_rate = rate
         self.is_running = True
         self.transaction_counter = 0
         
@@ -214,24 +229,20 @@ class TransactionGeneratorService:
         """Main generation loop"""
         while self.is_running:
             try:
-                # Generate transaction
+                # Generate transaction (already stores in memory, graph, and runs fraud detection)
                 transaction = await self._generate_transaction()
                 
-                # Store transaction in memory
-                self.generated_transactions.append(transaction)
-                
-                # Store transaction in graph database
-                await self._store_transaction_in_graph(transaction)
-                
-                # Run RT1 fraud detection after transaction is stored
-                await self._run_fraud_detection(transaction)
+                # Transaction processing is already handled by create_manual_transaction:
+                # - Memory storage: self.generated_transactions.append(transaction)
+                # - Graph storage: await self._store_transaction_in_graph(transaction) 
+                # - Fraud detection: await self._run_fraud_detection(transaction)
                 
                 # Keep only last 1000 transactions
                 if len(self.generated_transactions) > 1000:
                     self.generated_transactions = self.generated_transactions[-1000:]
                 
                 # Log transaction
-                self._log_transaction(transaction)
+                #self._log_transaction(transaction)
                 
                 # Log statistics every 10 transactions
                 if self.transaction_counter % 10 == 0:
@@ -252,53 +263,21 @@ class TransactionGeneratorService:
 
     async def _generate_normal_transaction(self) -> Dict[str, Any]:
         """Generate a normal transaction between real users and accounts"""
-        try:
-            # Get random sender and receiver users from the graph database
-            sender_user = await self._get_random_user()
-            receiver_user = await self._get_random_user()
+        try:    
+            # Get 2 random accounts from the graph database
+            sender_account_id, receiver_account_id = await self._get_random_accounts()
             
-            if not sender_user or not receiver_user:
-                logger.error("Could not get users from graph database. Cannot generate transaction without valid users.")
-                raise Exception("No valid users available in graph database for transaction generation")
-            
-            # Get account IDs from the users
-            sender_account_id = None
-            receiver_account_id = None
-            
-            logger.info(f"Sender user: {sender_user.get('id')}, accounts: {sender_user.get('accounts')}")
-            logger.info(f"Receiver user: {receiver_user.get('id')}, accounts: {receiver_user.get('accounts')}")
-            
-            if sender_user.get('accounts') and len(sender_user['accounts']) > 0:
-                sender_account = random.choice(sender_user['accounts'])
-                sender_account_id = sender_account.get('account_id', sender_account.get('id', 'unknown'))
-                logger.info(f"Selected sender account: {sender_account_id}")
-            
-            if receiver_user.get('accounts') and len(receiver_user['accounts']) > 0:
-                receiver_account = random.choice(receiver_user['accounts'])
-                receiver_account_id = receiver_account.get('account_id', receiver_account.get('id', 'unknown'))
-                logger.info(f"Selected receiver account: {receiver_account_id}")
+            if not sender_account_id or not receiver_account_id:
+                logger.error("Could not get accounts from graph database. Cannot generate transaction without valid accounts.")
+                raise Exception("No valid accounts available in graph database for transaction generation")
             
             # Generate transaction data
-            transaction_id = str(uuid.uuid4())
             amount = random.uniform(100.0, 1000000.0)
             transaction_type = random.choice(["transfer", "payment", "deposit", "withdrawal"])
             
-            transaction = {
-                "id": transaction_id,
-                "user_id": sender_user.get("id", "unknown"),
-                "account_id": sender_account_id or "unknown",
-                "amount": round(amount),
-                "currency": "INR",
-                "transaction_type": transaction_type,
-                "location": random.choice(self.normal_locations),
-                "timestamp": datetime.now().isoformat(),
-                "status": "completed",
-                "receiver_user_id": receiver_user.get("id", "unknown"),
-                "receiver_account_id": receiver_account_id or "unknown"
-            }
-            
+            transaction = await self.create_manual_transaction(sender_account_id, receiver_account_id, amount, transaction_type, "AUTO")
             # Log and update counters
-            self._log_transaction(transaction, "TRANSACTION")
+            #self._log_transaction(transaction, "TRANSACTION")
             self.transaction_counter += 1
             
             return transaction
@@ -311,31 +290,29 @@ class TransactionGeneratorService:
 
 
 
-    async def _get_random_user(self) -> Optional[Dict[str, Any]]:
-        """Get a random user from the graph database"""
+    async def _get_random_accounts(self) -> Optional[tuple]:
+        """Get 2 random account vertices from the graph database using Gremlin query"""
         try:
-            # Query the graph database for users
-            users = await self.graph_service.get_users_paginated(1, 100)  # Get up to 100 users
-            if users and users.get('users'):
-                user_list = users['users']
-                if user_list:
-                    return random.choice(user_list)
-            return None
+            logger.debug("Getting 2 random account vertices from graph")
+            
+            # Use Gremlin query to get 2 random account vertices
+            loop = asyncio.get_event_loop()
+            
+            def get_random_accounts():
+                return self.graph_service.client.V().has_label("account").limit(2).to_list()
+            
+            account_vertices = await loop.run_in_executor(None, get_random_accounts)
+            
+            sender_account_id = str(account_vertices[0].id)
+            receiver_account_id = str(account_vertices[1].id)
+            logger.debug(f"Found random accounts: {sender_account_id} and {receiver_account_id}")
+            return sender_account_id, receiver_account_id
+                
         except Exception as e:
-            logger.error(f"Error getting random user: {e}")
-            return None
+            logger.error(f"Error getting random accounts: {e}")
+            return None, None
 
-    async def _get_random_account(self, user_id: str = None) -> Optional[Dict[str, Any]]:
-        """Get a random account from the graph database"""
-        try:
-            # Get a random user first, then get their accounts
-            user = await self._get_random_user()
-            if user and user.get('accounts'):
-                return random.choice(user['accounts'])
-            return None
-        except Exception as e:
-            logger.error(f"Error getting random account: {e}")
-            return None
+    
 
 
 
@@ -368,7 +345,7 @@ class TransactionGeneratorService:
                 
                 # We already have the account IDs, no need to fetch the vertices again
                 sender_account_id = transaction['account_id']
-                receiver_account_id = transaction.get('receiver_account_id')
+                receiver_account_id = transaction['receiver_account_id']
                 
                 if sender_account_id and receiver_account_id and receiver_account_id != 'unknown':
                     # Create transaction vertex and both edges in one Gremlin query
@@ -378,9 +355,9 @@ class TransactionGeneratorService:
                             .property("amount", transaction['amount'])\
                             .property("currency", transaction['currency'])\
                             .property("timestamp", transaction['timestamp'])\
-                            .property("location", transaction.get('location', 'Unknown'))\
+                            .property("location", transaction['location'])\
                             .property("type", transaction['transaction_type'])\
-                            .property("status", transaction.get('status', 'completed'))\
+                            .property("status", transaction['status'])\
                             .as_("tx")\
                             .V(sender_account_id)\
                             .add_e("TRANSFERS_TO").to("tx")\
@@ -425,10 +402,10 @@ class TransactionGeneratorService:
             "transaction_count": self.transaction_counter
         }
 
-    async def create_manual_transaction(self, from_account_id: str, to_account_id: str, amount: float, transaction_type: str = "transfer") -> Dict[str, Any]:
+    async def create_manual_transaction(self, from_account_id: str, to_account_id: str, amount: float, transaction_type: str = "transfer", generation_type: str = "MANUAL") -> Dict[str, Any]:
         """Create a manual transaction between specified accounts"""
         try:
-            logger.info(f"Creating manual transaction from {from_account_id} to {to_account_id} amount {amount}")
+            logger.info(f"Creating {generation_type.lower()} transaction from {from_account_id} to {to_account_id} amount {amount}")
             # Validate accounts exist
             if not await self._validate_account_exists(from_account_id):
                 return {"success": False, "error": f"Source account {from_account_id} not found"}
@@ -441,7 +418,6 @@ class TransactionGeneratorService:
                 return {"success": False, "error": "Source and destination accounts cannot be the same"}
             
             
-            
             # Create transaction data
             transaction_id = str(uuid.uuid4())
             transaction = {
@@ -451,9 +427,10 @@ class TransactionGeneratorService:
                 "amount": round(amount, 2),
                 "currency": "INR",
                 "transaction_type": transaction_type,
-                "location": "Manual Transaction",
+                "location": random.choice(self.normal_locations),
                 "timestamp": datetime.now().isoformat(),
-                "status": "completed"
+                "status": "completed",
+                "generation_type": generation_type
             }
             
             # Store in memory
@@ -466,20 +443,16 @@ class TransactionGeneratorService:
             await self._run_fraud_detection(transaction)
             
             # Log transaction
-            self._log_transaction(transaction, "MANUAL")
+            self._log_transaction(transaction, generation_type.upper())
             self.transaction_counter += 1
             
-            logger.info(f"✅ Manual transaction created: {transaction_id} from {from_account_id} to {to_account_id} amount {amount}")
+            logger.info(f"✅ {generation_type} transaction created: {transaction_id} from {from_account_id} to {to_account_id} amount {amount}")
             
-            return {
-                "success": True,
-                "transaction_id": transaction_id,
-                "transaction": transaction
-            }
+            return transaction
             
         except Exception as e:
             logger.error(f"❌ Error creating manual transaction: {e}")
-            return {"success": False, "error": str(e)}
+            return None
 
     async def _validate_account_exists(self, account_id: str) -> bool:
         """Validate that an account exists in the graph database"""
