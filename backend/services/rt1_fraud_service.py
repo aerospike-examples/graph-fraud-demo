@@ -50,7 +50,7 @@ class RT1FraudService:
                 try:
                     # Find the transaction vertex
                     # tx_vertex = self.graph_service.client.V().has_label("transaction").has("transaction_id", transaction['id']).next()
-                    tx_vertex = self.graph_service.client.V().has_label("transaction").has("transaction_id", transaction['id']).next()
+                    tx_vertex = self.graph_service.client.V(transaction['id']).next()
                     
                     
                     # Get sender account (incoming TRANSFERS_TO edge)
@@ -75,9 +75,7 @@ class RT1FraudService:
                     flagged_connections = []
                     
                     # Check if sender account is flagged
-                    sender_flagged = (self.graph_service.client.V()
-                                    .has_label("account")
-                                    .has("account_id", sender_account_id)
+                    sender_flagged = (self.graph_service.client.V(sender_account_id)
                                     .has("fraud_flag", True)
                                     .to_list())
                     
@@ -89,9 +87,7 @@ class RT1FraudService:
                         } for conn in sender_flagged])
                     
                     # Check if receiver account is flagged
-                    receiver_flagged = (self.graph_service.client.V()
-                                      .has_label("account")
-                                      .has("account_id", receiver_account_id)
+                    receiver_flagged = (self.graph_service.client.V(receiver_account_id)
                                       .has("fraud_flag", True)
                                       .to_list())
                     
