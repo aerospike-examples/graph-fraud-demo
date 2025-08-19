@@ -11,6 +11,7 @@ import logging
 import time
 from datetime import datetime
 from typing import Dict, Any, List
+from gremlin_python.process.graph_traversal import __
 
 from services.graph_service import GraphService
 from services.performance_monitor import performance_monitor
@@ -190,6 +191,11 @@ class RT1FraudService:
                 performance_monitor.record_rt1_performance(execution_time, success=True)
                 
                 logger.warning(f"🚨 RT1 FRAUD DETECTED: Transaction {transaction['id']} - {reason} (Score: {fraud_score})")
+                
+                # Create fraud check result in the graph
+                logger.info(f"🔗 RT1: Calling create_fraud_check_result for transaction {transaction['id']}")
+                await self.create_fraud_check_result(transaction, fraud_result)
+                
                 return fraud_result
             else:
                 execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
@@ -207,8 +213,10 @@ class RT1FraudService:
     
     async def create_fraud_check_result(self, transaction: Dict[str, Any], fraud_result: Dict[str, Any]):
         """Create FraudCheckResult vertex and flagged_by edge"""
+        logger.info(f"🔗 RT1: create_fraud_check_result called for transaction {transaction.get('id', 'unknown')}")
         try:
             if not self.graph_service.client or not fraud_result.get("is_fraud"):
+                logger.info(f"🔗 RT1: Skipping fraud result creation - graph client: {bool(self.graph_service.client)}, is_fraud: {fraud_result.get('is_fraud')}")
                 return
             
             # Get event loop for async operations
@@ -216,9 +224,6 @@ class RT1FraudService:
             
             def create_fraud_result():
                 try:
-                    # Find the transaction vertex
-                    transaction_vertex = self.graph_service.client.V().has_label("transaction").has("transaction_id", transaction['id']).next()
-                    
                     # Create FraudCheckResult vertex
                     fraud_result_vertex = (self.graph_service.client.add_v("FraudCheckResult")
                                          .property("fraud_score", fraud_result["fraud_score"])
@@ -229,8 +234,12 @@ class RT1FraudService:
                                          .property("details", str(fraud_result["details"]))
                                          .next())
                     
-                    # Create flagged_by edge from transaction to fraud result
-                    self.graph_service.client.add_e("flagged_by").from_(transaction_vertex).to(fraud_result_vertex).iterate()
+                                        # Create flagged_by edge from transaction to fraud result
+                    # Use proper Gremlin syntax with __ for child traversals
+                    edge = (self.graph_service.client.add_e("flagged_by")
+                           .from_(__.V(transaction['id']))
+                           .to(__.V(fraud_result_vertex.id))
+                           .next())
                     
                     logger.info(f"📊 Created RT1 FraudCheckResult for transaction {transaction['id']}: {fraud_result['status']} (Score: {fraud_result['fraud_score']})")
                     return True
