@@ -148,48 +148,12 @@ class RT2FraudService:
                 def find_connected_accounts():
                     try:
                         query_start_time = time.time()
-                        
                         # Find the account vertex
-<<<<<<< HEAD
-                        account_vertices = self.graph_service.client.V(account_id).to_list()
-                        if not account_vertices:
-                            logger.warning(f"⚠️ RT2: Account {account_id} not found in graph")
-                            return []
-                        
-                        account_vertex = account_vertices[0]
-                        connected_account_ids = []
-                        
-                        # Find accounts that received money FROM this account
-                        outgoing_start_time = time.time()
-                        outgoing_connected_accounts = (self.graph_service.client.V(account_id)
-                                                     .out("TRANSFERS_TO")
-                                                     .out("TRANSFERS_FROM")
-                                                     .has_label("account").dedup()
-                                                     .to_list())
-                        outgoing_time = (time.time() - outgoing_start_time) * 1000
-                        
-                        for acc_vertex in outgoing_connected_accounts:
-                            acc_id = str(acc_vertex.id)  # Get account ID directly from T.id
-                            connected_account_ids.append(acc_id)
-                        
-                        # Find accounts that sent money TO this account
-                        incoming_start_time = time.time()
-                        incoming_connected_accounts = (self.graph_service.client.V(account_vertex)
-                                                     .in_("TRANSFERS_FROM")
-                                                     .in_("TRANSFERS_TO")
-                                                     .has_label("account").dedup()
-                                                     .to_list())
-                        incoming_time = (time.time() - incoming_start_time) * 1000
-                        
-                        for acc_vertex in incoming_connected_accounts:
-                            acc_id = str(acc_vertex.id)  # Get account ID directly from T.id
-                            connected_account_ids.append(acc_id)
-=======
                         # We already have the account ID, no need to fetch the vertex again
                         account_id_to_use = account_id
                         connected_account_ids = []
                         
-                        # Find all accounts connected via transactions (same logic as RT1)
+                        # Find all accounts connected via transactions (same logic as RT1) 
                         # account --TRANSFERS_TO--> transaction --TRANSFERS_FROM--> connected_account
                         connected_accounts = (self.graph_service.client.V(account_id_to_use)
                                            .both("TRANSFERS_TO", "TRANSFERS_FROM")  # Go to transactions
@@ -197,19 +161,14 @@ class RT2FraudService:
                                            .has_label("account")                     # Filter to only accounts
                                            .dedup()                                  # Remove duplicates
                                            .to_list())
-                        
+
                         # Process connected accounts
                         for conn in connected_accounts:
                             # Extract ID from vertex object (same as RT1)
                             connected_account_id = str(conn.id) if hasattr(conn, 'id') else str(conn)
                             if connected_account_id and connected_account_id != account_id_to_use:
                                 connected_account_ids.append(connected_account_id)
->>>>>>> origin/skrlatest
                         
-                        total_query_time = (time.time() - query_start_time) * 1000
-                        logger.info(f"🔍 RT2: Account {account_id} has {len(connected_account_ids)} connected accounts")
-                        logger.debug(f"⏱️ RT2: Account {account_id} query breakdown - Total: {total_query_time:.2f}ms | "
-                                   f"Outgoing: {outgoing_time:.2f}ms | Incoming: {incoming_time:.2f}ms")
                         return connected_account_ids
                         
                     except Exception as e:
@@ -219,9 +178,6 @@ class RT2FraudService:
                 account_connections = await loop.run_in_executor(None, find_connected_accounts)
                 connected_accounts.update(account_connections)
                 
-                account_query_time = (time.time() - account_query_start_time) * 1000
-                logger.debug(f"⏱️ RT2: Account {account_id} processing completed in {account_query_time:.2f}ms")
-            
             result = list(connected_accounts)
             function_time = (time.time() - function_start_time) * 1000
             logger.info(f"🔍 RT2: Total connected accounts in transaction network: {len(result)}")
@@ -242,50 +198,12 @@ class RT2FraudService:
         Returns:
             List of flagged device IDs connected to the accounts
         """
-        function_start_time = time.time()
+        
         try:
             loop = asyncio.get_event_loop()
             
-<<<<<<< HEAD
             logger.info(f"🔍 RT2: Checking {len(account_ids)} accounts for flagged devices")
             
-            for account_id in account_ids:
-                account_check_start_time = time.time()
-                def check_account_devices():
-                    try:
-                        device_query_start_time = time.time()
-                        
-                        # Single Gremlin query: account -> user (via OWNS) -> flagged devices (via USES_DEVICE)
-                        device_vertices = self.graph_service.client.V(account_id).in_("OWNS").out("USES_DEVICE").has("fraud_flag", True).to_list()
-                        
-                        device_query_time = (time.time() - device_query_start_time) * 1000
-                        
-                        account_flagged_devices = []
-                        for device_vertex in device_vertices:
-                            # All returned devices are already flagged, no need to check fraud_flag
-                            device_id = str(device_vertex.id)  # Get device ID directly from T.id
-                            account_flagged_devices.append(device_id)
-                            logger.info(f"🔍 RT2: Found flagged device {device_id} connected to account {account_id}")
-                        
-                        logger.debug(f"⏱️ RT2: Device query for account {account_id} completed in {device_query_time:.2f}ms - Found {len(account_flagged_devices)} flagged devices")
-                        return account_flagged_devices
-                        
-                    except Exception as e:
-                        logger.error(f"❌ RT2: Error checking devices for account {account_id}: {e}")
-                        return []
-                
-                account_flagged_devices = await loop.run_in_executor(None, check_account_devices)
-                flagged_devices.extend(account_flagged_devices)
-                
-                account_check_time = (time.time() - account_check_start_time) * 1000
-                logger.debug(f"⏱️ RT2: Account {account_id} device check completed in {account_check_time:.2f}ms")
-            
-            # Remove duplicates
-            unique_flagged_devices = list(set(flagged_devices))
-            function_time = (time.time() - function_start_time) * 1000
-            logger.info(f"⏱️ RT2: _check_accounts_for_flagged_devices completed in {function_time:.2f}ms - Found {len(unique_flagged_devices)} unique flagged devices")
-            return unique_flagged_devices
-=======
             def find_flagged_devices():
                 try:
                     # Single optimized query: Find all flagged devices connected to accounts through OWNS relationship
@@ -297,15 +215,12 @@ class RT2FraudService:
                                      .dedup()                        # Remove duplicates
                                      .to_list())
                     
-                 
-                    
                     # Extract device IDs from the results
                     device_ids = []
                     for device_vertex in flagged_devices:
                         # Extract ID from vertex object (same as RT1)
-                        device_id = str(device_vertex.id) if hasattr(device_vertex, 'id') else str(device_vertex)
-                        if device_id and device_id != 'Unknown':
-                            device_ids.append(device_id)
+                        device_id = str(device_vertex.id)
+                        device_ids.append(device_id)
                     
                     logger.info(f"🔍 RT2: Found {len(device_ids)} flagged devices connected to {len(account_ids)} accounts")
                     return device_ids
@@ -316,7 +231,6 @@ class RT2FraudService:
             
             flagged_devices = await loop.run_in_executor(None, find_flagged_devices)
             return flagged_devices
->>>>>>> origin/skrlatest
             
         except Exception as e:
             logger.error(f"❌ RT2: Error checking accounts for flagged devices: {e}")
@@ -332,12 +246,9 @@ class RT2FraudService:
             
             def create_fraud_result():
                 try:
-<<<<<<< HEAD
                     # Find the transaction vertex
                     transaction_vertex = self.graph_service.client.V(transaction['id']).next()
                     
-=======
->>>>>>> origin/skrlatest
                     # Create FraudCheckResult vertex
                     fraud_result_vertex = (self.graph_service.client.add_v("FraudCheckResult")
                                          .property("fraud_score", fraud_result["fraud_score"])
