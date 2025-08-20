@@ -1860,106 +1860,73 @@ class GraphService:
         """Get users who share devices with the specified user"""
         try:
             if not self.client:
-                # Mock mode - find users sharing devices from in-memory data
-                if not self.users_data:
-                    return []
-                
-                target_user = next((u for u in self.users_data if u['id'] == user_id), None)
-                if not target_user:
-                    return []
-                
-                target_device_ids = {device['id'] for device in target_user.get('devices', [])}
-                if not target_device_ids:
-                    return []
-                
-                connected_users = []
-                for user in self.users_data:
-                    if user['id'] == user_id:
-                        continue
-                    
-                    user_device_ids = {device['id'] for device in user.get('devices', [])}
-                    shared_devices = target_device_ids.intersection(user_device_ids)
-                    
-                    if shared_devices:
-                        # Get device details for shared devices
-                        shared_device_details = []
-                        for device in user.get('devices', []):
-                            if device['id'] in shared_devices:
-                                shared_device_details.append({
-                                    'id': device['id'],
-                                    'type': device['type'],
-                                    'os': device['os'],
-                                    'browser': device['browser']
-                                })
-                        
-                        connected_users.append({
-                            'user_id': user['id'],
-                            'name': user['name'],
-                            'email': user['email'],
-                            'risk_score': user.get('risk_score', 0.0),
-                            'shared_devices': shared_device_details,
-                            'shared_device_count': len(shared_devices)
-                        })
-                
-                return connected_users
+                raise Exception("Graph client not available")
             
-            # Real graph mode
-            import asyncio
             loop = asyncio.get_event_loop()
             
             def find_connected_users():
-                # Find all devices used by the target user
-                user_devices = self.client.V().has_label("user").has("user_id", user_id).out("USES_DEVICE").to_list()
-                
-                if not user_devices:
-                    return []
-                
-                connected_users = []
-                device_to_users = {}
-                
-                # For each device, find all users who use it
-                for device in user_devices:
-                    device_props = self.client.V(device).value_map().next()
-                    device_id = device_props.get('device_id', [''])[0]
+                try:
+                    # Step 1: Find all devices used by the target user (user -> device)
+                    user_devices = self.get_out_edge(user_id, "USES")
                     
-                    # Find all users who use this device
-                    users_with_device = self.client.V(device).in_("USES_DEVICE").has_label("user").to_list()
+                    if not user_devices:
+                        logger.info(f"User {user_id} has no devices")
+                        return []
                     
-                    for user_vertex in users_with_device:
-                        user_props = self.client.V(user_vertex).value_map().next()
-                        current_user_id = user_vertex.id
+                    logger.info(f"Found {len(user_devices)} devices for user {user_id}")
+                    
+                    connected_users = {}
+                    
+                    # Step 2: For each device, find all users who use it (device <- other users)
+                    for device_vertex in user_devices:
+                        device_id = str(device_vertex.id)
                         
-                        # Skip the target user
-                        if current_user_id == user_id:
-                            continue
+                        # Find all users who use this device
+                        users_with_device = self.get_in_edge(device_vertex, "USES")
                         
-                        if current_user_id not in device_to_users:
-                            device_to_users[current_user_id] = {
-                                'user_props': user_props,
-                                'shared_devices': []
+                        for user_vertex in users_with_device:
+                            current_user_id = str(user_vertex.id)
+                            
+                            # Skip the target user (don't include self)
+                            if current_user_id == user_id:
+                                continue
+                            
+                            # Initialize user entry if not exists
+                            if current_user_id not in connected_users:
+                                connected_users[current_user_id] = {
+                                    'user_id': current_user_id,
+                                    'name': self.get_property_value(user_vertex, 'name', ''),
+                                    'email': self.get_property_value(user_vertex, 'email', ''),
+                                    'risk_score': self.get_property_value(user_vertex, 'risk_score', 0.0),
+                                    'shared_devices': [],
+                                    'shared_device_count': 0
+                                }
+                            
+                            # Add device info to shared devices
+                            device_info = {
+                                'id': device_id,
+                                'type': self.get_property_value(device_vertex, 'type', ''),
+                                'os': self.get_property_value(device_vertex, 'os', ''),
+                                'browser': self.get_property_value(device_vertex, 'browser', ''),
+                                'device_name': self.get_property_value(device_vertex, 'device_name', '')
                             }
-                        
-                        # Add device info
-                        device_to_users[current_user_id]['shared_devices'].append({
-                            'id': device_id,
-                            'type': device_props.get('type', [''])[0],
-                            'os': device_props.get('os', [''])[0],
-                            'browser': device_props.get('browser', [''])[0]
-                        })
-                
-                # Convert to final format
-                for user_id_key, data in device_to_users.items():
-                    user_props = data['user_props']
-                    connected_users.append({
-                        'user_id': user_id_key,
-                        'name': user_props.get('name', [''])[0],
-                        'email': user_props.get('email', [''])[0],
-                        'risk_score': user_props.get('risk_score', [0.0])[0],
-                        'shared_devices': data['shared_devices'],
-                        'shared_device_count': len(data['shared_devices'])
-                    })
-                
-                return connected_users
+                            
+                            # Avoid duplicate devices for the same user
+                            if device_info not in connected_users[current_user_id]['shared_devices']:
+                                connected_users[current_user_id]['shared_devices'].append(device_info)
+                    
+                    # Step 3: Update device counts and convert to list
+                    result = []
+                    for user_data in connected_users.values():
+                        user_data['shared_device_count'] = len(user_data['shared_devices'])
+                        result.append(user_data)
+                    
+                    logger.info(f"Found {len(result)} users sharing devices with user {user_id}")
+                    return result
+                    
+                except Exception as e:
+                    logger.error(f"Error finding connected device users: {e}")
+                    return []
             
             return await loop.run_in_executor(None, find_connected_users)
             
