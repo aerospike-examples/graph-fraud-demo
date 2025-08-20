@@ -688,7 +688,8 @@ class GraphService:
                     'timestamp': self.get_property_value(transaction_vertex, 'timestamp', ''),
                     'location': self.get_property_value(transaction_vertex, 'location', ''),
                     'type': self.get_property_value(transaction_vertex, 'type', ''),
-                    'status': self.get_property_value(transaction_vertex, 'status', '')
+                    'status': self.get_property_value(transaction_vertex, 'status', ''),
+                    'method': self.get_property_value(transaction_vertex, 'method', 'transfer')
                 }
                 #logger.info(f"Transaction properties: {transaction_props}")
                 
@@ -745,9 +746,10 @@ class GraphService:
                         "amount": transaction_props.get('amount', 0.0),
                         "currency": transaction_props.get('currency', ''),
                         "timestamp": transaction_props.get('timestamp', ''),
-                        "status": transaction_props.get('status', [''])[0],
-                        "transaction_type": transaction_props.get('type', [''])[0],
-                        "location_city": transaction_props.get('location', [''])[0]
+                        "status": transaction_props.get('status', ''),
+                        "transaction_type": transaction_props.get('type', ''),
+                        "location_city": transaction_props.get('location', ''),
+                        "method": transaction_props.get('method', 'transfer')
                     }
                     #logger.info(f"Transaction data: {transaction_data}")
                     # Build account data - ONLY from database properties
@@ -772,30 +774,31 @@ class GraphService:
                     }
                   #  logger.info(f"Destination account data: {destination_account_data}")
                     # Get fraud results - look for flagged_by edges to fraud check results
-                    # fraud_results = await loop.run_in_executor(None, lambda: self.get_out_edge(transaction_vertex, "flagged_by"))
-                    # logger.info(f"Found {len(fraud_results)} fraud result vertices")
-                    # fraud_results = []
+                    fraud_vertices = await loop.run_in_executor(None, lambda: self.get_out_edge(transaction_vertex, "flagged_by"))
+                    logger.info(f"Found {len(fraud_vertices)} fraud result vertices")
                     
-                    # for fraud_vertex in fraud_results:
-                    #     logger.info(f"Processing fraud vertex: {fraud_vertex}")
-                    #     fraud_props = await loop.run_in_executor(None, lambda: self.get_property_value(fraud_vertex, 'fraud_score', 0.0))
-                    #     logger.info(f"Fraud vertex properties: {fraud_props}")
+                    fraud_results = []
+                    for fraud_vertex in fraud_vertices:
+                        logger.info(f"Processing fraud vertex: {fraud_vertex}")
                         
-                    #     # Extract properties
-                    #     fraud_result = {
-                    #         'fraud_score': fraud_props,
-                    #         'fraud_rules': fraud_props.get('fraud_rules', []),
-                    #         'is_fraud': fraud_props.get('is_fraud', False)
-                    #     }
-                    #     fraud_results.append(fraud_result)
+                        # Extract properties using helper function
+                        fraud_result = {
+                            'fraud_score': self.get_property_value(fraud_vertex, 'fraud_score', 0.0),
+                            'status': self.get_property_value(fraud_vertex, 'status', 'unknown'),
+                            'rule': self.get_property_value(fraud_vertex, 'rule', 'unknown'),
+                            'reason': self.get_property_value(fraud_vertex, 'reason', ''),
+                            'is_fraud': True  # If there's a fraud result vertex, it means fraud was detected
+                        }
+                        logger.info(f"Fraud result properties: {fraud_result}")
+                        fraud_results.append(fraud_result)
                             
                     # logger.info(f"Found {len(fraud_results)} fraud results for transaction {transaction_id}")
                     
                     return {
                         "transaction": transaction_data,
                         "source_account": source_account_data,
-                        "destination_account": destination_account_data
-                        # "fraud_results": fraud_results
+                        "destination_account": destination_account_data,
+                        "fraud_results": fraud_results
                     }
                 else:
                     # No mock data - return None if we don't have complete real data
@@ -1190,10 +1193,10 @@ class GraphService:
                 loop = asyncio.get_event_loop()
                 
                 def update_transaction():
-                    vertices = self.client.V().has_label("transaction").has("transaction_id", transaction_id).to_list()
+                    vertices = self.client.V(transaction_id).to_list()
                     if vertices:
                         vertex = vertices[0]
-                        vertex.property("status", status).iterate()
+                        self.client.V(vertex).property("status", status).iterate()
                         return True
                     return False
                 
@@ -1828,29 +1831,17 @@ class GraphService:
                     results_data = []
                     
                     # Find transaction and its fraud results
-                    transaction_vertices = self.client.V().has_label("transaction").has("transaction_id", transaction_id).to_list()
-                    if not transaction_vertices:
-                        return []
-                    
-                    transaction_vertex = transaction_vertices[0]
-                    result_vertices = self.client.V(transaction_vertex).out("flagged_by").to_list()
+                    result_vertices = self.get_out_edge(transaction_id, "flagged_by")
                     
                     for result_vertex in result_vertices:
-                        result_props = {}
-                        props = self.client.V(result_vertex).value_map().next()
-                        for key, value in props.items():
-                            if isinstance(value, list) and len(value) > 0:
-                                result_props[key] = value[0]
-                            else:
-                                result_props[key] = value
-                        
+                        # Extract properties using helper function (consistent with get_transaction_detail)
                         results_data.append({
-                            "fraud_score": result_props.get("fraud_score", 0.0),
-                            "status": result_props.get("status", ""),
-                            "rule": result_props.get("rule", ""),
-                            "evaluation_timestamp": result_props.get("evaluation_timestamp", ""),
-                            "reason": result_props.get("reason", ""),
-                            "details": result_props.get("details", "")
+                            "fraud_score": self.get_property_value(result_vertex, 'fraud_score', 0.0),
+                            "status": self.get_property_value(result_vertex, 'status', ''),
+                            "rule": self.get_property_value(result_vertex, 'rule', ''),
+                            "evaluation_timestamp": self.get_property_value(result_vertex, 'evaluation_timestamp', ''),
+                            "reason": self.get_property_value(result_vertex, 'reason', ''),
+                            "details": self.get_property_value(result_vertex, 'details', '')
                         })
                     
                     return results_data

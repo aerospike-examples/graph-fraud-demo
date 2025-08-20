@@ -310,11 +310,11 @@ async def search_transactions(
                 "timestamp": transaction.get("timestamp", ""),
                 "location": transaction.get("location_city", ""),
                 "status": transaction.get("status", "completed"),
-                "fraud_score": 0.0,  # TODO: Needs to be updated when fraud results are enabled
+                "fraud_score": transaction.get("fraud_score", 0.0),
                 "transaction_type": transaction.get("transaction_type", "transfer"),
-                "is_fraud": False,   # TODO: Needs to be updated when fraud results are enabled
-                "fraud_status": "CLEAN",
-                "fraud_reason": "",
+                "is_fraud": transaction.get("is_fraud", False),
+                "fraud_status": transaction.get("fraud_status", "CLEAN"),
+                "fraud_reason": transaction.get("fraud_reason", ""),
                 "device_id": None
             }
             

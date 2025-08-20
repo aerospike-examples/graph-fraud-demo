@@ -111,7 +111,8 @@ class TransactionGeneratorService:
         self.generated_transactions = []
         self.transaction_counter = 0
         self.task = None
-        
+        self.account_vertices = []
+
         # High-risk jurisdictions for international transfers
         self.high_risk_jurisdictions = ['Dubai', 'Bahrain', 'Thailand', 'Cayman Islands', 'Panama']
         
@@ -238,15 +239,15 @@ class TransactionGeneratorService:
                 # - Fraud detection: await self._run_fraud_detection(transaction)
                 
                 # Keep only last 1000 transactions
-                if len(self.generated_transactions) > 1000:
-                    self.generated_transactions = self.generated_transactions[-1000:]
+                # if len(self.generated_transactions) > 1000:
+                #     self.generated_transactions = self.generated_transactions[-1000:]
                 
                 # Log transaction
                 #self._log_transaction(transaction)
                 
                 # Log statistics every 10 transactions
-                if self.transaction_counter % 10 == 0:
-                    self._log_statistics()
+                # if self.transaction_counter % 10 == 0:
+                #     self._log_statistics()
                 
                 # Wait for next generation
                 await asyncio.sleep(1.0 / self.generation_rate)
@@ -299,12 +300,21 @@ class TransactionGeneratorService:
             loop = asyncio.get_event_loop()
             
             def get_random_accounts():
-                return self.graph_service.client.V().has_label("account").limit(2).to_list()
+                # Get all account vertices the first time. Then check to see if the accounts are already in the list. If not, get the next 2 accounts.
+                # If the accounts are already in the list, then pick two random accounts from the list.
+                if len(self.account_vertices) == 0:
+                    account_vertices = self.graph_service.client.V().has_label("account").id_().to_list()
+                    self.account_vertices = account_vertices
+                
+                    # Pick two random accounts from the list
+                sender_account_id, receiver_account_id = random.sample(self.account_vertices, 2)
+                return [sender_account_id, receiver_account_id]
+            
             
             account_vertices = await loop.run_in_executor(None, get_random_accounts)
             
-            sender_account_id = str(account_vertices[0].id)
-            receiver_account_id = str(account_vertices[1].id)
+            sender_account_id = str(account_vertices[0])
+            receiver_account_id = str(account_vertices[1])
             logger.debug(f"Found random accounts: {sender_account_id} and {receiver_account_id}")
             return sender_account_id, receiver_account_id
                 
@@ -427,6 +437,7 @@ class TransactionGeneratorService:
                 "amount": round(amount, 2),
                 "currency": "INR",
                 "transaction_type": transaction_type,
+                "method": "electronic_transfer",
                 "location": random.choice(self.normal_locations),
                 "timestamp": datetime.now().isoformat(),
                 "status": "completed",
@@ -435,7 +446,9 @@ class TransactionGeneratorService:
             
             # Store in memory
             self.generated_transactions.append(transaction)
-            
+            # Store only last 1000 transactions in memory
+            if len(self.generated_transactions) > 1000:
+                self.generated_transactions = self.generated_transactions[-1000:]
             # Store in graph database
             await self._store_transaction_in_graph(transaction)
             
