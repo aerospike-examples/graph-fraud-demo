@@ -12,6 +12,7 @@ import logging
 import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+from gremlin_python.process.graph_traversal import __
 from services.graph_service import GraphService
 from services.performance_monitor import performance_monitor
 
@@ -115,41 +116,25 @@ class RT2FraudService:
                 def find_connected_accounts():
                     try:
                         # Find the account vertex
-                        account_vertices = self.graph_service.client.V().has_label("account").has("account_id", account_id).to_list()
-                        if not account_vertices:
-                            logger.warning(f"⚠️ RT2: Account {account_id} not found in graph")
-                            return []
-                        
-                        account_vertex = account_vertices[0]
+                        # We already have the account ID, no need to fetch the vertex again
+                        account_id_to_use = account_id
                         connected_account_ids = []
                         
-                        # Find accounts that received money FROM this account
+                        # Find all accounts connected via transactions (same logic as RT1)
                         # account --TRANSFERS_TO--> transaction --TRANSFERS_FROM--> connected_account
-                        outgoing_connected_accounts = (self.graph_service.client.V(account_vertex)
-                                                     .out("TRANSFERS_TO")
-                                                     .out("TRANSFERS_FROM")
-                                                     .has_label("account")
-                                                     .valueMap("account_id")
-                                                     .to_list())
+                        connected_accounts = (self.graph_service.client.V(account_id_to_use)
+                                           .both("TRANSFERS_TO", "TRANSFERS_FROM")  # Go to transactions
+                                           .both("TRANSFERS_TO", "TRANSFERS_FROM")  # Go from transactions to connected accounts
+                                           .has_label("account")                     # Filter to only accounts
+                                           .dedup()                                  # Remove duplicates
+                                           .to_list())
                         
-                        for acc_props in outgoing_connected_accounts:
-                            acc_id = acc_props.get('account_id', ['Unknown'])
-                            if isinstance(acc_id, list) and acc_id:
-                                connected_account_ids.append(acc_id[0])
-                        
-                        # Find accounts that sent money TO this account
-                        # connected_account --TRANSFERS_TO--> transaction --TRANSFERS_FROM--> account
-                        incoming_connected_accounts = (self.graph_service.client.V(account_vertex)
-                                                     .in_("TRANSFERS_FROM")
-                                                     .in_("TRANSFERS_TO")
-                                                     .has_label("account")
-                                                     .valueMap("account_id")
-                                                     .to_list())
-                        
-                        for acc_props in incoming_connected_accounts:
-                            acc_id = acc_props.get('account_id', ['Unknown'])
-                            if isinstance(acc_id, list) and acc_id:
-                                connected_account_ids.append(acc_id[0])
+                        # Process connected accounts
+                        for conn in connected_accounts:
+                            # Extract ID from vertex object (same as RT1)
+                            connected_account_id = str(conn.id) if hasattr(conn, 'id') else str(conn)
+                            if connected_account_id and connected_account_id != account_id_to_use:
+                                connected_account_ids.append(connected_account_id)
                         
                         logger.info(f"🔍 RT2: Account {account_id} has {len(connected_account_ids)} connected accounts")
                         return connected_account_ids
@@ -180,59 +165,38 @@ class RT2FraudService:
             List of flagged device IDs connected to the accounts
         """
         try:
-            flagged_devices = []
             loop = asyncio.get_event_loop()
             
-            for account_id in account_ids:
-                def check_account_devices():
-                    try:
-                        # Find the account vertex
-                        account_vertices = self.graph_service.client.V().has_label("account").has("account_id", account_id).to_list()
-                        if not account_vertices:
-                            logger.warning(f"⚠️ RT2: Account {account_id} not found in graph")
-                            return []
-                        
-                        account_vertex = account_vertices[0]
-                        
-                        # Get the user who owns this account
-                        user_vertices = self.graph_service.client.V(account_vertex).in_("OWNS").to_list()
-                        if not user_vertices:
-                            logger.warning(f"⚠️ RT2: No user found for account {account_id}")
-                            return []
-                        
-                        user_vertex = user_vertices[0]
-                        
-                        # Get all devices used by this user
-                        device_vertices = self.graph_service.client.V(user_vertex).out("USES_DEVICE").to_list()
-                        
-                        account_flagged_devices = []
-                        for device_vertex in device_vertices:
-                            # Get device properties
-                            device_props = self.graph_service.client.V(device_vertex).value_map().next()
-                            
-                            # Check if device is flagged
-                            fraud_flag = device_props.get('fraud_flag', [False])
-                            if isinstance(fraud_flag, list):
-                                fraud_flag = fraud_flag[0] if fraud_flag else False
-                            
-                            if fraud_flag:
-                                device_id = device_props.get('device_id', ['Unknown'])
-                                if isinstance(device_id, list):
-                                    device_id = device_id[0] if device_id else 'Unknown'
-                                account_flagged_devices.append(device_id)
-                                logger.info(f"🔍 RT2: Found flagged device {device_id} connected to account {account_id}")
-                        
-                        return account_flagged_devices
-                        
-                    except Exception as e:
-                        logger.error(f"❌ RT2: Error checking devices for account {account_id}: {e}")
-                        return []
-                
-                account_flagged_devices = await loop.run_in_executor(None, check_account_devices)
-                flagged_devices.extend(account_flagged_devices)
+            def find_flagged_devices():
+                try:
+                    # Single optimized query: Find all flagged devices connected to accounts through OWNS relationship
+                    # Path: account_ids -> OWNS -> user -> uses -> device (where fraud_flag = True)
+                    flagged_devices = (self.graph_service.client.V(account_ids)
+                                     .in_("OWNS")                    # Go to users who own these accounts
+                                     .out("USES")                    # Go to devices used by these users
+                                     .has("fraud_flag", True)        # Filter to only flagged devices # Get device IDs
+                                     .dedup()                        # Remove duplicates
+                                     .to_list())
+                    
+                 
+                    
+                    # Extract device IDs from the results
+                    device_ids = []
+                    for device_vertex in flagged_devices:
+                        # Extract ID from vertex object (same as RT1)
+                        device_id = str(device_vertex.id) if hasattr(device_vertex, 'id') else str(device_vertex)
+                        if device_id and device_id != 'Unknown':
+                            device_ids.append(device_id)
+                    
+                    logger.info(f"🔍 RT2: Found {len(device_ids)} flagged devices connected to {len(account_ids)} accounts")
+                    return device_ids
+                    
+                except Exception as e:
+                    logger.error(f"❌ RT2: Error finding flagged devices: {e}")
+                    return []
             
-            # Remove duplicates
-            return list(set(flagged_devices))
+            flagged_devices = await loop.run_in_executor(None, find_flagged_devices)
+            return flagged_devices
             
         except Exception as e:
             logger.error(f"❌ RT2: Error checking accounts for flagged devices: {e}")
@@ -248,9 +212,6 @@ class RT2FraudService:
             
             def create_fraud_result():
                 try:
-                    # Find the transaction vertex
-                    transaction_vertex = self.graph_service.client.V().has_label("transaction").has("transaction_id", transaction['id']).next()
-                    
                     # Create FraudCheckResult vertex
                     fraud_result_vertex = (self.graph_service.client.add_v("FraudCheckResult")
                                          .property("fraud_score", fraud_result["fraud_score"])
@@ -262,7 +223,11 @@ class RT2FraudService:
                                          .next())
                     
                     # Create flagged_by edge from transaction to fraud result
-                    self.graph_service.client.add_e("flagged_by").from_(transaction_vertex).to(fraud_result_vertex).iterate()
+                    # Use proper Gremlin syntax with __ for child traversals (same as RT1)
+                    edge = (self.graph_service.client.add_e("flagged_by")
+                           .from_(__.V(transaction['id']))
+                           .to(__.V(fraud_result_vertex.id))
+                           .next())
                     
                     logger.info(f"📊 Created RT2 FraudCheckResult for transaction {transaction['id']}: {fraud_result['status']} (Score: {fraud_result['fraud_score']})")
                     return True
