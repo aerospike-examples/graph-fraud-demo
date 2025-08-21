@@ -13,6 +13,8 @@ const navigation = [
   // { name: 'Fraud Patterns', href: '/fraud-patterns' },
   // { name: 'Graph View', href: '/graph' },
   { name: 'Admin', href: '/admin' },
+  { name: 'API Docs', href: '/docs' },
+  { name: 'Zipkin', href: '/tracing' },
 ]
 
 export default function Navbar() {

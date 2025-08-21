@@ -602,7 +602,7 @@ export default function AdminPage() {
       // Poll for status updates every 2 seconds
       interval = setInterval(async () => {
         try {
-          const response = await fetch('http://localhost:4000/transaction-generation/status')
+          const response = await fetch('/api/transaction-generation/status')
           if (response.ok) {
             const statusData = await response.json()
             
@@ -637,7 +637,7 @@ export default function AdminPage() {
     
     const checkInitialStatus = async () => {
       try {
-        const response = await fetch('http://localhost:4000/transaction-generation/status')
+        const response = await fetch('/api/transaction-generation/status')
         if (response.ok) {
           const statusData = await response.json()
           
@@ -668,7 +668,7 @@ export default function AdminPage() {
   const handleStartGeneration = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`http://localhost:4000/transaction-generation/start?rate=${generationRate}`, {
+      const response = await fetch(`/api/transaction-generation/start?rate=${generationRate}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -695,7 +695,7 @@ export default function AdminPage() {
   const handleStopGeneration = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('http://localhost:4000/transaction-generation/stop', {
+      const response = await fetch('/api/transaction-generation/stop', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -870,7 +870,7 @@ export default function AdminPage() {
     
     setPatternLoading(true)
     try {
-      const response = await fetch('http://localhost:4000/fraud-patterns/run', {
+      const response = await fetch('/api/fraud-patterns/run', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -894,7 +894,7 @@ export default function AdminPage() {
   const runAllPatterns = async () => {
     setPatternLoading(true)
     try {
-      const response = await fetch('http://localhost:4000/detect/fraudulent-transactions')
+      const response = await fetch('/api/detect/fraudulent-transactions')
       if (response.ok) {
         const data = await response.json()
         setPatternResults(data.results || [])

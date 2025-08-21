@@ -15,9 +15,7 @@ services:
       retries: 4
   aerospike-graph-service:
     image: aerospike/aerospike-graph-service:3.0.0
-    container_name:
-      aerospike-graph-service
-      #    restart: always
+    container_name: asgraph-service
     depends_on:
       aerospike-db:
         condition: service_healthy
@@ -33,7 +31,7 @@ services:
       - aerospike.graph.query-tracing.threshold-ms=5
       - aerospike.graph.query-tracing.opentelemetry-host=zipkin
     volumes:
-      - ./:/data
+      - ./data:/data
     networks:
       - asgraph_net
   zipkin:
@@ -43,7 +41,44 @@ services:
       - asgraph_net
     ports:
       - "9411:9411"
-
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    container_name: "asgraph-backend"
+    environment:
+      GRAPH_HOST_ADDRESS: "asgraph-service"
+    depends_on:
+      - aerospike-db
+      - aerospike-graph-service
+    networks:
+      - asgraph_net
+    ports:
+      - "4000:4000"
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    container_name: "asgraph-frontend"
+    depends_on:
+      - backend
+    networks:
+      - asgraph_net
+    ports:
+      - "4001:4001"
+  caddy:
+    image: caddy
+    container_name: asgraph-caddy
+    depends_on:
+      - backend
+      - frontend
+      - zipkin
+    volumes:
+      - ./conf:/etc/caddy
+    networks:
+      - asgraph_net
+    ports:
+      - "8080:8080"
 networks:
   asgraph_net:
     name: asgraph_net

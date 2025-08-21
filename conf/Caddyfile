@@ -1,0 +1,11 @@
+:8080 {
+    handle_path /api* {
+        rewrite * {path}
+        reverse_proxy asgraph-backend:4000
+    }
+    handle_path /zipkin* {
+        rewrite * /zipkin{path}
+        reverse_proxy asgraph-zipkin:9411
+    }
+    reverse_proxy asgraph-frontend:4001
+}

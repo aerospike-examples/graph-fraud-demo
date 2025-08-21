@@ -134,7 +134,7 @@ export default function UserDetailPage() {
         const detailedData = await Promise.all(
           userDetails.recent_transactions.map(async (transaction) => {
             try {
-              const response = await fetch(`http://localhost:4000/transaction/${transaction.id}`)
+              const response = await fetch(`/api/transaction/${transaction.id}`)
               if (response.ok) {
                 const detail = await response.json()
                 return {

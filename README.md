@@ -4,17 +4,13 @@ A comprehensive fraud detection system built with FastAPI backend and Next.js fr
 
 ## 🚀 Quick Start
 
-**New to this project?** Check out our detailed [Setup Instructions](./setup.md) for complete installation and configuration guidance.
-
-**Already set up?** Run the application:
-```bash
-./run_app.sh
+Run Docker compose to build. the necessary containers
+```
+DOCKER_BUILDKIT=0 docker compose up -d
 ```
 
 **Access the application:**
-- Frontend: http://localhost:4001
-- Backend API: http://localhost:4000
-- API Documentation: http://localhost:4000/docs
+- Frontend: http://localhost:8080
 
 ## 🏗️ Architecture
 
@@ -64,10 +60,10 @@ The system implements real-time fraud detection using graph-based analysis:
 
 ## 📚 Documentation
 
-- **[Setup Instructions](./setup.md)** - Complete installation and configuration guide
-- **[Data Model](./datamodel.md)** - Detailed data structure documentation
-- **[RT1 Fraud Detection](./RT1_FRAUD_DETECTION.md)** - RT1 implementation details
-- **[Project Plan](./plan.md)** - Development roadmap and milestones
+- **[Setup Instructions](./docs/setup.md)** - Complete installation and configuration guide
+- **[Data Model](./docs/datamodel.md)** - Detailed data structure documentation
+- **[RT1 Fraud Detection](./docs/RT1_FRAUD_DETECTION.md)** - RT1 implementation details
+- **[Project Plan](./docs/plan.md)** - Development roadmap and milestones
 
 ## 📄 License
 

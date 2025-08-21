@@ -8,6 +8,7 @@ import json
 import os
 
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
+from gremlin_python.driver.aiohttp.transport import AiohttpTransport
 from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import __
 from gremlin_python.process.traversal import P
@@ -22,7 +23,7 @@ from typing import List, Dict, Any
 logger = logging.getLogger('fraud_detection.graph')
 
 class GraphService:
-    def __init__(self, host: str = "localhost", port: int = 8182):
+    def __init__(self, host: str = os.environ.get('GRAPH_HOST_ADDRESS') or 'localhost', port: int = 8182):
         self.host = host
         self.port = port
         self.client = None
@@ -43,7 +44,7 @@ class GraphService:
             logger.info(f"🔄 Connecting to Aerospike Graph: {url}")
             
             # Use the same approach as the working sample
-            self.connection = DriverRemoteConnection(url, "g")
+            self.connection = DriverRemoteConnection(url, "g", transport_factory=lambda:AiohttpTransport(call_from_event_loop=True))
             self.client = traversal().with_remote(self.connection)
             
             # Test connection using the same method as the sample

@@ -7,9 +7,6 @@ import time
 from datetime import datetime, timedelta
 import random
 import uuid
-import os
-import sys
-import argparse
 
 from services.graph_service import GraphService
 from services.performance_monitor import performance_monitor
@@ -25,20 +22,6 @@ from logging_config import setup_logging, get_logger
 setup_logging()
 logger = get_logger('fraud_detection.api')
 
-# Global variables for command line flags
-args = None
-
-# Parse command line arguments
-def parse_arguments():
-    parser = argparse.ArgumentParser(description='Fraud Detection API Server')
-    parser.add_argument('-d', '--delete', action='store_true', 
-                       help='Delete all data from the graph database on startup')
-    parser.add_argument('-l', '--load-users', action='store_true',
-                       help='Load data from users.json on startup (same as /seed-data endpoint)')
-    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
-    parser.add_argument('--port', type=int, default=4000, help='Port to bind to (default: 4000)')
-    return parser.parse_args()
-
 # Initialize services
 graph_service = GraphService()
 transaction_generator = get_transaction_generator(graph_service)
@@ -49,50 +32,7 @@ async def lifespan(app: FastAPI):
     
     # Startup
     logger.info("Starting Fraud Detection API")
-    logger.info(f"Command line arguments: {args}")
     await graph_service.connect()
-    
-    # Handle command line flags
-    if args and args.delete:
-        logger.info("🗑️  Deleting all data from graph database...")
-        try:
-            result = await graph_service.delete_all_data()
-            if "error" in result:
-                logger.error(f"Failed to delete data: {result['error']}")
-            else:
-                logger.info("✅ All data deleted successfully")
-        except Exception as e:
-            logger.error(f"Error during data deletion: {e}")
-    
-    if args and args.load_users:
-        logger.info("📂 Bulk loading data from CSV files...")
-        try:
-            result = await graph_service.bulk_load_csv_data()
-            if not result["success"]:
-                logger.error(f"Failed to load data: {result['error']}")
-            else:
-                stats = result["statistics"]
-                logger.info(f"✅ Data bulk loaded successfully: {stats['users']} users, {stats['accounts']} accounts, {stats['devices']} devices, {stats['total_edges']} edges")
-        except Exception as e:
-            logger.error(f"Error during data loading: {e}")
-    
-    # Only automatically load CSV data if AUTO_LOAD_DATA is set to true and no flags are specified
-    auto_load_data = os.getenv('AUTO_LOAD_DATA', 'false').lower() == 'true'
-    logger.info(f"AUTO_LOAD_DATA environment variable: {auto_load_data}")
-    
-    if auto_load_data and (not args or (not args.delete and not args.load_users)):
-        logger.info("Bulk loading CSV data into graph database...")
-        try:
-            result = await graph_service.bulk_load_csv_data()
-            if not result["success"]:
-                logger.error(f"Failed to load data: {result['error']}")
-            else:
-                stats = result["statistics"]
-                logger.info(f"✅ Data bulk loaded successfully: {stats['users']} users, {stats['accounts']} accounts, {stats['devices']} devices, {stats['total_edges']} edges")
-        except Exception as e:
-            logger.error(f"Error during data loading: {e}")
-    elif not args or (not args.delete and not args.load_users):
-        logger.info("Skipping automatic data loading (no flags specified and AUTO_LOAD_DATA=false)")
     
     yield
     
@@ -110,7 +50,7 @@ app = FastAPI(
 # CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4001", "http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -746,9 +686,3 @@ async def reset_performance_metrics():
     except Exception as e:
         logger.error(f"❌ Failed to reset performance metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to reset performance metrics: {str(e)}")
-
-if __name__ == "__main__":
-    args = parse_arguments() # Parse arguments here
-    logger.info(f"Parsed arguments: delete={args.delete}, load_users={args.load_users}, host={args.host}, port={args.port}")
-    import uvicorn
-    uvicorn.run(app, host=args.host, port=args.port) 
