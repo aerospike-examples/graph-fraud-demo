@@ -54,7 +54,7 @@ interface TimelineResponse {
   rt3: TimelineData[]
 }
 
-export default function PerformanceDashboard() {
+export default function Performance() {
   const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null)
   const [timelineData, setTimelineData] = useState<TimelineResponse | null>(null)
   const [isLoading, setIsLoading] = useState(false)

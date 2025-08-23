@@ -787,8 +787,10 @@ class GraphService:
                             'fraud_score': self.get_property_value(fraud_vertex, 'fraud_score', 0.0),
                             'status': self.get_property_value(fraud_vertex, 'status', 'unknown'),
                             'rule': self.get_property_value(fraud_vertex, 'rule', 'unknown'),
-                            'reason': self.get_property_value(fraud_vertex, 'reason', ''),
-                            'is_fraud': True  # If there's a fraud result vertex, it means fraud was detected
+                            "timestamp": self.get_property_value(fraud_vertex, 'evaluation_timestamp', ''),
+                            "reason": self.get_property_value(fraud_vertex, 'reason', ''),
+                            "details": self.get_property_value(fraud_vertex, 'details', ''),
+                            'is_fraud': True,  # If there's a fraud result vertex, it means fraud was detected
                         }
                         logger.info(f"Fraud result properties: {fraud_result}")
                         fraud_results.append(fraud_result)

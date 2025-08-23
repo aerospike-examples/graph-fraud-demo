@@ -60,6 +60,8 @@ services:
       context: .
       dockerfile: frontend.Dockerfile
     container_name: "asgraph-frontend"
+    environment:
+      PUBLIC_URL: "http://localhost:8080"
     depends_on:
       - backend
     networks:
