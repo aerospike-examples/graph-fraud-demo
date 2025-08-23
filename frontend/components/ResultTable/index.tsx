@@ -44,7 +44,8 @@ const Results = ({
 }: Props) => {
     const pathname = usePathname();
     const [currentPage, setCurrentPage] = useState(1)
-    const [pageSize, setPageSize] = useState(10)   
+    const [pageSize, setPageSize] = useState(10)
+    const [pages, setPages] = useState(totalPages)
     const [sortBy, setSortBy] = useState<string>(options.filter(opt => opt.defaultSort)[0]?.key ?? options.find(opt => opt.sortable)?.key ?? "")
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
     const [results, setResults] = useState<Record<string, any>[]>([])
@@ -55,21 +56,21 @@ const Results = ({
         return sortOrder === 'asc' ? '↑' : '↓'
     }
 
-    const fetchData = async () => {
+    const fetchData = async (orderBy = sortBy, order= sortOrder) => {
         setLoading(true)
-        const response = await fetch(`${path}?page=${currentPage}&page_size=${pageSize}`);
+        const response = await fetch(`${path}?page=${currentPage}&page_size=${pageSize}&order_by=${orderBy}&order=${order}`);
         const data = await response.json()
         setResults(data[dataKey])
+        setPages(data.total_pages)
         setLoading(false)
     }
 
     const handleSort = (key: string) => {
         let order: 'asc' | 'desc' = 'asc';
-        if(sortBy === key) order = sortOrder === 'asc' ? 'desc' : 'asc'
-        else {
-            setSortBy(key)
-            setSortOrder(order)
-        }
+        if(sortBy === key) order = sortOrder === 'asc' ? 'desc' : 'asc'        
+        setSortBy(key)
+        setSortOrder(order)
+        fetchData(key, order)
     }
 
     useEffect(() => {
@@ -155,7 +156,7 @@ const Results = ({
                 <Pagination
                     title={title}
                     currentPage={currentPage}
-                    totalPages={totalPages}
+                    totalPages={pages}
                     pageSize={pageSize}
                     totalEntries={totalEntries}
                     setPageSize={setPageSize}

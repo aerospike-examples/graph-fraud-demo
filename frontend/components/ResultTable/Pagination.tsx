@@ -48,6 +48,13 @@ const Pagination = ({
     handlePagination,
     setPageSize
 }: Props) => {
+    const handlePageSize = (size: number) => {
+        setPageSize(size)
+        if((((currentPage - 1) * size) + 1) > totalEntries) {
+            handlePagination(1)
+        }
+    }
+
     return (totalPages > 1 &&
         <div className="flex items-center justify-between w-full mt-4">
             <div className="flex gap-6 items-center">
@@ -59,7 +66,7 @@ const Pagination = ({
                             aria-label={`${size} per page`}
                             title={`${size} per page`}
                             variant={pageSize === size ? "default" : "outline"}
-                            onClick={() => setPageSize(size)} 
+                            onClick={() => handlePageSize(size)}
                             contents={size} />
                     ))}
                     <span className='text-sm text-muted-foreground'>per page</span>

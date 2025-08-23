@@ -24,7 +24,7 @@ interface PaginatedUsers {
 }
 
 export default async function UsersPage() {
-    const response = await api.get(`/users?page=1&page_size=20`)
+    const response = await api.get('/users')
     const { users, total, total_pages }: PaginatedUsers = response.data
 	
   	return (

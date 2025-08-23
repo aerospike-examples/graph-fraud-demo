@@ -11,7 +11,7 @@ from gremlin_python.driver.driver_remote_connection import DriverRemoteConnectio
 from gremlin_python.driver.aiohttp.transport import AiohttpTransport
 from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import __
-from gremlin_python.process.traversal import P
+from gremlin_python.process.traversal import P, Order
 
 from models.schemas import (
     User, Account, Device, Transaction, UserSummary, TransactionDetail,
@@ -966,7 +966,7 @@ class GraphService:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.get_dashboard_stats_sync)
 
-    async def get_users_paginated(self, page: int, page_size: int) -> Dict[str, Any]:
+    async def get_users_paginated(self, page: int, page_size: int, order_by: str, order: str ) -> Dict[str, Any]:
         """Get paginated list of all users"""
         try:
             if self.client:
@@ -976,7 +976,7 @@ class GraphService:
                 
                 # Query real graph using run_in_executor to avoid event loop conflict
                 def get_all_users():
-                    return self.client.V().has_label("user").to_list()
+                    return self.client.V().has_label("user").order().by(order_by, Order.asc if order == 'asc' else Order.desc).to_list()
                 
                 all_users = await loop.run_in_executor(None, get_all_users)
                 
@@ -1006,30 +1006,6 @@ class GraphService:
                         logger.error(f"Error getting user properties: {e}")
                         continue
                     
-                    # Get user's accounts using run_in_executor
-                    accounts = []
-                    try:
-                        def get_user_accounts():
-                            account_vertices = self.client.V(user_vertex).out("OWNS").to_list()
-                            acc_list = []
-                            for acc_vertex in account_vertices:
-                                try:
-                                    acc_prop_map = self.client.V(acc_vertex).value_map().next()
-                                    acc_props = {}
-                                    for key, value in acc_prop_map.items():
-                                        if isinstance(value, list) and len(value) > 0:
-                                            acc_props[key] = value[0]
-                                        else:
-                                            acc_props[key] = value
-                                    acc_list.append(acc_props)
-                                except Exception as e:
-                                    logger.error(f"Error getting account properties: {e}")
-                            return acc_list
-                        
-                        accounts = await loop.run_in_executor(None, get_user_accounts)
-                    except Exception as e:
-                        logger.error(f"Error getting user accounts: {e}")
-                    
                     users_data.append({
                         'id': user_vertex.id,
                         'name': user_props.get('name', ''),
@@ -1040,7 +1016,6 @@ class GraphService:
                         'phone':user_props.get('phone', ''),
                         'risk_score': user_props.get('risk_score', 0.0),
                         'signup_date': user_props.get('signup_date', ''),
-                        'accounts': accounts
                     })
                 
                 return {
@@ -1234,7 +1209,7 @@ class GraphService:
         try:
             if self.client:
                 # Query real graph - use synchronous calls like get_users_paginated
-                all_transactions = self.client.V().has_label("transaction").to_list()
+                all_transactions = self.client.V().has_label("transaction").order().by('timestamp', Order.desc).to_list()
                 
                 # Paginate
                 start_idx = (page - 1) * page_size

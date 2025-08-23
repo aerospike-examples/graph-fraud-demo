@@ -190,11 +190,13 @@ async def get_dashboard_stats():
 @app.get("/users")
 async def get_users(
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(12, ge=1, le=100, description="Number of users per page")
+    page_size: int = Query(10, ge=1, le=100, description="Number of users per page"),
+    order_by: str = Query('name', description="Field to order results by"),
+    order: str = Query('asc', description="Direction to order results")
 ):
     """Get paginated list of all users"""
     try:
-        results = await graph_service.get_users_paginated(page, page_size)
+        results = await graph_service.get_users_paginated(page, page_size, order_by, order)
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
