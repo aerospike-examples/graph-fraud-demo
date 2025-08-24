@@ -201,6 +201,15 @@ async def get_users(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
 
+@app.get("/users/stats")
+async def get_user_stats():
+    """Get user stats"""
+    try:
+        results = await graph_service.get_user_stats()
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
+
 @app.get("/users/search")
 async def search_users(
     query: str = Query(..., description="Search term for user name or ID"),

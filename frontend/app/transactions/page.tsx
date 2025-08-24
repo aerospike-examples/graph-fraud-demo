@@ -1,7 +1,7 @@
 'use server'
 
 import { Card, CardContent } from '@/components/ui/card'
-import { CreditCard } from 'lucide-react'
+import { CreditCard, Shield } from 'lucide-react'
 import { api } from '@/lib/api'
 import Results from '@/components/ResultTable'
 
@@ -45,17 +45,58 @@ export default async function TransactionsPage() {
           			<p className="text-muted-foreground">Search and explore transaction details and patterns.</p>
         		</div>
       		</div>
-			<Card>
-				<CardContent className="p-6">
-					<div className="flex items-center justify-between">
-						<div>
-							<p className="text-sm font-medium text-muted-foreground">Total Transactions</p>
-							<p className="text-3xl font-bold">{total}</p>
+			<div className="grid gap-4 md:grid-cols-4">
+				<Card>
+					<CardContent className="p-4">
+						<div className="flex items-center justify-between">
+							<div>
+								<p className="text-sm font-medium text-muted-foreground">Total Transactions</p>
+								<p className="text-2xl font-bold">{total}</p>
+							</div>
+							<CreditCard className="h-8 w-8 text-muted-foreground" />
 						</div>
-						<CreditCard className="h-12 w-12 text-muted-foreground" />
-					</div>
-				</CardContent>
-			</Card>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardContent className="p-4">
+						<div className="flex items-center justify-between">
+							<div>
+								<p className="text-sm font-medium text-muted-foreground">Blocked</p>
+								<p className="text-2xl font-bold text-destructive">
+									0
+								</p>
+							</div>
+							<Shield className="h-8 w-8 text-destructive" />
+						</div>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardContent className="p-4">
+						<div className="flex items-center justify-between">
+							<div>
+								<p className="text-sm font-medium text-muted-foreground">Review</p>
+								<p className="text-2xl font-bold text-warning">
+									0
+								</p>
+							</div>
+							<Shield className="h-8 w-8 text-warning" />
+						</div>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardContent className="p-4">
+						<div className="flex items-center justify-between">
+							<div>
+								<p className="text-sm font-medium text-muted-foreground">Clean</p>
+								<p className="text-2xl font-bold text-green-600">
+									0
+								</p>
+							</div>
+							<Shield className="h-8 w-8 text-green-600" />
+						</div>
+					</CardContent>
+				</Card>
+			</div>
 			<Results 
 				title='Transactions'
 				options={[
@@ -105,9 +146,7 @@ export default async function TransactionsPage() {
 					}
 				]}
 				path='/api/transactions'
-				dataKey='transactions'
-				totalPages={total_pages}
-				totalEntries={total} />
+				dataKey='transactions' />
 		</div>
   	)
 } 

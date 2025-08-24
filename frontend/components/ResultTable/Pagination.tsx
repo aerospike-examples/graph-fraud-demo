@@ -32,8 +32,8 @@ const BtnLayout = ({
 interface Props {
     title: string
     currentPage: number
-    totalPages: number
     pageSize: number
+    totalPages: number
     totalEntries: number
     handlePagination: (newPage: number) => void
     setPageSize: Dispatch<SetStateAction<number>>

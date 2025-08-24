@@ -30,8 +30,6 @@ interface Props {
     options: Option[]
     path: string
     dataKey: string
-    totalPages: number
-    totalEntries: number
 }
 
 const Results = ({ 
@@ -39,13 +37,12 @@ const Results = ({
     options,
     path,
     dataKey,
-    totalPages,
-    totalEntries
 }: Props) => {
     const pathname = usePathname();
     const [currentPage, setCurrentPage] = useState(1)
     const [pageSize, setPageSize] = useState(10)
-    const [pages, setPages] = useState(totalPages)
+    const [totalPages, setTotalPages] = useState<number>(0)
+    const [totalEntries, setTotalEntries] = useState<number>(0)
     const [sortBy, setSortBy] = useState<string>(options.filter(opt => opt.defaultSort)[0]?.key ?? options.find(opt => opt.sortable)?.key ?? "")
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
     const [results, setResults] = useState<Record<string, any>[]>([])
@@ -61,7 +58,8 @@ const Results = ({
         const response = await fetch(`${path}?page=${currentPage}&page_size=${pageSize}&order_by=${orderBy}&order=${order}`);
         const data = await response.json()
         setResults(data[dataKey])
-        setPages(data.total_pages)
+        setTotalPages(data.total_pages)
+        setTotalEntries(data.total)
         setLoading(false)
     }
 
@@ -156,7 +154,7 @@ const Results = ({
                 <Pagination
                     title={title}
                     currentPage={currentPage}
-                    totalPages={pages}
+                    totalPages={totalPages}
                     pageSize={pageSize}
                     totalEntries={totalEntries}
                     setPageSize={setPageSize}

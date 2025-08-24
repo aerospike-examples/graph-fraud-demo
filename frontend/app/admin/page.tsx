@@ -25,35 +25,6 @@ export default async function AdminPage() {
 
 	const acctRes = await api.get('/accounts')
     const { accounts } = acctRes.data
-//   // Filter accounts based on search
-//   const filteredFromAccounts = accounts.filter(account => 
-//     account.account_id.toLowerCase().includes(fromAccountSearch.toLowerCase()) ||
-//     account.account_type.toLowerCase().includes(fromAccountSearch.toLowerCase())
-//   )
-  
-//   const filteredToAccounts = accounts.filter(account => 
-//     account.account_id !== fromAccount &&
-//     (account.account_id.toLowerCase().includes(toAccountSearch.toLowerCase()) ||
-//      account.account_type.toLowerCase().includes(toAccountSearch.toLowerCase()))
-//   )
-
-
-//   // Initial status check on component mount
-//   useEffect(() => {
-//     // Only run on client side
-//     if (typeof window === 'undefined') return
-    
-//     const checkInitialStatus = async () => {
-//       try {
-        
-//       } catch (err) {
-//         console.error('Error checking initial status:', err)
-//       }
-//     }
-    
-//     checkInitialStatus()
-//     loadAccounts()
-//   }, [])
 
   	return (
     	<div className="space-y-6">

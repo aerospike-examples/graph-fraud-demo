@@ -15,17 +15,16 @@ interface User {
 	is_flagged: boolean
 }
 
-interface PaginatedUsers {
-	users: User[]
-	total: number
-	page: number
-	page_size: number
-	total_pages: number
+interface UserStats {
+	total_users: number
+	total_low_risk: number
+	total_med_risk: number
+	total_high_risk: number
 }
 
 export default async function UsersPage() {
-    const response = await api.get('/users')
-    const { users, total, total_pages }: PaginatedUsers = response.data
+    const response = await api.get('/users/stats')
+    const { total_users, total_low_risk, total_med_risk, total_high_risk }: UserStats = response.data
 	
   	return (
     	<div className="space-y-6 flex flex-col grow">
@@ -40,7 +39,7 @@ export default async function UsersPage() {
 						<div className="flex items-center justify-between">
 							<div>
 								<p className="text-sm font-medium text-muted-foreground">Total Users</p>
-								<p className="text-2xl font-bold">{total}</p>
+								<p className="text-2xl font-bold">{total_users}</p>
 							</div>
 							<User className="h-8 w-8 text-muted-foreground" />
 						</div>
@@ -52,7 +51,7 @@ export default async function UsersPage() {
 							<div>
 								<p className="text-sm font-medium text-muted-foreground">High Risk</p>
 								<p className="text-2xl font-bold text-destructive">
-									{users.filter(u => u.risk_score >= 70).length}
+									{total_high_risk}
 								</p>
 							</div>
 							<Shield className="h-8 w-8 text-destructive" />
@@ -65,7 +64,7 @@ export default async function UsersPage() {
 							<div>
 								<p className="text-sm font-medium text-muted-foreground">Medium Risk</p>
 								<p className="text-2xl font-bold text-warning">
-									{users.filter(u => u.risk_score >= 25 && u.risk_score < 70).length}
+									{total_med_risk}
 								</p>
 							</div>
 							<Shield className="h-8 w-8 text-warning" />
@@ -78,7 +77,7 @@ export default async function UsersPage() {
 							<div>
 								<p className="text-sm font-medium text-muted-foreground">Low Risk</p>
 								<p className="text-2xl font-bold text-green-600">
-								{users.filter(u => u.risk_score < 25).length}
+									{total_low_risk}
 								</p>
 							</div>
 							<Shield className="h-8 w-8 text-green-600" />
@@ -135,9 +134,7 @@ export default async function UsersPage() {
 					}
 				]}
 				path='/api/users'
-				dataKey='users'
-				totalPages={total_pages}
-				totalEntries={total} />
+				dataKey='users' />
     	</div>
   	)
-} 
+}

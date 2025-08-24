@@ -81,6 +81,7 @@ const Manual = ({ accounts }: { accounts: Account[] }) => {
                                 accounts={accounts}
                                 loading={loading}
                                 value={fromAcct}
+                                comp={toAcct}
                                 setValue={setFromAcct} />
                         </div>
                         <div className="space-y-2">
@@ -90,6 +91,7 @@ const Manual = ({ accounts }: { accounts: Account[] }) => {
                                 accounts={accounts}
                                 loading={loading}
                                 value={toAcct}
+                                comp={fromAcct}
                                 setValue={setToAcct} />
                         </div>
                     </div>

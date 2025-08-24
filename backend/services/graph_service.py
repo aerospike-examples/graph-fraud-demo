@@ -966,6 +966,35 @@ class GraphService:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.get_dashboard_stats_sync)
 
+    async def get_user_stats(self) -> Dict[str, Any]:
+        """Get user statistics"""
+        try:
+            if self.client:
+                def get_user_dashboard_stats():
+                    return self.client.V().has_label("user").values('risk_score').to_list()
+
+                loop = asyncio.get_event_loop()
+                stats = await loop.run_in_executor(None, get_user_dashboard_stats)
+                print(stats)
+                return {
+                    'total_users': len(stats),
+                    'total_low_risk': len(list(filter(lambda x: x < 25, stats))),
+                    'total_med_risk': len(list(filter(lambda x: x >= 25 and x < 70, stats))),
+                    'total_high_risk': len(list(filter(lambda x: x >= 70, stats)))
+                }
+            else:
+                # No graph client available
+                raise Exception("Graph client not available. Cannot get users without graph database connection.")
+            
+        except Exception as e:
+            logger.error(f"Error getting user stats: {e}")
+            return {
+                'total_users': 0,
+                'total_low_risk': 0,
+                'total_med_risk': 0,
+                'total_high_risk': 0
+            }
+
     async def get_users_paginated(self, page: int, page_size: int, order_by: str, order: str ) -> Dict[str, Any]:
         """Get paginated list of all users"""
         try:

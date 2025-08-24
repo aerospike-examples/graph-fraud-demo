@@ -11,6 +11,7 @@ interface Props {
     accounts: Account[]
     loading: boolean
     value: string
+    comp: string
     setValue: Dispatch<SetStateAction<string>>
 }
 
@@ -19,11 +20,13 @@ const Search = ({
     accounts = [],
     loading,
     value,
+    comp,
     setValue
 }: Props) => {
     const [filteredAccts, setFilteredAccts] = useState(accounts)
     const [search, setSearch] = useState("")
     const [show, setShow] = useState(false)
+    const [error, setError] = useState(false)
     const wrapper = useRef<HTMLDivElement | null>(null)
     
     const handleChange = (e: ChangeEvent) => {
@@ -34,14 +37,22 @@ const Search = ({
     }
 
     const handleSelect = (account: { id: string, type: string }) => {
-        setValue(account.id)
-        setSearch(`${account.id} (${account.type})`)
+        setError(false);
+        if(comp !== "" && comp === account.id) {
+            setError(true)
+        }
+        else {
+            setValue(account.id)
+            setSearch(`${account.id} (${account.type})`)
+        }
         setShow(false)
         setFilteredAccts(accounts)
     }
 
     const handleClear = () => {
         setSearch("")
+        setValue("")
+        setError(false)
         setShow(false)
         setFilteredAccts(accounts)
     }
@@ -58,11 +69,11 @@ const Search = ({
     }, [])
 
     useEffect(() => {
-        if(value === "") setSearch("");
-    }, [value])
+        if(value === "") setSearch("")
+        if(comp === "") setError(false)
+    }, [value, comp])
 
     return (
-        <>
         <div className="relative account-dropdown-container" ref={wrapper}>
             <input name={name} type="hidden" value={value} />
             <Input
@@ -104,12 +115,15 @@ const Search = ({
                     Showing first 10 results. Type more to narrow down.
                 </div>}
             </div>}
+            {value && 
+            <div className="text-xs text-green-600 bg-green-50 p-2 rounded absolute w-full">
+                ✓ {search}
+            </div>}
+            {error && 
+            <div className="text-xs text-red-600 bg-red-50 p-2 rounded absolute w-full">
+               ✕ Accounts must be different
+            </div>}
         </div>
-        {value && 
-        <div className="text-sm text-green-600 bg-green-50 p-2 rounded">
-            ✓ Selected: {search}
-        </div>}
-        </>
     )
 }
 
