@@ -60,7 +60,7 @@ const Analysis = ({ fraudResults }: { fraudResults: FraudResult[] }) => (
                                 <div className="mt-3 p-3 bg-gray-100 rounded-lg">
                                     <h5 className="text-sm font-medium mb-2">Detection Details:</h5>
                                     <div className="text-sm text-gray-600">
-                                        <pre className="whitespace-pre-wrap">{result.details}</pre>
+                                        <pre className="whitespace-pre-wrap">{JSON.stringify(JSON.parse(result.details.replace(/'/g,'"')), null, 2)}</pre>
                                     </div>
                                 </div>)}
                             </div>

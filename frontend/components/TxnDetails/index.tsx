@@ -2,10 +2,10 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
-import Accounts from './Accounts'
 import Location from './Location'
 import Analysis from './Analysis'
 import { TransactionDetail } from '@/app/transactions/[id]/page'
+import AccountCard from './AccountCard'
 
 const Details = ({ txnDetails }: { txnDetails: TransactionDetail }) => {
     const [active, setActive] = useState('accounts');
@@ -18,7 +18,10 @@ const Details = ({ txnDetails }: { txnDetails: TransactionDetail }) => {
                 <TabsTrigger value="connections">Location</TabsTrigger>
             </TabsList>
             <TabsContent value="accounts" className="space-y-4">
-                <Accounts source={txnDetails.source_account} destination={txnDetails.destination_account} />
+                <div className="grid gap-4 md:grid-cols-2">
+                    <AccountCard {...txnDetails.source_account} variant='source' />
+                    <AccountCard {...txnDetails.destination_account} variant='destination' />
+                </div>
             </TabsContent>
             <TabsContent value="devices" className="space-y-4">
                 <Analysis fraudResults={txnDetails.fraud_results} />
