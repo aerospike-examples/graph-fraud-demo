@@ -3,6 +3,7 @@
 import Admin from '@/components/Admin'
 import { api } from '@/lib/api'
 import type { Transaction } from '@/components/UserDetails/Transactions'
+import Seed from '@/components/Seed'
 
 export default async function AdminPage() {
 	const initStats = {
@@ -36,6 +37,7 @@ export default async function AdminPage() {
 				</p>
 			</div>
         	<div className="flex items-center space-x-4">
+				<Seed />
 				{/* {stats.isRunning && (
 					<div className="text-right">
 					<div className="text-sm text-muted-foreground">Live Transactions</div>
@@ -60,9 +62,9 @@ export default async function AdminPage() {
         	</div>
       	</div>
       	<Admin 
-			accounts={accounts}
-			initStats={initStats}
-			initRecent={initRecent} />
+          accounts={accounts}
+          initStats={initStats}
+          initRecent={initRecent} />
 
       {/* Scenario Details Dialog */}
       {/* <Dialog open={showScenarioDialog} onOpenChange={setShowScenarioDialog}>

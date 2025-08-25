@@ -1,5 +1,3 @@
-'use server'
-
 import { Card, CardContent } from '@/components/ui/card'
 import { CreditCard, Shield } from 'lucide-react'
 import { api } from '@/lib/api'

@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   description: 'Real-time fraud detection using Aerospike Graph',
 }
 
+export const revalidate = 0
+
 export default function RootLayout({
   	children,
 }: {

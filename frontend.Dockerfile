@@ -4,6 +4,6 @@ RUN mkdir /frontend
 COPY ./frontend /frontend
 WORKDIR /frontend
 
-RUN npm install && npm run build
+RUN npm install
 
-CMD [ "npm", "run", "start"]
+CMD [ "sh", "-c", "npm run build && npm run start"]
