@@ -105,30 +105,82 @@ class UserDataGenerator:
         self.owns_edges = []
         self.uses_edges = []
         
-        # Device sharing patterns for fraud detection
+        # Device sharing patterns for fraud detection - OPTIMIZED
         self.device_pool = []
         self.shared_device_groups = []
-        self.used_devices = set()
+        
+        # Scalable device management
+        self.device_counter = 0  # Counter for efficient device allocation
+        self.max_devices = 0     # Total device pool size
+        self.device_cache = {}   # Cache for device objects
+        self.allocated_devices = set()  # Track allocated device IDs
         
     def generate_device_pool(self):
-        """Create a pool of devices that can be shared between users"""
-        num_devices = int(self.num_users * 1.5)  # More devices than users
+        """Create a scalable device pool without storing all devices in memory"""
+        # Calculate device pool size with reasonable caps for scalability
+        base_devices = int(self.num_users * 3.5)  # 3.5x multiplier for safety
+        min_devices = self.num_users + 500  # Ensure at least 1 device per user + buffer
         
-        for i in range(num_devices):
-            device_type = random.choice(DEVICE_TYPES)
-            device = {
-                'id': f"DEV{str(i+1).zfill(4)}",
-                'type': device_type,
-                'os': random.choice(OPERATING_SYSTEMS[device_type]),
-                'browser': random.choice(BROWSERS[device_type]),
-                'fingerprint': self.faker.sha256(),
-                'first_seen': (datetime.now() - timedelta(days=random.randint(0, 500))).strftime('%Y-%m-%dT%H:%M:%SZ')
-            }
+        # Cap device pool for very large datasets to prevent memory issues
+        max_reasonable_devices = min(10_000_000, base_devices)  # Cap at 10M devices
+        self.max_devices = max(min_devices, max_reasonable_devices)
+        
+        print(f"Creating scalable device pool: {self.max_devices:,} devices for {self.num_users:,} users (ratio: {self.max_devices/self.num_users:.1f}x)")
+        
+        # Pre-generate shared devices for fraud patterns (small subset)
+        self._generate_shared_devices_only()
+        
+        print(f"Pre-generated {len(self.device_pool)} shared devices, remaining {self.max_devices - len(self.device_pool):,} will be created on-demand")
+    
+    def _generate_shared_devices_only(self):
+        """Generate only the devices needed for shared device groups"""
+        # Estimate devices needed for sharing patterns
+        estimated_shared_devices = min(1000, self.num_users // 10)  # Conservative estimate
+        
+        for i in range(estimated_shared_devices):
+            device = self._create_device(i + 1)
             self.device_pool.append(device)
     
+    def _create_device(self, device_num):
+        """Create a single device object"""
+        device_type = random.choice(DEVICE_TYPES)
+        return {
+            'id': f"DEV{str(device_num).zfill(7)}",  # 7 digits for 10M+ devices
+            'type': device_type,
+            'os': random.choice(OPERATING_SYSTEMS[device_type]),
+            'browser': random.choice(BROWSERS[device_type]),
+            'fingerprint': self.faker.sha256(),
+            'first_seen': (datetime.now() - timedelta(days=random.randint(0, 500))).strftime('%Y-%m-%dT%H:%M:%SZ')
+        }
+    
+    def _allocate_devices_efficiently(self, count, user_id):
+        """Efficiently allocate devices using counter-based approach"""
+        if self.device_counter + count > self.max_devices:
+            # Not enough devices remaining
+            available_count = self.max_devices - self.device_counter
+            count = max(0, available_count)
+        
+        if count == 0:
+            print(f"❌ No devices available for user {user_id}")
+            return []
+        
+        # Allocate devices using counter (O(1) operation)
+        allocated_devices = []
+        for i in range(count):
+            device_num = self.device_counter + 1 + i
+            device = self._create_device(device_num)
+            allocated_devices.append(device)
+            self.allocated_devices.add(device['id'])
+        
+        self.device_counter += count
+        return allocated_devices
+    
     def create_shared_device_groups(self):
-        """Create device sharing patterns for fraud detection"""
-        num_groups = max(3, self.num_users // 50)  # Scale groups with user count
+        """Create device sharing patterns for fraud detection - OPTIMIZED"""
+        # Scale groups more conservatively for large datasets
+        num_groups = min(100, max(3, self.num_users // 50))  # Cap at 100 groups
+        
+        print(f"Creating {num_groups} shared device groups for fraud patterns...")
         
         for i in range(num_groups):
             if i == 0:
@@ -147,15 +199,13 @@ class UserDataGenerator:
                 num_shared_devices = random.randint(1, 2)
                 group_type = "family_sharing"
             
-            # Select random users for this group
-            start_user = i * group_size
-            if start_user + group_size <= self.num_users:
-                user_indices = list(range(start_user, start_user + group_size))
+            # Select random users for this group (scattered throughout user range)
+            if self.num_users >= group_size:
+                user_indices = random.sample(range(self.num_users), group_size)
                 
-                # Select devices to be shared
-                available_devices = [d for d in self.device_pool if d['id'] not in self.used_devices]
-                if len(available_devices) >= num_shared_devices:
-                    shared_devices = random.sample(available_devices, num_shared_devices)
+                # Select devices from pre-generated pool
+                if len(self.device_pool) >= num_shared_devices:
+                    shared_devices = random.sample(self.device_pool, num_shared_devices)
                     
                     group = {
                         'users': user_indices,
@@ -164,13 +214,14 @@ class UserDataGenerator:
                     }
                     self.shared_device_groups.append(group)
                     
-                    # Mark devices as used
+                    # Remove shared devices from pool to prevent re-use
                     for device in shared_devices:
-                        self.used_devices.add(device['id'])
+                        self.device_pool.remove(device)
+                        self.allocated_devices.add(device['id'])
     
     def generate_user(self, user_index):
         """Generate a single user with realistic data"""
-        user_id = f"U{str(user_index + 1).zfill(4)}"
+        user_id = f"U{str(user_index + 1).zfill(7)}"  # 7 digits to support millions of users
         
         if self.region == 'american':
             name = self.faker.name()
@@ -208,7 +259,7 @@ class UserDataGenerator:
         user_accounts = []
         
         for i in range(num_accounts):
-            account_id = f"A{str(user_index + 1).zfill(4)}{str(i + 1).zfill(2)}"
+            account_id = f"A{str(user_index + 1).zfill(7)}{str(i + 1).zfill(2)}"  # Support millions of users
             account_type = random.choice(ACCOUNT_TYPES)
             
             if account_type == "credit":
@@ -246,7 +297,7 @@ class UserDataGenerator:
         return user_accounts
     
     def generate_devices_for_user(self, user_id, user_index):
-        """Generate 1-5 devices for a user with fraud patterns"""
+        """Generate 1-5 devices for a user with fraud patterns - OPTIMIZED"""
         user_devices = []
         
         # Check if user is in any shared device group
@@ -263,24 +314,32 @@ class UserDataGenerator:
             # 40% chance to also have 1-2 personal devices
             if random.random() < 0.4:
                 personal_device_count = random.randint(1, 2)
-                available_devices = [d for d in self.device_pool if d['id'] not in self.used_devices]
-                if available_devices:
-                    personal_devices = random.sample(
-                        available_devices, 
-                        min(personal_device_count, len(available_devices))
-                    )
-                    user_devices.extend(personal_devices)
-                    for device in personal_devices:
-                        self.used_devices.add(device['id'])
+                # Use efficient allocation for personal devices
+                personal_devices = self._allocate_devices_efficiently(personal_device_count, user_id)
+                user_devices.extend(personal_devices)
         else:
             # Regular user gets 1-5 unique devices based on realistic distribution
-            device_count = random.choices([1, 2, 3, 4, 5], weights=[0.15, 0.35, 0.30, 0.15, 0.05])[0]
-            available_devices = [d for d in self.device_pool if d['id'] not in self.used_devices]
+            desired_count = random.choices([1, 2, 3, 4, 5], weights=[0.15, 0.35, 0.30, 0.15, 0.05])[0]
             
-            if len(available_devices) >= device_count:
-                user_devices = random.sample(available_devices, device_count)
-                for device in user_devices:
-                    self.used_devices.add(device['id'])
+            # Calculate remaining capacity for reservation (prevent starvation)
+            remaining_users = max(0, self.num_users - user_index - 1)
+            remaining_capacity = max(0, self.max_devices - self.device_counter)
+            
+            if remaining_capacity > 0:
+                # Reserve capacity for remaining users (at least 1 device per user)
+                reservable = max(0, remaining_capacity - remaining_users)
+                max_for_user = min(desired_count, max(1, reservable + 1))
+                
+                # Allocate devices efficiently
+                user_devices = self._allocate_devices_efficiently(max_for_user, user_id)
+                
+                if len(user_devices) < desired_count and len(user_devices) > 0:
+                    if user_index % 1000 == 0:  # Only log every 1000th user to avoid spam
+                        print(f"⚠️ User {user_id} wanted {desired_count} devices but got {len(user_devices)} (reserved capacity for remaining users)")
+            else:
+                if user_index % 1000 == 0:  # Only log every 1000th user
+                    print(f"❌ Warning: User {user_id} got 0 devices! Device pool exhausted.")
+                user_devices = []
         
         # Add user-specific properties to devices and create usage edges
         for device in user_devices:
@@ -305,14 +364,27 @@ class UserDataGenerator:
         return user_devices
     
     def generate_all_data(self):
-        """Generate all users, accounts, and devices"""
-        print(f"Generating {self.num_users} {self.region} users with fraud patterns...")
+        """Generate all users, accounts, and devices - OPTIMIZED for large datasets"""
+        print(f"Generating {self.num_users:,} {self.region} users with fraud patterns...")
         
         # Create device pool and sharing patterns
         self.generate_device_pool()
         self.create_shared_device_groups()
         
-        # Generate users and their relationships
+        # Determine batch size based on dataset size
+        if self.num_users <= 10000:
+            progress_interval = 50
+            batch_size = 1000
+        elif self.num_users <= 100000:
+            progress_interval = 1000
+            batch_size = 5000
+        else:
+            progress_interval = 10000
+            batch_size = 10000
+        
+        print(f"Processing in batches of {batch_size:,} users...")
+        
+        # Generate users and their relationships with batching
         for i in range(self.num_users):
             # Generate user
             user = self.generate_user(i)
@@ -324,13 +396,23 @@ class UserDataGenerator:
             
             # Generate devices for user
             user_devices = self.generate_devices_for_user(user['id'], i)
-            # Only add devices that aren't already in the list
+            # Only add devices that aren't already in the list (use set for O(1) lookup)
+            existing_device_ids = {d['id'] for d in self.devices}
             for device in user_devices:
-                if not any(d['id'] == device['id'] for d in self.devices):
+                if device['id'] not in existing_device_ids:
                     self.devices.append(device)
+                    existing_device_ids.add(device['id'])
             
-            if (i + 1) % 50 == 0:
-                print(f"Generated {i + 1} users...")
+            # Progress reporting
+            if (i + 1) % progress_interval == 0:
+                progress_pct = ((i + 1) / self.num_users) * 100
+                devices_allocated = len(self.allocated_devices)
+                print(f"Generated {i + 1:,} users ({progress_pct:.1f}%) - Devices allocated: {devices_allocated:,}")
+            
+            # Memory management for very large datasets
+            if (i + 1) % batch_size == 0 and self.num_users > 50000:
+                # Could implement batch writing here if memory becomes an issue
+                pass
     
     def create_output_directories(self):
         """Create the required directory structure for Aerospike Graph CSV format"""
@@ -453,6 +535,24 @@ class UserDataGenerator:
         print(f"\n📊 Device distribution:")
         for count, num_users in sorted(distribution.items()):
             print(f"   {num_users} users have {count} device(s)")
+        
+        # Check for users with 0 devices
+        users_with_zero_devices = self.num_users - len(device_counts)
+        if users_with_zero_devices > 0:
+            print(f"   ❌ {users_with_zero_devices} users have 0 devices (device pool exhausted)")
+        
+        print(f"\n📱 Scalable device pool utilization:")
+        print(f"   Total device capacity: {self.max_devices:,}")
+        print(f"   Devices allocated: {len(self.allocated_devices):,}")
+        print(f"   Devices in memory: {len(self.devices):,} (includes shared devices)")
+        print(f"   Unused capacity: {self.max_devices - len(self.allocated_devices):,}")
+        if self.max_devices > 0:
+            utilization_rate = (len(self.allocated_devices) / self.max_devices * 100)
+            print(f"   Utilization rate: {utilization_rate:.1f}%")
+        
+        # Memory efficiency stats
+        memory_efficiency = (len(self.devices) / len(self.allocated_devices) * 100) if self.allocated_devices else 0
+        print(f"   Memory efficiency: {memory_efficiency:.1f}% (lower is better for large datasets)")
 
 def main():
     parser = argparse.ArgumentParser(description="Generate user data for fraud detection with Aerospike Graph CSV format")
@@ -467,11 +567,31 @@ def main():
     # Set random seeds
     set_seeds(args.seed)
     
+    # Performance tracking
+    import time
+    start_time = time.time()
+    
+    print(f"🚀 Starting scalable generation of {args.users:,} users...")
+    
     # Generate data
     generator = UserDataGenerator(args.users, args.region, args.output)
+    
+    data_gen_start = time.time()
     generator.generate_all_data()
+    data_gen_time = time.time() - data_gen_start
+    
+    csv_write_start = time.time()
     generator.write_csv_files()
+    csv_write_time = time.time() - csv_write_start
+    
     generator.print_statistics()
+    
+    total_time = time.time() - start_time
+    
+    print(f"\n⏱️ Performance Summary:")
+    print(f"   Data generation: {data_gen_time:.2f}s ({args.users/data_gen_time:.0f} users/sec)")
+    print(f"   CSV writing: {csv_write_time:.2f}s")
+    print(f"   Total time: {total_time:.2f}s")
     
     print(f"\n📁 CSV files written to: {args.output}")
     print(f"📋 Ready for Aerospike Graph bulk loading!")
