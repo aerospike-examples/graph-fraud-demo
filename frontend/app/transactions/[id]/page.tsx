@@ -16,7 +16,7 @@ import {
 import { api } from '@/lib/api'
 import TxnDetails from "@/components/TxnDetails"
 import type { Transaction } from '../page'
-import type { Account } from '@/components/TxnDetails/Accounts'
+import type { Account } from '@/components/TxnDetails/AccountCard'
 import type { FraudResult } from '@/components/TxnDetails/Analysis'
 
 export interface TransactionDetail {
