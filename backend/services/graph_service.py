@@ -499,18 +499,17 @@ class GraphService:
     async def get_transaction_fraud_info(self, trans_vertex):
         """Get fraud detection info for a transaction"""
         try:
-            # Check for fraud detection results using helper function
-            loop = asyncio.get_event_loop()
-            fraud_results = await loop.run_in_executor(None, lambda: self.get_out_edge(trans_vertex, "flagged_by"))
-            is_fraud = len(fraud_results) > 0
-            fraud_score = 0.0
-            fraud_rules = []
+            # Read fraud properties directly from transaction vertex
+            fraud_status = self.get_property_value(trans_vertex, 'fraud_status', '')
+            fraud_score = self.get_property_value(trans_vertex, 'fraud_score', 0.0)
+            rule = self.get_property_value(trans_vertex, 'rule', '')
             
-            for fraud_result in fraud_results:
-                fraud_score = max(fraud_score, self.get_property_value(fraud_result, 'fraud_score', 0.0))
-                rule = self.get_property_value(fraud_result, 'rule', '')
-                if rule:
-                    fraud_rules.append(rule)
+            # Determine if fraud based on fraud_status
+            is_fraud = bool(fraud_status and fraud_status.strip() and fraud_status.lower() in ['blocked', 'review', 'flagged'])
+            
+            fraud_rules = []
+            if rule and rule.strip():
+                fraud_rules.append(rule)
             
             return {
                 'is_fraud': is_fraud,
@@ -774,26 +773,30 @@ class GraphService:
                         "user_email": dest_user_props.get('email', '')
                     }
                   #  logger.info(f"Destination account data: {destination_account_data}")
-                    # Get fraud results - look for flagged_by edges to fraud check results
-                    fraud_vertices = await loop.run_in_executor(None, lambda: self.get_out_edge(transaction_vertex, "flagged_by"))
-                    logger.info(f"Found {len(fraud_vertices)} fraud result vertices")
+                    # Get fraud results - read directly from transaction vertex properties
+                    fraud_status = self.get_property_value(transaction_vertex, 'fraud_status', '')
+                    fraud_score = self.get_property_value(transaction_vertex, 'fraud_score', 0.0)
                     
                     fraud_results = []
-                    for fraud_vertex in fraud_vertices:
-                        logger.info(f"Processing fraud vertex: {fraud_vertex}")
+                    
+                    # Check if fraud detection was performed (fraud_status exists and is not empty)
+                    if fraud_status and fraud_status.strip():
+                        logger.info(f"Found fraud properties on transaction vertex: status={fraud_status}, score={fraud_score}")
                         
-                        # Extract properties using helper function
+                        # Extract fraud properties directly from transaction vertex
                         fraud_result = {
-                            'fraud_score': self.get_property_value(fraud_vertex, 'fraud_score', 0.0),
-                            'status': self.get_property_value(fraud_vertex, 'status', 'unknown'),
-                            'rule': self.get_property_value(fraud_vertex, 'rule', 'unknown'),
-                            "timestamp": self.get_property_value(fraud_vertex, 'evaluation_timestamp', ''),
-                            "reason": self.get_property_value(fraud_vertex, 'reason', ''),
-                            "details": self.get_property_value(fraud_vertex, 'details', ''),
-                            'is_fraud': True,  # If there's a fraud result vertex, it means fraud was detected
+                            'fraud_score': fraud_score,
+                            'status': fraud_status,
+                            'rule': self.get_property_value(transaction_vertex, 'rule', 'unknown'),
+                            'evaluation_timestamp': self.get_property_value(transaction_vertex, 'evaluation_timestamp', ''),
+                            'reason': self.get_property_value(transaction_vertex, 'reason', ''),
+                            'details': self.get_property_value(transaction_vertex, 'details', ''),
+                            'is_fraud': fraud_status.lower() in ['blocked', 'review', 'flagged']  # Determine if fraud based on status
                         }
                         logger.info(f"Fraud result properties: {fraud_result}")
                         fraud_results.append(fraud_result)
+                    else:
+                        logger.info("No fraud properties found on transaction vertex - transaction is clean")
                             
                     # logger.info(f"Found {len(fraud_results)} fraud results for transaction {transaction_id}")
                     
@@ -1335,8 +1338,8 @@ class GraphService:
             
             def get_flagged_transactions_sync():
                 try:
-                    # Get all transactions that have flagged_by edges (connected to FraudCheckResult vertices)
-                    flagged_transaction_vertices = self.client.V().has_label("transaction").out("flagged_by").in_("flagged_by").dedup().to_list()
+                    # Get all transactions that have fraud_status property (indicating fraud detection was performed)
+                    flagged_transaction_vertices = self.client.V().has_label("transaction").has("fraud_status").to_list()
                     
                     # Paginate
                     start_idx = (page - 1) * page_size
@@ -1386,26 +1389,17 @@ class GraphService:
                         except Exception as e:
                             logger.debug(f"Error getting receiver account: {e}")
                         
-                        # Get fraud check results
+                        # Get fraud properties directly from transaction vertex
                         fraud_score = 0.0
-                        fraud_status = 'unknown'
+                        fraud_status = 'clean'
                         fraud_reason = ''
                         try:
-                            fraud_result_vertices = self.client.V(transaction_vertex).out("flagged_by").to_list()
-                            if fraud_result_vertices:
-                                fraud_result_props = {}
-                                fraud_props_map = self.client.V(fraud_result_vertices[0]).value_map().next()
-                                for key, value in fraud_props_map.items():
-                                    if isinstance(value, list) and len(value) > 0:
-                                        fraud_result_props[key] = value[0]
-                                    else:
-                                        fraud_result_props[key] = value
-                                
-                                fraud_score = fraud_result_props.get('fraud_score', 0.0)
-                                fraud_status = fraud_result_props.get('status', 'unknown')
-                                fraud_reason = fraud_result_props.get('reason', '')
+                            # Read fraud properties from transaction vertex itself
+                            fraud_status = self.get_property_value(transaction_vertex, 'fraud_status', 'clean')
+                            fraud_score = self.get_property_value(transaction_vertex, 'fraud_score', 0.0)
+                            fraud_reason = self.get_property_value(transaction_vertex, 'reason', '')
                         except Exception as e:
-                            logger.debug(f"Error getting fraud results: {e}")
+                            logger.debug(f"Error getting fraud properties: {e}")
                         
                         transactions_data.append({
                             'id': transaction_props.get('transaction_id', ''),
@@ -1500,7 +1494,8 @@ class GraphService:
             
             def get_results_sync():
                 try:
-                    all_results = self.client.V().has_label("FraudCheckResult").to_list()
+                    # Get all transactions that have fraud properties (fraud detection was performed)
+                    all_results = self.client.V().has_label("transaction").has("fraud_status").to_list()
                     
                     # Paginate
                     start_idx = (page - 1) * page_size
@@ -1508,30 +1503,19 @@ class GraphService:
                     paginated_results = all_results[start_idx:end_idx]
                     
                     results_data = []
-                    for result_vertex in paginated_results:
-                        result_props = {}
-                        props = self.client.V(result_vertex).value_map().next()
-                        for key, value in props.items():
-                            if isinstance(value, list) and len(value) > 0:
-                                result_props[key] = value[0]
-                            else:
-                                result_props[key] = value
+                    for transaction_vertex in paginated_results:
+                        # Get transaction ID
+                        transaction_id = str(transaction_vertex.id)
                         
-                        # Get associated transaction
-                        transaction_vertices = self.client.V(result_vertex).in_("flagged_by").to_list()
-                        transaction_id = ""
-                        if transaction_vertices:
-                            transaction_props = self.client.V(transaction_vertices[0]).value_map().next()
-                            transaction_id = transaction_props.get("transaction_id", [""])[0]
-                        
+                        # Read fraud properties directly from transaction vertex
                         results_data.append({
                             "transaction_id": transaction_id,
-                            "fraud_score": result_props.get("fraud_score", 0.0),
-                            "status": result_props.get("status", ""),
-                            "rule": result_props.get("rule", ""),
-                            "evaluation_timestamp": result_props.get("evaluation_timestamp", ""),
-                            "reason": result_props.get("reason", ""),
-                            "details": result_props.get("details", "")
+                            "fraud_score": self.get_property_value(transaction_vertex, 'fraud_score', 0.0),
+                            "status": self.get_property_value(transaction_vertex, 'fraud_status', ''),
+                            "rule": self.get_property_value(transaction_vertex, 'rule', ''),
+                            "evaluation_timestamp": self.get_property_value(transaction_vertex, 'evaluation_timestamp', ''),
+                            "reason": self.get_property_value(transaction_vertex, 'reason', ''),
+                            "details": self.get_property_value(transaction_vertex, 'details', '')
                         })
                     
                     return {
@@ -1576,19 +1560,31 @@ class GraphService:
                 try:
                     results_data = []
                     
-                    # Find transaction and its fraud results
-                    result_vertices = self.get_out_edge(transaction_id, "flagged_by")
+                    # Get transaction vertex directly  
+                    transaction_vertices = self.client.V(transaction_id).to_list()
+                    if not transaction_vertices:
+                        logger.warning(f"Transaction {transaction_id} not found")
+                        return []
                     
-                    for result_vertex in result_vertices:
-                        # Extract properties using helper function (consistent with get_transaction_detail)
+                    transaction_vertex = transaction_vertices[0]
+                    
+                    # Read fraud properties directly from transaction vertex
+                    fraud_status = self.get_property_value(transaction_vertex, 'fraud_status', '')
+                    fraud_score = self.get_property_value(transaction_vertex, 'fraud_score', 0.0)
+                    
+                    # Only return fraud results if fraud detection was performed
+                    if fraud_status and fraud_status.strip():
                         results_data.append({
-                            "fraud_score": self.get_property_value(result_vertex, 'fraud_score', 0.0),
-                            "status": self.get_property_value(result_vertex, 'status', ''),
-                            "rule": self.get_property_value(result_vertex, 'rule', ''),
-                            "evaluation_timestamp": self.get_property_value(result_vertex, 'evaluation_timestamp', ''),
-                            "reason": self.get_property_value(result_vertex, 'reason', ''),
-                            "details": self.get_property_value(result_vertex, 'details', '')
+                            "fraud_score": fraud_score,
+                            "status": fraud_status,
+                            "rule": self.get_property_value(transaction_vertex, 'rule', ''),
+                            "evaluation_timestamp": self.get_property_value(transaction_vertex, 'evaluation_timestamp', ''),
+                            "reason": self.get_property_value(transaction_vertex, 'reason', ''),
+                            "details": self.get_property_value(transaction_vertex, 'details', '')
                         })
+                        logger.info(f"Found fraud results for transaction {transaction_id}: status={fraud_status}, score={fraud_score}")
+                    else:
+                        logger.info(f"No fraud results found for transaction {transaction_id} - transaction is clean")
                     
                     return results_data
                     
