@@ -112,6 +112,7 @@ class TransactionGeneratorService:
         self.transaction_counter = 0
         self.task = None
         self.account_vertices = []
+        self.start_time = None
 
         # High-risk jurisdictions for international transfers
         self.high_risk_jurisdictions = ['Dubai', 'Bahrain', 'Thailand', 'Cayman Islands', 'Panama']
@@ -185,7 +186,7 @@ class TransactionGeneratorService:
         
         stats_logger.info(f"STATISTICS: {json.dumps(stats_data, indent=2)}")
 
-    async def start_generation(self, rate: int = 1):
+    async def start_generation(self, rate: int = 1, start: str = ""):
         """Start transaction generation at specified rate"""
         if self.is_running:
             logger.warning("Transaction generation is already running")
@@ -194,6 +195,7 @@ class TransactionGeneratorService:
         self.generation_rate = rate
         self.is_running = True
         self.transaction_counter = 0
+        self.start_time = start
         
         logger.info(f"🚀 Starting transaction generation at {self.generation_rate} transactions/second")
         stats_logger.info(f"START: Generation started at {self.generation_rate} txn/sec")
@@ -209,7 +211,9 @@ class TransactionGeneratorService:
             return False
             
         self.is_running = False
-        
+        self.start_time = None
+        self.transaction_counter = 0
+
         if self.task:
             self.task.cancel()
             try:
@@ -273,7 +277,7 @@ class TransactionGeneratorService:
                 raise Exception("No valid accounts available in graph database for transaction generation")
             
             # Generate transaction data
-            amount = random.uniform(100.0, 1000000.0)
+            amount = random.uniform(100.0, 10000.0)
             transaction_type = random.choice(["transfer", "payment", "deposit", "withdrawal"])
             
             transaction = await self.create_manual_transaction(sender_account_id, receiver_account_id, amount, transaction_type, "AUTO")
@@ -286,10 +290,6 @@ class TransactionGeneratorService:
         except Exception as e:
             logger.error(f"Error generating normal transaction: {e}")
             raise e
-
-
-
-
 
     async def _get_random_accounts(self) -> Optional[tuple]:
         """Get 2 random account vertices from the graph database using Gremlin query"""
@@ -321,10 +321,6 @@ class TransactionGeneratorService:
         except Exception as e:
             logger.error(f"Error getting random accounts: {e}")
             return None, None
-
-    
-
-
 
     async def _run_fraud_detection(self, transaction: Dict[str, Any]):
         """Run fraud detection on the transaction"""
@@ -363,6 +359,8 @@ class TransactionGeneratorService:
                         return self.graph_service.client.add_v("transaction") \
                             .property(T.id, transaction['id'])\
                             .property("amount", transaction['amount'])\
+                            .property("sender_id", sender_account_id)\
+                            .property("receiver_id", receiver_account_id)\
                             .property("currency", transaction['currency'])\
                             .property("timestamp", transaction['timestamp'])\
                             .property("location", transaction['location'])\
@@ -400,7 +398,8 @@ class TransactionGeneratorService:
             "generation_rate": self.generation_rate,
             "total_generated": len(self.generated_transactions),
             "transaction_count": self.transaction_counter,
-            "last_10_transactions": self.get_recent_transactions(10)
+            "last_10_transactions": self.get_recent_transactions(10),
+            "start_time": self.start_time
         }
 
     def get_generation_stats(self) -> Dict[str, Any]:
@@ -409,7 +408,8 @@ class TransactionGeneratorService:
             "is_running": self.is_running,
             "generation_rate": self.generation_rate,
             "total_generated": len(self.generated_transactions),
-            "transaction_count": self.transaction_counter
+            "transaction_count": self.transaction_counter,
+            "start_time": self.start_time
         }
 
     async def create_manual_transaction(self, from_account_id: str, to_account_id: str, amount: float, transaction_type: str = "transfer", generation_type: str = "MANUAL") -> Dict[str, Any]:
@@ -435,7 +435,7 @@ class TransactionGeneratorService:
                 "account_id": from_account_id,
                 "receiver_account_id": to_account_id,
                 "amount": round(amount, 2),
-                "currency": "INR",
+                "currency": "USD",
                 "transaction_type": transaction_type,
                 "method": "electronic_transfer",
                 "location": random.choice(self.normal_locations),

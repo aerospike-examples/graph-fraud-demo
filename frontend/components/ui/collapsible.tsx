@@ -40,7 +40,7 @@ const CollapsibleTrigger = React.forwardRef<HTMLButtonElement, CollapsibleTrigge
       )}
       {...props}
     >
-      <span>{children}</span>
+      <div className="w-full">{children}</div>
       {isOpen ? (
         <ChevronDown className="w-4 h-4" />
       ) : (

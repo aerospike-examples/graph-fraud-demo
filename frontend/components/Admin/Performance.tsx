@@ -54,7 +54,7 @@ interface TimelineResponse {
   rt3: TimelineData[]
 }
 
-export default function PerformanceDashboard() {
+export default function Performance() {
   const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null)
   const [timelineData, setTimelineData] = useState<TimelineResponse | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -68,8 +68,8 @@ export default function PerformanceDashboard() {
       setError(null)
       
       const [statsResponse, timelineResponse] = await Promise.all([
-        fetch(`http://localhost:4000/performance/stats?time_window=${timeWindow}`),
-        fetch(`http://localhost:4000/performance/timeline?minutes=${timeWindow}`)
+        fetch(`/api/performance/stats?time_window=${timeWindow}`),
+        fetch(`/api/performance/timeline?minutes=${timeWindow}`)
       ])
 
       if (!statsResponse.ok || !timelineResponse.ok) {
@@ -93,7 +93,7 @@ export default function PerformanceDashboard() {
       setIsLoading(true)
       setError(null)
       
-      const response = await fetch(`http://localhost:4000/performance/test/${method}?transaction_count=${count}`, {
+      const response = await fetch(`/api/performance/test/${method}?transaction_count=${count}`, {
         method: 'POST'
       })
 
@@ -118,7 +118,7 @@ export default function PerformanceDashboard() {
       setIsLoading(true)
       setError(null)
       
-      const response = await fetch('http://localhost:4000/performance/reset', {
+      const response = await fetch('/api/performance/reset', {
         method: 'POST'
       })
 
