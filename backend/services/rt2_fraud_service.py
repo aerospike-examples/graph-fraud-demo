@@ -94,7 +94,14 @@ class RT2FraudService:
                 logger.warning(f"🚨 RT2 FRAUD DETECTED: Transaction {transaction.get('id')} involves flagged devices in transaction network: {flagged_devices}")
                 
                 # Create fraud check result in graph
-                await self.create_fraud_check_result(transaction, fraud_result)
+                (self.graph_service.client.V(transaction['id'])
+                    .property("fraud_score", fraud_result["fraud_score"])
+                    .property("fraud_status", fraud_result["status"])
+                    .property("rule", fraud_result["rule_name"])
+                    .property("evaluation_timestamp", datetime.now().isoformat())
+                    .property("reason", fraud_result["reason"])
+                    .property("details", str(fraud_result["details"]))
+                    .next())
                 fraud_result_time = (time.time() - fraud_result_start_time) * 1000
                 logger.info(f"⏱️ RT2: Fraud result creation completed in {fraud_result_time:.2f}ms")
                 

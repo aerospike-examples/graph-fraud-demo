@@ -15,9 +15,7 @@ services:
       retries: 4
   aerospike-graph-service:
     image: aerospike/aerospike-graph-service:3.0.0
-    container_name:
-      aerospike-graph-service
-      #    restart: always
+    container_name: asgraph-service
     depends_on:
       aerospike-db:
         condition: service_healthy
@@ -32,8 +30,13 @@ services:
       - aerospike.graph.index.vertex.label.enabled=true
       - aerospike.graph.query-tracing.threshold-ms=5
       - aerospike.graph.query-tracing.opentelemetry-host=zipkin
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/healthcheck"]
+      interval: 20s
+      timeout: 10s
+      retries: 4
     volumes:
-      - ./:/data
+      - ./data:/data
     networks:
       - asgraph_net
   zipkin:
@@ -43,7 +46,41 @@ services:
       - asgraph_net
     ports:
       - "9411:9411"
-
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    container_name: "asgraph-backend"
+    environment:
+      GRAPH_HOST_ADDRESS: "asgraph-service"
+    depends_on:
+      aerospike-db:
+        condition: service_healthy
+      aerospike-graph-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://0.0.0.0:4000/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 4
+    networks:
+      - asgraph_net
+    ports:
+      - "4000:4000"
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    container_name: "asgraph-frontend"
+    environment:
+      BACKEND_URL: "http://asgraph-backend:4000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - asgraph_net
+    ports:
+      - "8080:8080"
 networks:
   asgraph_net:
     name: asgraph_net
