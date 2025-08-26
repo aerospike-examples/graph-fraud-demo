@@ -44,9 +44,9 @@ const Recent = ({ recentTxns }: { recentTxns: Transaction[]}) => {
                                     </span>
                                 </div>
                             </div>
-                            <div className="flex items-center space-x-4">
+                            <div className="flex items-center space-x-4 gap-2">
                                 <div className="text-right">
-                                    <div className="flex items-center space-x-1">
+                                    <div className="flex justify-end items-center space-x-1">
                                         <span className="font-medium">
                                             ${transaction.amount.toFixed(2)}
                                         </span>

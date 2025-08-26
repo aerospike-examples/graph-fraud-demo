@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Activity, Database, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { Transaction } from '@/components/UserDetails/Transactions'
+import { getDuration } from '@/lib/utils'
 
 export interface GenerationStats {
     isRunning: boolean
@@ -35,16 +36,9 @@ const Statistics = ({
         let timer: NodeJS.Timeout
         if (stats.isRunning && stats.startTime) {
             timer = setInterval(() => {
-                const start = new Date(stats.startTime!)
-                const now = new Date()
-                const diff = now.getTime() - start.getTime()
-                const hours = Math.floor(diff / (1000 * 60 * 60))
-                const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-                const seconds = Math.floor((diff % (1000 * 60)) / 1000)
-        
                 setStats(prev => ({
-                ...prev,
-                duration: `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+                    ...prev,
+                    duration: getDuration(stats.startTime!)
                 }))
             }, 1000)
         }

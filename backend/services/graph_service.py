@@ -10,8 +10,8 @@ import os
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.driver.aiohttp.transport import AiohttpTransport
 from gremlin_python.process.anonymous_traversal import traversal
-from gremlin_python.process.graph_traversal import __
-from gremlin_python.process.traversal import P, Order
+from gremlin_python.process.graph_traversal import __, constant
+from gremlin_python.process.traversal import P, Order, containing
 
 from models.schemas import (
     User, Account, Device, Transaction, UserSummary, TransactionDetail,
@@ -975,7 +975,6 @@ class GraphService:
 
                 loop = asyncio.get_event_loop()
                 stats = await loop.run_in_executor(None, get_user_dashboard_stats)
-                print(stats)
                 return {
                     'total_users': len(stats),
                     'total_low_risk': len(list(filter(lambda x: x < 25, stats))),
@@ -995,17 +994,24 @@ class GraphService:
                 'total_high_risk': 0
             }
 
-    async def get_users_paginated(self, page: int, page_size: int, order_by: str, order: str ) -> Dict[str, Any]:
+    async def get_users_paginated(self, page: int, page_size: int, order_by: str, order: str, query: str | None ) -> Dict[str, Any]:
         """Get paginated list of all users"""
         try:
             if self.client:
                 # Get event loop for async operations
-                import asyncio
                 loop = asyncio.get_event_loop()
                 
                 # Query real graph using run_in_executor to avoid event loop conflict
                 def get_all_users():
-                    return self.client.V().has_label("user").order().by(order_by, Order.asc if order == 'asc' else Order.desc).to_list()
+                    if(query):
+                        return self.client.V().has_label("user").or_(
+                            __.has("name", containing(query.title())),
+                            __.hasId(containing(query.upper())),
+                            __.has("email", containing(query.lower())),
+                            __.has("location", containing(query.title()))
+                        ).order().by(order_by, Order.asc if order == 'asc' else Order.desc).to_list()
+                    else:
+                        return self.client.V().has_label("user").order().by(order_by, Order.asc if order == 'asc' else Order.desc).to_list()
                 
                 all_users = await loop.run_in_executor(None, get_all_users)
                 
@@ -1016,35 +1022,17 @@ class GraphService:
                 
                 users_data = []
                 for user_vertex in paginated_users:
-                    # Get user properties using run_in_executor
-                    user_props = {}
-                    try:
-                        def get_user_props():
-                            props = self.client.V(user_vertex).value_map().next()
-                            result = {}
-                            for key, value in props.items():
-                                if isinstance(value, list) and len(value) > 0:
-                                    result[key] = value[0]
-                                else:
-                                    result[key] = value
-                            return result
-                        
-                        user_props = await loop.run_in_executor(None, get_user_props)
-                        
-                    except Exception as e:
-                        logger.error(f"Error getting user properties: {e}")
-                        continue
-                    
+                    # Get user properties
                     users_data.append({
                         'id': user_vertex.id,
-                        'name': user_props.get('name', ''),
-                        'email': user_props.get('email', ''),
-                        'age': user_props.get('age', 0),
-                        'location': user_props.get('location', ''),
-                        'occupation':user_props.get('occupation', ''),
-                        'phone':user_props.get('phone', ''),
-                        'risk_score': user_props.get('risk_score', 0.0),
-                        'signup_date': user_props.get('signup_date', ''),
+                        'name': self.get_property_value(user_vertex, 'name', ''),
+                        'email': self.get_property_value(user_vertex, 'email', ''),
+                        'age': self.get_property_value(user_vertex, 'age', 0),
+                        'location': self.get_property_value(user_vertex, 'location', ''),
+                        'occupation': self.get_property_value(user_vertex, 'occupation', ''),
+                        'phone': self.get_property_value(user_vertex, 'phone', ''),
+                        'risk_score': self.get_property_value(user_vertex, 'risk_score', 0.0),
+                        'signup_date': self.get_property_value(user_vertex, 'signup_date', ''),
                     })
                 
                 return {
@@ -1068,130 +1056,35 @@ class GraphService:
                 'total_pages': 0
             }
 
-    async def search_users_paginated(self, query: str, page: int, page_size: int) -> Dict[str, Any]:
-        """Search users with pagination"""
+    async def get_transaction_stats(self) -> Dict[str, Any]:
+        """Get transaction stats"""
         try:
             if self.client:
-                # Get event loop for async operations
-                import asyncio
+                def get_user_dashboard_stats():
+                    return self.client.V().has_label("transaction").coalesce(__.values('fraud_status'), constant("clean")).to_list()
+
                 loop = asyncio.get_event_loop()
-                
-                # Query real graph with search using run_in_executor
-                def search_users():
-                    logger.info(f"Searching for users with query: {query}")
-                    return self.client.V().has_label("user").or_(
-                        __.has("name", P.text_contains(query)),
-                        __.hasId(P.text_contains(query)),
-                        __.has("email", P.text_contains(query))
-                    ).to_list()
-                
-                all_users = await loop.run_in_executor(None, search_users)
-                
-                # Paginate
-                start_idx = (page - 1) * page_size
-                end_idx = start_idx + page_size
-                paginated_users = all_users[start_idx:end_idx]
-                
-                users_data = []
-                for user_vertex in paginated_users:
-                    def get_user_props():
-                        return user_vertex.value_map().next()
-                    
-                    user_props = await loop.run_in_executor(None, get_user_props)
-                        
-                    users_data.append({
-                        'id': user_vertex.id,
-                        'name': user_props.get('name', [''])[0],
-                        'email': user_props.get('email', [''])[0],
-                        'age': user_props.get('age', [0])[0],
-                        'location': user_props.get('location', [''])[0],
-                        'risk_score': user_props.get('risk_score', [0.0])[0],
-                        'signup_date': user_props.get('signup_date', [''])[0]
-                    })
-                
+                stats = await loop.run_in_executor(None, get_user_dashboard_stats)
+                print(stats)
                 return {
-                    'users': users_data,
-                    'total': len(all_users),
-                    'page': page,
-                    'page_size': page_size,
-                    'total_pages': (len(all_users) + page_size - 1) // page_size
+                    'total_txns': len(stats),
+                    'total_blocked': len(list(filter(lambda x: x == 'blocked', stats))),
+                    'total_review': len(list(filter(lambda x: x == 'review', stats))),
+                    'total_clean': len(list(filter(lambda x: x == 'clean', stats)))
                 }
             else:
-                # Mock mode - search in loaded users
-                filtered_users = [
-                    user for user in self.users_data
-                    if query.lower() in user['name'].lower() or 
-                       query.lower() in user['id'].lower() or 
-                       query.lower() in user['email'].lower()
-                ]
-                
-                start_idx = (page - 1) * page_size
-                end_idx = start_idx + page_size
-                paginated_users = filtered_users[start_idx:end_idx]
-                
-                return {
-                    'users': paginated_users,
-                    'total': len(filtered_users),
-                    'page': page,
-                    'page_size': page_size,
-                    'total_pages': (len(filtered_users) + page_size - 1) // page_size
-                }
-                
+                # No graph client available
+                raise Exception("Graph client not available. Cannot get transactions without graph database connection.")
+            
         except Exception as e:
-            logger.error(f"Error searching users: {e}")
+            logger.error(f"Error getting transaction stats: {e}")
             return {
-                'users': [],
-                'total': 0,
-                'page': page,
-                'page_size': page_size,
-                'total_pages': 0
+                'total_txns': 0,
+                'total_blocked': 0,
+                'total_review': 0,
+                'total_clean': 0
             }
 
-    async def search_users(self, query: str) -> List[SearchResult]:
-        """Search users and return simplified results"""
-        try:
-            if self.client:
-                # Query real graph
-                users = self.client.V().has_label("user").or_(
-                    __.has("name", P.text_contains(query)),
-                    __.has("user_id", P.text_contains(query)),
-                    __.has("email", P.text_contains(query))
-                ).to_list()
-                
-                results = []
-                for user_vertex in users:
-                    user_props = user_vertex.value_map().next()
-                    results.append(SearchResult(
-                        id=user_vertex.id,
-                        name=user_props.get('name', [''])[0],
-                        type="user",
-                        score=user_props.get('risk_score', [0.0])[0]
-                    ))
-                
-                return results
-            else:
-                # Mock mode
-                filtered_users = [
-                    user for user in self.users_data
-                    if query.lower() in user['name'].lower() or 
-                       query.lower() in user['id'].lower() or 
-                       query.lower() in user['email'].lower()
-                ]
-                
-                return [
-                    SearchResult(
-                        id=user['id'],
-                        name=user['name'],
-                        type="user",
-                        score=user.get('risk_score', 0.0)
-                    )
-                    for user in filtered_users
-                ]
-                
-        except Exception as e:
-            logger.error(f"Error searching users: {e}")
-            return []
-            
     async def update_transaction_status(self, transaction_id: str, status: str) -> bool:
         """Update transaction status"""
         try:
@@ -1233,12 +1126,25 @@ class GraphService:
         long_timestamp = int(timestamp)
         return long_timestamp
 
-    async def get_transactions_paginated(self, page: int, page_size: int) -> Dict[str, Any]:
+    async def get_transactions_paginated(self, page: int, page_size: int, order_by: str, order: str, query: str | None ) -> Dict[str, Any]:
         """Get paginated list of all transactions"""
         try:
             if self.client:
-                # Query real graph - use synchronous calls like get_users_paginated
-                all_transactions = self.client.V().has_label("transaction").order().by('timestamp', Order.desc).to_list()
+                loop = asyncio.get_event_loop()
+                
+                # Query real graph using run_in_executor to avoid event loop conflict
+                def get_all_transactions():
+                    if(query):
+                        return self.client.V().has_label("transaction").or_(
+                            __.has("sender_id", containing(query.upper())),
+                            __.has("receiver_id", containing(query.upper())),
+                            __.hasId(containing(query.lower())),
+                            __.has("location", containing(query.title()))
+                        ).order().by(order_by, Order.asc if order == 'asc' else Order.desc).to_list()
+                    else:
+                        return self.client.V().has_label("transaction").order().by(order_by, Order.asc if order == 'asc' else Order.desc).to_list()
+                
+                all_transactions = await loop.run_in_executor(None, get_all_transactions)
                 
                 # Paginate
                 start_idx = (page - 1) * page_size
@@ -1249,104 +1155,21 @@ class GraphService:
                 for transaction_vertex in paginated_transactions:
                     try:
                         # Extract transaction properties directly from vertex object
-                        transaction_props = {
-                            'transaction_id': str(transaction_vertex.id),  # Use T.id
+                        fraud_score = self.get_property_value(transaction_vertex, 'fraud_score', 0.0)                                                    
+                        transactions_data.append({
+                            'id': str(transaction_vertex.id),
                             'amount': self.get_property_value(transaction_vertex, 'amount', 0.0),
+                            'sender_id': self.get_property_value(transaction_vertex, 'sender_id', ''),
+                            'receiver_id': self.get_property_value(transaction_vertex, 'receiver_id', ''),
                             'currency': self.get_property_value(transaction_vertex, 'currency', ''),
                             'timestamp': self.get_property_value(transaction_vertex, 'timestamp', ''),
                             'location': self.get_property_value(transaction_vertex, 'location', ''),
-                            'type': self.get_property_value(transaction_vertex, 'type', ''),
-                            'status': self.get_property_value(transaction_vertex, 'status', '')
-                        }
-                        
-                        # Get the sender account that initiated this transaction
-                        try:
-                         #   logger.info(f"Looking for sender account that initiated transaction {transaction_props.get('transaction_id', 'unknown')}")
-                            
-                            # Try to find the sender account using the TRANSFERS_TO edge
-                            sender_account_vertices = self.client.V(transaction_vertex).in_("TRANSFERS_TO").to_list()
-                          #  logger.info(f"Found {len(sender_account_vertices)} sender account vertices")
-                            
-                            if sender_account_vertices:
-                                sender_account_vertex = sender_account_vertices[0]
-                           #     logger.info(f"Found sender account vertex: {sender_account_vertex}")
-                                
-                                # Get sender account ID directly from T.id
-                                sender_id = str(sender_account_vertex.id)
-                            #    logger.info(f"Sender ID: {sender_id}")
-                            else:
-                                logger.warning("No sender account vertices found")
-                                sender_id = 'Unknown'
-                        except Exception as e:
-                            # If no sender account found, use a default
-                            logger.error(f"Error getting sender account for transaction: {e}")
-                            sender_id = 'Unknown'
-                        
-                        # Get the receiver account that received this transaction
-                        try:
-                            #logger.info(f"Looking for receiver account for transaction {transaction_props.get('transaction_id', 'unknown')}")
-                            
-                            # Try to find the receiver account using the TRANSFERS_FROM edge
-                            receiver_account_vertices = self.client.V(transaction_vertex).out("TRANSFERS_FROM").to_list()
-                            #logger.info(f"Found {len(receiver_account_vertices)} receiver account vertices")
-                            
-                            if receiver_account_vertices:
-                                receiver_account_vertex = receiver_account_vertices[0]
-                             #   logger.info(f"Found receiver account vertex: {receiver_account_vertex}")
-                                
-                                # Get receiver account ID directly from T.id
-                                receiver_id = str(receiver_account_vertex.id)
-                              #  logger.info(f"Receiver ID: {receiver_id}")
-                            else:
-                                logger.warning("No receiver account vertices found")
-                                receiver_id = 'Unknown'
-                        except Exception as e:
-                            # If no receiver account found, use a default
-                            logger.error(f"Error getting receiver account for transaction: {e}")
-                            receiver_id = 'Unknown'
-                        
-                        # Get fraud check results if any
-                        fraud_score = 0.0
-                        is_fraud = False
-                        fraud_status = None
-                        fraud_reason = None
-                        try:
-                            # Check for fraud check results connected via flagged_by edge
-                            fraud_result_vertices = self.client.V(transaction_vertex).out("flagged_by").to_list()
-                            if fraud_result_vertices:
-                                fraud_result_vertex = fraud_result_vertices[0]  # Get the first fraud result
-                                fraud_result_props = {}
-                                fraud_props_map = self.client.V(fraud_result_vertex).value_map().next()
-                                for key, value in fraud_props_map.items():
-                                    if isinstance(value, list) and len(value) > 0:
-                                        fraud_result_props[key] = value[0]
-                                    else:
-                                        fraud_result_props[key] = value
-                                
-                                fraud_score = fraud_result_props.get('fraud_score', 0.0)
-                                fraud_status = fraud_result_props.get('status', 'clean')
-                                fraud_reason = fraud_result_props.get('reason', '')
-                                is_fraud = fraud_score >= 75  # Consider score >= 75 as fraud
-                                
-                               # logger.info(f"Found fraud result for transaction {transaction_props.get('transaction_id', 'unknown')}: score={fraud_score}, status={fraud_status}")
-                        except Exception as e:
-                            logger.debug(f"No fraud results found for transaction {transaction_props.get('transaction_id', 'unknown')}: {e}")
-                            # No fraud results found, use defaults
-                        
-                        transactions_data.append({
-                            'id': transaction_props.get('transaction_id', ''),
-                            'sender_id': sender_id,
-                            'receiver_id': receiver_id,
-                            'amount': transaction_props.get('amount', 0.0),
-                            'currency': 'INR',
-                            'timestamp': transaction_props.get('timestamp', ''),
-                            'location': transaction_props.get('location', 'Unknown'),
-                            'status': transaction_props.get('status', 'completed'),
+                            'status': self.get_property_value(transaction_vertex, 'status', ''),
+                            'transaction_type': self.get_property_value(transaction_vertex, 'type', ''),
                             'fraud_score': fraud_score,
-                            'transaction_type': transaction_props.get('type', 'transfer'),
-                            'is_fraud': is_fraud,
-                            'fraud_status': fraud_status,
-                            'fraud_reason': fraud_reason,
+                            'is_fraud': fraud_score >= 75,
+                            'fraud_status': self.get_property_value(transaction_vertex, 'fraud_status', 'clean'),
+                            'fraud_reason': self.get_property_value(transaction_vertex, 'reason', ''),
                             'device_id': None
                         })
                     except Exception as e:
@@ -1366,90 +1189,6 @@ class GraphService:
                 
         except Exception as e:
             logger.error(f"Error getting transactions paginated: {e}")
-            return {
-                'transactions': [],
-                'total': 0,
-                'page': page,
-                'page_size': page_size,
-                'total_pages': 0
-            }
-
-    async def search_transactions_paginated(self, query: str, page: int, page_size: int) -> Dict[str, Any]:
-        """Search transactions with pagination"""
-        try:
-            if self.client:
-                # Query real graph with search using thread pool
-                import asyncio
-                loop = asyncio.get_event_loop()
-                
-                def search_transactions():
-                    return self.client.V(query).to_list()
-                
-                all_transactions = await loop.run_in_executor(None, search_transactions)
-                
-                # Paginate
-                start_idx = (page - 1) * page_size
-                end_idx = start_idx + page_size
-                paginated_transactions = all_transactions[start_idx:end_idx]
-                
-                transactions_data = []
-                for transaction_vertex in paginated_transactions:
-                    try:
-                        def get_transaction_props():
-                            return transaction_vertex.value_map().next()
-                        
-                        transaction_props = await loop.run_in_executor(None, get_transaction_props)
-                        
-                        # Get the account that initiated this transaction
-                        def get_account_vertex():
-                            return transaction_vertex.in_("INITIATED").next()
-                        
-                        try:
-                            account_vertex = await loop.run_in_executor(None, get_account_vertex)
-                            
-                            def get_account_props():
-                                return account_vertex.value_map().next()
-                            
-                            account_props = await loop.run_in_executor(None, get_account_props)
-                            sender_id = account_props.get('account_id', [''])[0]
-                        except:
-                            # If no account found, use a default
-                            sender_id = 'Unknown'
-                        
-                        # For now, use the same account as receiver (self-transaction)
-                        receiver_id = sender_id
-                        
-                        transactions_data.append({
-                            'id': transaction_props.get('transaction_id', [''])[0],
-                            'sender_id': sender_id,
-                            'receiver_id': receiver_id,
-                            'amount': transaction_props.get('amount', [0.0])[0],
-                            'currency': 'INR',
-                            'timestamp': transaction_props.get('timestamp', [''])[0],
-                            'location': transaction_props.get('location_city', ['Unknown'])[0],
-                            'status': transaction_props.get('status', ['completed'])[0],
-                            'fraud_score': 0.0,
-                            'transaction_type': transaction_props.get('method', ['transfer'])[0],
-                            'is_fraud': False,
-                            'device_id': None
-                        })
-                    except Exception as e:
-                        logger.error(f"Error processing search transaction vertex: {e}")
-                        continue
-                
-                return {
-                    'transactions': transactions_data,
-                    'total': len(all_transactions),
-                    'page': page,
-                    'page_size': page_size,
-                    'total_pages': (len(all_transactions) + page_size - 1) // page_size
-                }
-            else:
-                # No graph client available
-                raise Exception("Graph client not available. Cannot search transactions without graph database connection.")
-                
-        except Exception as e:
-            logger.error(f"Error searching transactions: {e}")
             return {
                 'transactions': [],
                 'total': 0,

@@ -1,8 +1,8 @@
-import { type ClassValue, clsx } from "clsx"
+import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
 export function cn(...inputs: ClassValue[]) {
-  	return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs))
 }
 
 export const getRiskLevel = (score: number) => {
@@ -65,9 +65,20 @@ export const getPriorityColor = (priority: string) => {
 
 export const getPatternRiskColor = (level: string) => {
 	switch (level) {
-	  case 'high': return 'destructive'
-	  case 'medium': return 'secondary'
-	  case 'low': return 'outline'
-	  default: return 'default'
+		case 'high': return 'destructive'
+		case 'medium': return 'secondary'
+		case 'low': return 'outline'
+		default: return 'default'
 	}
+}
+
+export const getDuration = (startTime: string) => {
+	const start = new Date(startTime!)
+	const now = new Date()
+	const diff = now.getTime() - start.getTime()
+	const hours = Math.floor(diff / (1000 * 60 * 60))
+	const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+	const seconds = Math.floor((diff % (1000 * 60)) / 1000)
+
+	return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
 }

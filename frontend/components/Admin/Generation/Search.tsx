@@ -23,12 +23,12 @@ const Search = ({
     comp,
     setValue
 }: Props) => {
-    const [filteredAccts, setFilteredAccts] = useState(accounts)
+    const [filteredAccts, setFilteredAccts] = useState<Account[]>(accounts)
     const [search, setSearch] = useState("")
     const [show, setShow] = useState(false)
     const [error, setError] = useState(false)
     const wrapper = useRef<HTMLDivElement | null>(null)
-    
+
     const handleChange = (e: ChangeEvent) => {
         const val = (e.currentTarget as HTMLInputElement).value ?? ""
         setFilteredAccts(accounts.filter(item => item.account_id.startsWith(val.toUpperCase())))
@@ -73,6 +73,10 @@ const Search = ({
         if(comp === "") setError(false)
     }, [value, comp])
 
+    useEffect(() => {
+        setFilteredAccts(accounts)
+    }, [accounts])
+    
     return (
         <div className="relative account-dropdown-container" ref={wrapper}>
             <input name={name} type="hidden" value={value} />

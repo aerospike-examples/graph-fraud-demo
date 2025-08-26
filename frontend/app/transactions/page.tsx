@@ -23,20 +23,19 @@ export interface Transaction {
 	fraud_type?: string
 }
 
-interface PaginatedTransactions {
-	transactions: Transaction[]
-	total: number
-	page: number
-	page_size: number
-	total_pages: number
+interface TransactionStats {
+	total_txns: number
+	total_blocked: number
+	total_review: number
+	total_clean: number
 }
 
 export default async function TransactionsPage() {
-  	const response = await api.get('/transactions?page=1&page_size=10')  
-	const { total_pages, total }: PaginatedTransactions = response.data 
+  	const response = await api.get('/transactions/stats')
+	const { total_txns, total_blocked, total_review, total_clean }: TransactionStats = response.data 
   
   	return (
-    	<div className="space-y-6">
+    	<div className="space-y-6 flex flex-col grow">
       		<div className="flex items-center justify-between">
         		<div>
           			<h1 className="text-3xl font-bold tracking-tight">Transaction Explorer</h1>
@@ -49,7 +48,7 @@ export default async function TransactionsPage() {
 						<div className="flex items-center justify-between">
 							<div>
 								<p className="text-sm font-medium text-muted-foreground">Total Transactions</p>
-								<p className="text-2xl font-bold">{total}</p>
+								<p className="text-2xl font-bold">{total_txns}</p>
 							</div>
 							<CreditCard className="h-8 w-8 text-muted-foreground" />
 						</div>
@@ -61,7 +60,7 @@ export default async function TransactionsPage() {
 							<div>
 								<p className="text-sm font-medium text-muted-foreground">Blocked</p>
 								<p className="text-2xl font-bold text-destructive">
-									0
+									{total_blocked}
 								</p>
 							</div>
 							<Shield className="h-8 w-8 text-destructive" />
@@ -74,7 +73,7 @@ export default async function TransactionsPage() {
 							<div>
 								<p className="text-sm font-medium text-muted-foreground">Review</p>
 								<p className="text-2xl font-bold text-warning">
-									0
+									{total_review}
 								</p>
 							</div>
 							<Shield className="h-8 w-8 text-warning" />
@@ -87,7 +86,7 @@ export default async function TransactionsPage() {
 							<div>
 								<p className="text-sm font-medium text-muted-foreground">Clean</p>
 								<p className="text-2xl font-bold text-green-600">
-									0
+									{total_clean}
 								</p>
 							</div>
 							<Shield className="h-8 w-8 text-green-600" />
@@ -118,24 +117,29 @@ export default async function TransactionsPage() {
 						name: 'Amount',
 						key: 'amount',
 						type: 'currency',
+						sortable: true,
 						renderer: 'medium'
+					},
+					{
+						name: 'Risk Score',
+						key: 'fraud_score',
+						renderer: 'risk',
 					},
 					{
 						name: 'Date',
 						key: 'timestamp',
 						type: 'datetime',
-						renderer: 'small'
+						renderer: 'small',
+						icon: 'calendar',
+						sortable: true,
+						defaultSort: true,
+						defaultOrder: 'desc'
 					},
 					{
 						name: 'Location',
 						key: 'location',
 						icon: 'map',
 						renderer: 'small'
-					},
-					{
-						name: 'Risk Score',
-						key: 'fraud_score',
-						renderer: 'risk'
 					},
 					{
 						name: 'Fraud Status',

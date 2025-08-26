@@ -5,18 +5,10 @@ import { useState } from 'react'
 import { Activity, BarChart3, Shield, Zap } from 'lucide-react'
 import Performance from './Performance'
 import Generation from './Generation'
-import type { GenerationStats } from './Generation/Statistics'
-import { Transaction } from '../UserDetails/Transactions'
 import Scenarios from './Scenarios'
 import Patterns from './Patterns'
 
-interface Props {
-    accounts: []
-    initStats: GenerationStats
-    initRecent: Transaction[]
-}
-
-const Admin = (props: Props) => {
+const Admin = () => {
     const [active, setActive] = useState('generation');
 
     return (
@@ -40,7 +32,7 @@ const Admin = (props: Props) => {
                 </TabsTrigger>
             </TabsList>
             <TabsContent value="generation" className="space-y-4">
-                <Generation {...props} />
+                <Generation />
             </TabsContent>
             <TabsContent value="real-time-fraud" className="space-y-4">
                 <Scenarios />

@@ -3,9 +3,9 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import Search, { Account } from './Search'
+import Search, { type Account } from './Search'
 import { CheckCircle, CreditCard, RefreshCw } from 'lucide-react'
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 
 interface ManualTxn {
     fromAcct: string
@@ -14,14 +14,21 @@ interface ManualTxn {
     txnType: 'transfer' | 'payment' | 'deposit' | 'withdrawl'
 }
 
-const Manual = ({ accounts }: { accounts: Account[] }) => {
+const Manual = () => {
     const [loading, setLoading] = useState(false)
     const [fromAcct, setFromAcct] = useState<ManualTxn['fromAcct']>("")
     const [toAcct, setToAcct] = useState<ManualTxn['toAcct']>("")
     const [amount, setAmount] = useState<ManualTxn['amount']>("")
     const [txnType, setTxnType] = useState<ManualTxn['txnType']>('transfer')
     const [success, setSuccess] = useState<string | null>(null)
+    const [accounts, setAccounts] = useState<Account[]>([])
 
+    const getAccounts = async () => {
+        const response = await fetch('/api/accounts')
+        const { accounts } = await response.json()
+        setAccounts(accounts)
+    }  	
+    
     const handleTxn = async (e: FormEvent) => {
         e.preventDefault()
         setLoading(true)
@@ -59,6 +66,10 @@ const Manual = ({ accounts }: { accounts: Account[] }) => {
             setLoading(false)
         }
     }
+
+    useEffect(() => {
+        getAccounts()
+    }, [])
 
     return (
         <Card className='flex flex-col'>

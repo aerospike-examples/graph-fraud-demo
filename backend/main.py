@@ -192,11 +192,12 @@ async def get_users(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(10, ge=1, le=100, description="Number of users per page"),
     order_by: str = Query('name', description="Field to order results by"),
-    order: str = Query('asc', description="Direction to order results")
+    order: str = Query('asc', description="Direction to order results"),
+    query: str | None = Query(None, description="Search term for user name or ID")
 ):
     """Get paginated list of all users"""
     try:
-        results = await graph_service.get_users_paginated(page, page_size, order_by, order)
+        results = await graph_service.get_users_paginated(page, page_size, order_by, order, query)
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
@@ -210,82 +211,29 @@ async def get_user_stats():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
 
-@app.get("/users/search")
-async def search_users(
-    query: str = Query(..., description="Search term for user name or ID"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(12, ge=1, le=100, description="Number of users per page")
-):
-    """Search users by name or ID with pagination"""
-    try:
-        results = await graph_service.search_users_paginated(query, page, page_size)
-        return results
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to search users: {str(e)}")
-
 @app.get("/transactions")
 async def get_transactions(
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(12, ge=1, le=100, description="Number of transactions per page")
+    page_size: int = Query(12, ge=1, le=100, description="Number of transactions per page"),
+    order_by: str = Query('name', description="Field to order results by"),
+    order: str = Query('asc', description="Direction to order results"),
+    query: str | None = Query(None, description="Search term for user name or ID")
 ):
     """Get paginated list of all transactions"""
     try:
-        results = await graph_service.get_transactions_paginated(page, page_size)
+        results = await graph_service.get_transactions_paginated(page, page_size, order_by, order, query)
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get transactions: {str(e)}")
 
-@app.get("/transactions/search")
-async def search_transactions(
-    query: str = Query(..., description="Transaction ID to search for"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(12, ge=1, le=100, description="Number of transactions per page")
-):
-    """Search transactions by exact transaction ID"""
+@app.get("/transactions/stats")
+async def get_user_stats():
+    """Get transaction stats"""
     try:
-        # Get the single transaction detail
-        transaction_detail = await graph_service.get_transaction_detail(query)
-        
-        if transaction_detail:
-            # Flatten the nested structure to match frontend expectations
-            transaction = transaction_detail.get("transaction", {})
-            source_account = transaction_detail.get("source_account", {})
-            destination_account = transaction_detail.get("destination_account", {})
-            
-            flattened_transaction = {
-                "id": transaction.get("id", ""),
-                "sender_id": source_account.get("id", ""),
-                "receiver_id": destination_account.get("id", ""),
-                "amount": transaction.get("amount", 0.0),
-                "currency": transaction.get("currency", "INR"),
-                "timestamp": transaction.get("timestamp", ""),
-                "location": transaction.get("location_city", ""),
-                "status": transaction.get("status", "completed"),
-                "fraud_score": transaction.get("fraud_score", 0.0),
-                "transaction_type": transaction.get("transaction_type", "transfer"),
-                "is_fraud": transaction.get("is_fraud", False),
-                "fraud_status": transaction.get("fraud_status", "CLEAN"),
-                "fraud_reason": transaction.get("fraud_reason", ""),
-                "device_id": None
-            }
-            
-            # Return in the same paginated format expected by frontend
-            return {
-                "transactions": [flattened_transaction],
-                "total_transactions": 1,
-                "current_page": 1,
-                "total_pages": 1
-            }
-        else:
-            # No transaction found
-            return {
-                "transactions": [],
-                "total_transactions": 0,
-                "current_page": 1,
-                "total_pages": 0
-            }
+        results = await graph_service.get_transaction_stats()
+        return results
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to search transactions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
 
 @app.get("/transactions/flagged")
 async def get_flagged_transactions(
@@ -315,10 +263,13 @@ async def update_transaction_status(
 
 # Transaction Generation Endpoints
 @app.post("/transaction-generation/start")
-async def start_transaction_generation(rate: int = Query(1, ge=1, le=50, description="Generation rate (1-50 transactions per second)")):
+async def start_transaction_generation(
+    rate: int = Query(1, ge=1, le=50, description="Generation rate (1-50 transactions per second)"),
+    start: str = Query("", description="Generation start time")
+):
     """Start transaction generation at specified rate"""
     try:
-        success = await transaction_generator.start_generation(rate)
+        success = await transaction_generator.start_generation(rate, start)
         if success:
             logger.info(f"🎯 Transaction generation started at {rate} transactions/second")
             return {

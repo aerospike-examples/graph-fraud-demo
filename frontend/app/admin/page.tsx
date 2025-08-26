@@ -1,32 +1,9 @@
 'use server'
 
 import Admin from '@/components/Admin'
-import { api } from '@/lib/api'
-import type { Transaction } from '@/components/UserDetails/Transactions'
 import Seed from '@/components/Seed'
 
 export default async function AdminPage() {
-	const initStats = {
-		isRunning: false,
-		totalGenerated: 0,
-		currentRate: 0,
-		duration: '00:00:00',
-		startTime: new Date().toISOString()
-	}
-	const initRecent: Transaction[] = []
-	const response = await api.get('/transaction-generation/status')
-    const { status, total_generated, generation_rate, last_10_transactions } = await response.data
-	
-	initStats.isRunning = status === 'running'
-	initStats.totalGenerated = total_generated ?? initStats.totalGenerated
-	initStats.currentRate = generation_rate ?? initStats.currentRate
-	if(last_10_transactions) {
-		initRecent.push(...last_10_transactions)
-	}
-
-	const acctRes = await api.get('/accounts')
-    const { accounts } = acctRes.data
-
   	return (
     	<div className="space-y-6">
       		<div className="flex items-center justify-between">
@@ -61,10 +38,7 @@ export default async function AdminPage() {
 				</Badge> */}
         	</div>
       	</div>
-      	<Admin 
-          accounts={accounts}
-          initStats={initStats}
-          initRecent={initRecent} />
+      	<Admin />
 
       {/* Scenario Details Dialog */}
       {/* <Dialog open={showScenarioDialog} onOpenChange={setShowScenarioDialog}>

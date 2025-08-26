@@ -188,7 +188,14 @@ class RT1FraudService:
                 
                 # Create fraud check result in the graph
                 logger.info(f"🔗 RT1: Calling create_fraud_check_result for transaction {transaction['id']}")
-                await self.create_fraud_check_result(transaction, fraud_result)
+                (self.graph_service.client.V(transaction["id"])
+                    .property("fraud_score", fraud_result["fraud_score"])
+                    .property("fraud_status", fraud_result["status"])
+                    .property("rule", fraud_result["rule_name"])
+                    .property("evaluation_timestamp", datetime.now().isoformat())
+                    .property("reason", fraud_result["reason"])
+                    .property("details", str(fraud_result["details"]))
+                    .next())
                 
                 return fraud_result
             else:

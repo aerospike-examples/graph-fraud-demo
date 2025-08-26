@@ -41,6 +41,9 @@ class RT3FraudService:
                 logger.warning("⚠️ Graph client not available for RT3 fraud detection")
                 return {"is_fraud": False, "reason": "Graph client unavailable"}
             
+            # Get event loop for async operations
+            loop = asyncio.get_event_loop()
+
             # We already have the receiver account ID in the transaction, no need to fetch it from the graph
             receiver_account_id = transaction.get('receiver_account_id', '')
             
@@ -120,6 +123,15 @@ class RT3FraudService:
                         'detection_method': 'RT3_Supernode_Detection'
                     }
                 }
+
+                (self.graph_service.client.add_v("FraudCheckResult")
+                    .property("fraud_score", fraud_result["fraud_score"])
+                    .property("status", fraud_result["status"])
+                    .property("rule", fraud_result["rule_name"])
+                    .property("evaluation_timestamp", datetime.now().isoformat())
+                    .property("reason", fraud_result["reason"])
+                    .property("details", str(fraud_result["details"]))
+                    .next())
                 
                 execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
                 performance_monitor.record_rt3_performance(execution_time, success=True)

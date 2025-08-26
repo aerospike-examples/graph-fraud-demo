@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 interface Props {
     loading: boolean
     isGenerating: boolean
+    currentRate: number
     startGeneration: (rate: number) => Promise<void>
     stopGeneration: () => Promise<void>
 }
@@ -16,10 +17,11 @@ interface Props {
 const Controls = ({
     loading,
     isGenerating,
+    currentRate,
     startGeneration,
     stopGeneration
 }: Props) => {
-    const [generationRate, setGenerationRate] = useState(1)
+    const [generationRate, setGenerationRate] = useState(currentRate)
 
     return (
         <Card className='flex flex-col'>

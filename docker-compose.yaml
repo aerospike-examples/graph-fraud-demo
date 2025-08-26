@@ -73,26 +73,10 @@ services:
       dockerfile: frontend.Dockerfile
     container_name: "asgraph-frontend"
     environment:
-      NEXT_PUBLIC_API_URL: "http://asgraph-backend:4000"
+      BACKEND_URL: "http://asgraph-backend:4000"
     depends_on:
       backend:
         condition: service_healthy
-      caddy:
-        condition: service_healthy
-    networks:
-      - asgraph_net
-    ports:
-      - "4001:4001"
-  caddy:
-    image: caddy
-    container_name: asgraph-caddy
-    volumes:
-      - ./conf:/etc/caddy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/reverse_proxy/upstreams"]
-      interval: 20s
-      timeout: 10s
-      retries: 4
     networks:
       - asgraph_net
     ports:

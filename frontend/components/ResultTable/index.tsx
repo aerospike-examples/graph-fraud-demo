@@ -19,6 +19,7 @@ export interface Option {
     key: string
     sortable?: boolean
     defaultSort?: boolean
+    defaultOrder?: 'asc' | 'desc'
     className?: string
     type?: 'date' | 'datetime' | 'currency'
     icon?: 'mail' | 'map' | 'user' | 'calendar' | 'card'
@@ -43,19 +44,18 @@ const Results = ({
     const [pageSize, setPageSize] = useState(10)
     const [totalPages, setTotalPages] = useState<number>(0)
     const [totalEntries, setTotalEntries] = useState<number>(0)
-    const [sortBy, setSortBy] = useState<string>(options.filter(opt => opt.defaultSort)[0]?.key ?? options.find(opt => opt.sortable)?.key ?? "")
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+    const [orderBy, setOrderBy] = useState<string>(options.filter(opt => opt.defaultSort)[0]?.key ?? options.find(opt => opt.sortable)?.key ?? "")
+    const [order, setOrder] = useState<'asc' | 'desc'>(options.filter(opt => opt.defaultSort)[0]?.defaultOrder ?? 'asc')
     const [results, setResults] = useState<Record<string, any>[]>([])
     const [loading, setLoading] = useState(true)
 
-    const getSortIcon = (field: string) => {
-        if (sortBy !== field) return null
-        return sortOrder === 'asc' ? '↑' : '↓'
-    }
-
-    const fetchData = async (orderBy = sortBy, order= sortOrder) => {
+    const fetchData = async (
+        oB: string = orderBy,
+        o: string = order,
+        q?: string
+    ) => {
         setLoading(true)
-        const response = await fetch(`${path}?page=${currentPage}&page_size=${pageSize}&order_by=${orderBy}&order=${order}`);
+        const response = await fetch(`${path}?page=${currentPage}&page_size=${pageSize}&order_by=${oB}&order=${o}${q ? `&query=${q}` : ''}`);
         const data = await response.json()
         setResults(data[dataKey])
         setTotalPages(data.total_pages)
@@ -64,11 +64,11 @@ const Results = ({
     }
 
     const handleSort = (key: string) => {
-        let order: 'asc' | 'desc' = 'asc';
-        if(sortBy === key) order = sortOrder === 'asc' ? 'desc' : 'asc'        
-        setSortBy(key)
-        setSortOrder(order)
-        fetchData(key, order)
+        let o: 'asc' | 'desc' = 'asc';
+        if(orderBy === key) o = order === 'asc' ? 'desc' : 'asc'        
+        setOrderBy(key)
+        setOrder(o)
+        fetchData(key, o)
     }
 
     useEffect(() => {
@@ -81,6 +81,7 @@ const Results = ({
             <CardHeader className='gap-4'>
                 <CardTitle>{title}</CardTitle>
                 <Search
+                    fetchData={(q) => fetchData(orderBy, order, q)}
                     placeholder={`Search ${title}`} />
             </CardHeader>
             <CardContent className='grow'>
@@ -97,7 +98,7 @@ const Results = ({
                                                 className="text-left p-3 font-medium cursor-pointer hover:bg-muted/50" 
                                                 onClick={() => handleSort(key)}
                                             >
-                                                {name} {getSortIcon(key)}
+                                                {name} {orderBy !== key ? '' : order === 'asc' ? '↑' : '↓'}
                                             </th>
                                         ) : (
                                             <th key={key} className="text-left p-3 font-medium">{name}</th>

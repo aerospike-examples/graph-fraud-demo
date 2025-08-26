@@ -6,18 +6,41 @@ import Statistics, { type GenerationStats } from './Statistics'
 import Controls from './Controls'
 import Manual from './Manual'
 import Recent from './Recent'
+import { getDuration } from '@/lib/utils'
 
-interface Props {
-	accounts: []
-	initStats: GenerationStats
-	initRecent: Transaction[]
-}
+const Generation = () => {
+	const [stats, setStats] = useState<GenerationStats>({
+		isRunning: false,
+		totalGenerated: 0,
+		currentRate: 1,
+		duration: '00:00:00',
+		startTime: new Date().toISOString()
+	})
+	const [isGenerating, setIsGenerating] = useState(stats.isRunning)
+	const [recentTxns, setRecentTxns] = useState<Transaction[]>([])
+	const [loading, setLoading] = useState(false)
 
-const Generation = ({ accounts, initStats, initRecent }: Props) => {
-    const [isGenerating, setIsGenerating] = useState(initStats.isRunning)
-	const [stats, setStats] = useState<GenerationStats>(initStats)
-  	const [recentTxns, setRecentTxns] = useState<Transaction[]>(initRecent)
-	const [loading, setLoading] = useState(false);
+	const getGenerationStats = async () => {
+		const response = await fetch('/api/transaction-generation/status')
+    	const { 
+			status, 
+			transaction_count: totalGenerated, 
+			generation_rate: currentRate, 
+			last_10_transactions,
+			start_time: startTime
+		} = await response.json()
+
+		const isRunning = status === 'running';
+		setIsGenerating(isRunning)
+		setStats({
+			isRunning,
+			totalGenerated,
+			currentRate,
+			duration: (isRunning && startTime) ? getDuration(startTime) : "00:00:00",
+			startTime
+		})
+		setRecentTxns(last_10_transactions)
+	}
 	
 	const pollStatus = () => {
 		const interval: NodeJS.Timeout | undefined =
@@ -29,7 +52,7 @@ const Generation = ({ accounts, initStats, initRecent }: Props) => {
 						const statusData = await response.json()
 						setStats(prev => ({
 							...prev,
-							totalGenerated: statusData.total_generated,
+							totalGenerated: statusData.transaction_count,
 							currentRate: statusData.generation_rate
 						}))
 						if (statusData.last_10_transactions) {
@@ -54,13 +77,14 @@ const Generation = ({ accounts, initStats, initRecent }: Props) => {
 
 	const startGeneration = async (rate: number) => {
 		setLoading(true);
-		const response = await fetch(`/api/transaction-generation/start?rate=${rate}`, {
+		const startTime = new Date().toISOString()
+		const response = await fetch(`/api/transaction-generation/start?rate=${rate}&start=${startTime}`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' }
 		});
 		if(response.ok) {
 			setIsGenerating(true)
-			setStats(prev => ({ ...prev, isRunning: true, startTime: new Date().toISOString() }));
+			setStats(prev => ({ ...prev, isRunning: true, startTime }));
 			console.log('Transaction generation started successfully!');
 		}
 		else {
@@ -88,12 +112,18 @@ const Generation = ({ accounts, initStats, initRecent }: Props) => {
 		setLoading(false)
 	}
 
+	useEffect(() => {
+		getGenerationStats()
+	}, []);
+
     return (
         <>
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             <Controls
+				key={stats.currentRate.toString()}
 				loading={loading}
 				isGenerating={isGenerating}
+				currentRate={stats.currentRate}
 				startGeneration={startGeneration}
 				stopGeneration={stopGeneration} />
 			<Statistics
@@ -101,7 +131,7 @@ const Generation = ({ accounts, initStats, initRecent }: Props) => {
 				setStats={setStats}
 				recentTxns={recentTxns}
 				setRecentTxns={setRecentTxns} />
-            <Manual accounts={accounts} />
+            <Manual />
         </div>
         <Recent recentTxns={recentTxns} />
         </>
