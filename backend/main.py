@@ -26,6 +26,9 @@ logger = get_logger('fraud_detection.api')
 graph_service = GraphService()
 transaction_generator = get_transaction_generator(graph_service)
 
+# Configuration variables
+max_generation_rate = 50  # Default max rate, can be changed via API
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global args
@@ -264,18 +267,26 @@ async def update_transaction_status(
 # Transaction Generation Endpoints
 @app.post("/transaction-generation/start")
 async def start_transaction_generation(
-    rate: int = Query(1, ge=1, le=50, description="Generation rate (1-50 transactions per second)"),
+    rate: int = Query(1, ge=1, description="Generation rate (transactions per second)"),
     start: str = Query("", description="Generation start time")
 ):
     """Start transaction generation at specified rate"""
     try:
+        # Validate rate against dynamic max
+        if rate > max_generation_rate:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Generation rate {rate} exceeds maximum allowed rate of {max_generation_rate}"
+            )
+        
         success = await transaction_generator.start_generation(rate, start)
         if success:
             logger.info(f"🎯 Transaction generation started at {rate} transactions/second")
             return {
                 "message": f"Transaction generation started at {rate} transactions/second",
                 "status": "started",
-                "rate": rate
+                "rate": rate,
+                "max_rate": max_generation_rate
             }
         else:
             raise HTTPException(status_code=400, detail="Transaction generation is already running")
@@ -337,6 +348,36 @@ async def create_manual_transaction(
     except Exception as e:
         logger.error(f"❌ Failed to create manual transaction: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create manual transaction: {str(e)}")
+
+# Max Rate Configuration Endpoints
+@app.get("/transaction-generation/max-rate")
+async def get_max_generation_rate():
+    """Get the current maximum transaction generation rate"""
+    return {
+        "max_rate": max_generation_rate,
+        "description": f"Maximum allowed transaction generation rate: {max_generation_rate} transactions/second"
+    }
+
+@app.post("/transaction-generation/max-rate")
+async def set_max_generation_rate(
+    new_max_rate: int = Query(..., ge=1, description="New maximum generation rate (minimum 1)")
+):
+    """Set the maximum transaction generation rate"""
+    global max_generation_rate
+    try:
+        old_max_rate = max_generation_rate
+        max_generation_rate = new_max_rate
+        
+        logger.info(f"📊 Max generation rate updated from {old_max_rate} to {new_max_rate} transactions/second")
+        
+        return {
+            "message": f"Maximum generation rate updated to {new_max_rate} transactions/second",
+            "old_max_rate": old_max_rate,
+            "new_max_rate": new_max_rate
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to update max generation rate: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update max generation rate: {str(e)}")
 
 @app.get("/accounts")
 async def get_all_accounts():

@@ -41,7 +41,7 @@ const Controls = ({
                         name='generation-rate'
                         type="number"
                         min="1"
-                        max="50"
+                        max="10000"
                         value={generationRate}
                         onChange={(e) => setGenerationRate(parseInt(e.target.value) || 1)}
                         disabled={isGenerating}
