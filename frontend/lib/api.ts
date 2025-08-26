@@ -1,10 +1,10 @@
 import axios from 'axios'
 import { logger } from './logger'
 
-const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8080/api"
+const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8080"
 
 export const api = axios.create({
-	baseURL: API_BASE_URL,
+	baseURL: `${API_BASE_URL}/api`,
 	headers: {
 		'Content-Type': 'application/json',
 	},
