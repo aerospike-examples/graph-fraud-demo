@@ -1,23 +1,15 @@
 import asyncio
 from typing import List, Dict, Any, Optional
-import random
-from datetime import datetime, timedelta
-import uuid
+from datetime import datetime
 import logging
-import json
 import os
+from typing import List, Dict, Any
 
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.driver.aiohttp.transport import AiohttpTransport
 from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import __, constant
-from gremlin_python.process.traversal import P, Order, containing
-
-from models.schemas import (
-    User, Account, Device, Transaction, UserSummary, TransactionDetail,
-    DashboardStats, SearchResult, FraudRiskLevel, TransactionStatus
-)
-from typing import List, Dict, Any
+from gremlin_python.process.traversal import P, T, Order, containing, Scope
 
 # Get logger for graph service
 logger = logging.getLogger('fraud_detection.graph')
@@ -30,14 +22,13 @@ class GraphService:
         self.connection = None
         self.users_data = []
     
-    def get_property_value(self, vertex, key, default=None):
-        """Helper function to get property value from vertex"""
-        for prop in vertex.properties:
-            if prop.key == key:
-                return prop.value
-        return default
-        
-    def connect_sync(self):
+
+    # ----------------------------------------------------------------------------------------------------------
+    # Connection maintenance
+    # ----------------------------------------------------------------------------------------------------------
+
+
+    def connect(self):
         """Synchronous connection to Aerospike Graph (to be called outside async context)"""
         try:
             url = f'ws://{self.host}:{self.port}/gremlin'
@@ -57,21 +48,12 @@ class GraphService:
                 
         except Exception as e:
             logger.error(f"❌ Could not connect to Aerospike Graph: {e}")
-            logger.error("   Graph database connection is required. Please ensure Aerospike Graph is running on port 8182")
+            logger.error("Graph database connection is required. Please ensure Aerospike Graph is running on port 8182")
             self.client = None
             self.connection = None
             raise Exception(f"Failed to connect to Aerospike Graph: {e}")
 
-    async def connect(self):
-        """Async wrapper for synchronous connection"""
-        import asyncio
-        loop = asyncio.get_event_loop()
-        
-        # Run the synchronous connection in a thread pool
-        success = await loop.run_in_executor(None, self.connect_sync)
-        return success
-
-    def close_sync(self):
+    def close(self):
         """Synchronous close of graph connection"""
         if self.connection:
             try:
@@ -80,284 +62,11 @@ class GraphService:
             except Exception as e:
                 logger.warning(f"⚠️  Error closing connection: {e}")
 
-    async def close(self):
-        """Async wrapper for synchronous close"""
-        import asyncio
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self.close_sync)
 
-    async def _execute_query(self, query: str) -> List[Any]:
-        """Execute a Gremlin query using the traversal API"""
-        if not self.client:
-            logger.debug("Graph client not available, returning empty results")
-            return []
-        
-        try:
-            logger.debug(f"Executing Gremlin query: {query}")
-            # For now, we'll use the traversal API directly in the specific methods
-            # This method is kept for compatibility but the real queries will be in the specific methods
-            return []
-        except Exception as e:
-            logger.error(f"Query execution failed: {e}")
-            return []
+    # ----------------------------------------------------------------------------------------------------------
+    # Helper functions
+    # ----------------------------------------------------------------------------------------------------------
 
-
-
-    async def bulk_load_csv_data(self, vertices_path: str = None, edges_path: str = None) -> Dict[str, Any]:
-        """Bulk load data from CSV files using Aerospike Graph bulk loader"""
-        try:
-            if not self.client:
-                raise Exception("Graph client not available. Cannot bulk load data without graph database connection.")
-            
-            # Default paths if not provided
-            if not vertices_path:
-                vertices_path = "/data/graph_csv/vertices"
-            if not edges_path:
-                edges_path = "/data/graph_csv/edges"
-            
-            logger.info(f"Starting bulk load with vertices path: {vertices_path}, edges path: {edges_path}")
-            
-            # Run bulk load operation in a thread pool since it's blocking
-            loop = asyncio.get_event_loop()
-            
-            def run_bulk_load():
-                try:
-                    # Execute bulk load using Aerospike Graph loader
-                    logger.info("Starting bulk load operation...")
-                    result = (self.client
-                             .with_("evaluationTimeout", 2000000)
-                             .call("aerospike.graphloader.admin.bulk-load.load")
-                             .with_("aerospike.graphloader.vertices", vertices_path)
-                             .with_("aerospike.graphloader.edges", edges_path)
-                             .next())
-                    
-                    logger.info("Bulk load operation started successfully")
-                    return {"success": True, "result": result}
-                except Exception as e:
-                    logger.error(f"Bulk load failed: {e}")
-                    return {"success": False, "error": str(e)}
-            
-            bulk_load_result = await loop.run_in_executor(None, run_bulk_load)
-            
-            if bulk_load_result["success"]:
-                logger.info("Bulk load completed successfully")
-                
-                # Get statistics about loaded data
-                stats = await self._get_bulk_load_statistics()
-                
-                return {
-                    "success": True,
-                    "message": "Data bulk loaded successfully from CSV files",
-                    "vertices_path": vertices_path,
-                    "edges_path": edges_path,
-                    "statistics": stats,
-                    "bulk_load_result": bulk_load_result["result"]
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": bulk_load_result["error"],
-                    "vertices_path": vertices_path,
-                    "edges_path": edges_path
-                }
-                
-        except Exception as e:
-            logger.error(f"Error during bulk load: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "vertices_path": vertices_path if vertices_path else "default",
-                "edges_path": edges_path if edges_path else "default"
-            }
-
-    async def _get_bulk_load_statistics(self) -> Dict[str, Any]:
-        """Get statistics about the loaded data after bulk load using Aerospike Graph Summary API"""
-        try:
-            loop = asyncio.get_event_loop()
-            
-            def get_summary():
-                try:
-                    # Use Aerospike Graph Summary API for efficient statistics
-                    logger.info("Retrieving graph summary using Aerospike Graph Summary API...")
-                    summary_result = self.client.call("aerospike.graph.admin.metadata.summary").next()
-                    
-                    # Parse the summary result which comes as a formatted string
-                    summary_lines = str(summary_result).split('\n')
-                    
-                    # Initialize statistics
-                    stats = {
-                        "total_vertices": 0,
-                        "total_edges": 0,
-                        "users": 0,
-                        "accounts": 0,
-                        "devices": 0,
-                        "owns_edges": 0,
-                        "uses_edges": 0,
-                        "vertex_counts_by_label": {},
-                        "edge_counts_by_label": {},
-                        "vertex_properties_by_label": {},
-                        "edge_properties_by_label": {},
-                        "supernode_count": 0,
-                        "supernode_counts_by_label": {}
-                    }
-                    
-                    # Parse summary output
-                    for line in summary_lines:
-                        line = line.strip()
-                        if "Total vertex count=" in line:
-                            stats["total_vertices"] = int(line.split("=")[1])
-                        elif "Vertex count by label=" in line:
-                            # Parse vertex counts: {user=1000, account=2500, device=1800}
-                            label_counts = line.split("=", 1)[1].strip("{}")
-                            for item in label_counts.split(", "):
-                                if "=" in item:
-                                    label, count = item.split("=")
-                                    count_val = int(count)
-                                    stats["vertex_counts_by_label"][label] = count_val
-                                    
-                                    # Map to our expected format
-                                    if label == "user":
-                                        stats["users"] = count_val
-                                    elif label == "account":
-                                        stats["accounts"] = count_val
-                                    elif label == "device":
-                                        stats["devices"] = count_val
-                        elif "Total edge count=" in line:
-                            stats["total_edges"] = int(line.split("=")[1])
-                        elif "Edge count by label=" in line:
-                            # Parse edge counts: {OWNS=2500, USES=3200}
-                            label_counts = line.split("=", 1)[1].strip("{}")
-                            for item in label_counts.split(", "):
-                                if "=" in item:
-                                    label, count = item.split("=")
-                                    count_val = int(count)
-                                    stats["edge_counts_by_label"][label] = count_val
-                                    
-                                    # Map to our expected format
-                                    if label == "OWNS":
-                                        stats["owns_edges"] = count_val
-                                    elif label == "USES":
-                                        stats["uses_edges"] = count_val
-                        elif "Vertex properties by label=" in line:
-                            # Parse vertex properties
-                            props_str = line.split("=", 1)[1]
-                            # This is more complex parsing, store as string for now
-                            stats["vertex_properties_summary"] = props_str
-                        elif "Edge properties by label=" in line:
-                            # Parse edge properties
-                            props_str = line.split("=", 1)[1]
-                            stats["edge_properties_summary"] = props_str
-                        elif "Total supernode count=" in line:
-                            stats["supernode_count"] = int(line.split("=")[1])
-                        elif "Supernode count by label=" in line:
-                            # Parse supernode counts
-                            label_counts = line.split("=", 1)[1].strip("{}")
-                            if label_counts:
-                                for item in label_counts.split(", "):
-                                    if "=" in item:
-                                        label, count = item.split("=")
-                                        stats["supernode_counts_by_label"][label] = int(count)
-                    
-                    logger.info(f"Graph summary retrieved: {stats['total_vertices']} vertices, {stats['total_edges']} edges")
-                    return stats
-                    
-                except Exception as e:
-                    logger.error(f"Error getting graph summary: {e}")
-                    return {
-                        "total_vertices": 0,
-                        "total_edges": 0,
-                        "users": 0,
-                        "accounts": 0,
-                        "devices": 0,
-                        "owns_edges": 0,
-                        "uses_edges": 0,
-                        "error": str(e)
-                    }
-            
-            return await loop.run_in_executor(None, get_summary)
-            
-        except Exception as e:
-            logger.error(f"Error getting bulk load statistics: {e}")
-            return {
-                "total_vertices": 0,
-                "total_edges": 0,
-                "users": 0,
-                "accounts": 0,
-                "devices": 0,
-                "owns_edges": 0,
-                "uses_edges": 0,
-                "error": str(e)
-            }
-
-    async def get_bulk_load_status(self) -> Dict[str, Any]:
-        """Get the status of the current bulk load operation using Aerospike Graph Status API"""
-        try:
-            if not self.client:
-                raise Exception("Graph client not available. Cannot check bulk load status without graph database connection.")
-            
-            logger.info("Checking bulk load status using Aerospike Graph Status API...")
-            
-            # Run status check in a thread pool since it's blocking
-            loop = asyncio.get_event_loop()
-            
-            def check_status():
-                try:
-                    # Use Aerospike Graph Status API to check bulk load progress
-                    status_result = self.client.call("aerospike.graphloader.admin.bulk-load.status").next()
-                    
-                    # Parse the status result
-                    status_info = {
-                        "step": status_result.get("step", "unknown"),
-                        "complete": status_result.get("complete", False),
-                        "status": status_result.get("status", "unknown"),
-                        "elements_written": status_result.get("elements-written"),
-                        "complete_partitions_percentage": status_result.get("complete-partitions-percentage"),
-                        "duplicate_vertex_ids": status_result.get("duplicate-vertex-ids"),
-                        "bad_entries": status_result.get("bad-entries"),
-                        "bad_edges": status_result.get("bad-edges"),
-                        "message": status_result.get("message"),
-                        "stacktrace": status_result.get("stacktrace")
-                    }
-                    
-                    # Clean up None values
-                    status_info = {k: v for k, v in status_info.items() if v is not None}
-                    
-                    logger.info(f"Bulk load status: {status_info['status']} - {status_info['step']}")
-                    
-                    return {
-                        "success": True,
-                        "status_info": status_info
-                    }
-                    
-                except Exception as e:
-                    logger.error(f"Error checking bulk load status: {e}")
-                    return {
-                        "success": False,
-                        "error": str(e)
-                    }
-            
-            status_result = await loop.run_in_executor(None, check_status)
-            
-            if status_result["success"]:
-                return {
-                    "success": True,
-                    "message": "Bulk load status retrieved successfully",
-                    "status": status_result["status_info"]
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": status_result["error"],
-                    "message": "Failed to retrieve bulk load status"
-                }
-                
-        except Exception as e:
-            logger.error(f"Error getting bulk load status: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "message": "Error occurred while checking bulk load status"
-            }
 
     def get_vertex(self, user_id: str):
         return self.client.V(user_id).to_list()
@@ -372,501 +81,26 @@ class GraphService:
         return self.client.V(vertex).out(edge_label1).in_(edge_label2).to_list()
     
     def get_in_edge(self, vertex, edge_label: str):
-        return self.client.V(vertex).in_(edge_label).to_list()    
+        return self.client.V(vertex).in_(edge_label).to_list()
     
-    async def get_user_devices(self, user_id: str):
-        """Get all devices for a specific user"""
-        try:
-            loop = asyncio.get_event_loop()
-            device_vertices = await loop.run_in_executor(None, lambda: self.get_out_edge(str(user_id), "USES"))
-            devices = []
-            #logger.info(f"Device vertices: {device_vertices}")
-            for device_vertex in device_vertices:
-                # Extract device properties using the helper method
-                devices.append(Device(
-                    id=str(device_vertex.id),
-                    type=self.get_property_value(device_vertex, 'type', ''),
-                    os=self.get_property_value(device_vertex, 'os', ''),
-                    browser=self.get_property_value(device_vertex, 'browser', ''),
-                    fingerprint=self.get_property_value(device_vertex, 'fingerprint', ''),
-                    first_seen=self.get_property_value(device_vertex, 'first_seen', ''),
-                    last_login=self.get_property_value(device_vertex, 'last_login', ''),
-                    login_count=self.get_property_value(device_vertex, 'login_count', 0),
-                    fraud_flag=self.get_property_value(device_vertex, 'fraud_flag', False)
-                ))
-            #logger.info(f"Device Details: {devices}")
-            return devices
-        except Exception as e:
-            logger.error(f"Error getting user devices: {e}")
-            return []
+    def get_property_value(self, vertex, key, default=None):
+        """Helper function to get property value from vertex"""
+        for prop in vertex.properties:
+            if prop.key == key:
+                return prop.value
+        return default
+    
+    def _convert_timestamp_to_long(self, date_str: str) -> int:
+        """Convert timestamp string to long integer"""
+        import datetime
+        timestamp = datetime.datetime.now().timestamp()
+        long_timestamp = int(timestamp)
+        return long_timestamp
 
-    async def get_user_accounts(self, user_id: str):
-        """Get all accounts for a specific user"""
-        try:
-            loop = asyncio.get_event_loop()
-            account_vertices = await loop.run_in_executor(None, lambda: self.get_out_edge(str(user_id), "OWNS"))
-            accounts = []
-            for acc_vertex in account_vertices:
-                # Extract account properties using the helper method
-                #logger.info(f"Account vertex properties: {acc_vertex.properties}")  
-                accounts.append(Account(
-                    id=str(acc_vertex.id),
-                    user_id=user_id,
-                    account_type=self.get_property_value(acc_vertex, 'type', 'checking'),
-                    balance=self.get_property_value(acc_vertex, 'balance', 0.0),
-                    bank_name=self.get_property_value(acc_vertex, 'bank_name', 'DEFAULT_BANK'),
-                    created_date=self.get_property_value(acc_vertex, 'created_date', ''),
-                    status=self.get_property_value(acc_vertex, 'status', 'DEFAULT_STATUS'),
-                    fraud_flag=self.get_property_value(acc_vertex, 'fraud_flag', False)
-                ))
-            #logger.info(f"Account Details: {accounts}")
-            return accounts
-        except Exception as e:
-            logger.error(f"Error getting user accounts: {e}")
-            return []
+    # ----------------------------------------------------------------------------------------------------------
+    # Dashboard functions
+    # ----------------------------------------------------------------------------------------------------------
 
-    async def get_user_data(self, user_id: str):
-        """Get user vertex and extract user properties"""
-        try:
-            loop = asyncio.get_event_loop()
-            user_vertex = await loop.run_in_executor(None, lambda: self.get_vertex(user_id))
-            if not user_vertex:
-                return None, None
-
-            user_vertex = user_vertex[0] 
-             
-            # Extract user properties using the helper method
-            user_props = {
-                'user_id': str(user_vertex.id),
-                'name': self.get_property_value(user_vertex, 'name', 'Unknown'),
-                'email': self.get_property_value(user_vertex, 'email', ''),
-                'phone': self.get_property_value(user_vertex, 'phone', ''),
-                'occupation': self.get_property_value(user_vertex, 'occupation', ''),
-                'age': self.get_property_value(user_vertex, 'age', 0),
-                'location': self.get_property_value(user_vertex, 'location', ''),
-                'signup_date': self.get_property_value(user_vertex, 'signup_date', ''),
-                'risk_score': self.get_property_value(user_vertex, 'risk_score', 0.0)
-            }
-            
-            return user_vertex, user_props
-        except Exception as e:
-            logger.error(f"Error getting user data: {e}")
-            return None, None
-
-    async def get_user_transactions(self, user_id: str):
-        """Get all transactions for a specific user (both sent and received)"""
-        try:
-            loop = asyncio.get_event_loop()
-            
-            # Find transactions where user's accounts are senders (TRANSFERS_TO edges)
-            sender_transaction_vertices = await loop.run_in_executor(None, lambda: self.get_out_out_edge(str(user_id), "OWNS", "TRANSFERS_TO"))
-            logger.info(f"Found {len(sender_transaction_vertices)} sent transactions")
-            
-            # Find transactions where user's accounts are receivers (incoming TRANSFERS_FROM edges)
-            receiver_transaction_vertices = await loop.run_in_executor(None, lambda: self.get_out_in_edge(str(user_id), "OWNS", "TRANSFERS_FROM"))
-            logger.info(f"Found {len(receiver_transaction_vertices)} received transactions")
-            
-            return sender_transaction_vertices, receiver_transaction_vertices
-        except Exception as e:
-            logger.error(f"Error getting user transactions: {e}")
-            return [], []
-
-    async def get_transaction_account_info(self, account_vertex):
-        """Get account info from account vertex"""
-        if not account_vertex:
-            return {"account_id": "Unknown", "user_name": "Unknown"}
-            
-        try:
-            loop = asyncio.get_event_loop()
-            # Account ID is the vertex ID
-            account_id = str(account_vertex.id)
-            
-            # Get user who owns this account using helper function
-            user_vertices = await loop.run_in_executor(None, lambda: self.get_in_edge(account_vertex, "OWNS"))
-            user_name = "Unknown"
-            
-            if user_vertices:
-                user_name = self.get_property_value(user_vertices[0], 'name', 'Unknown')
-                
-            return {
-                "account_id": account_id,
-                "user_name": user_name
-            }
-        except Exception as e:
-            logger.error(f"Error getting account info: {e}")
-            return {"account_id": "Unknown", "user_name": "Unknown"}
-
-    async def get_transaction_fraud_info(self, trans_vertex):
-        """Get fraud detection info for a transaction"""
-        try:
-            # Read fraud properties directly from transaction vertex
-            fraud_status = self.get_property_value(trans_vertex, 'fraud_status', '')
-            fraud_score = self.get_property_value(trans_vertex, 'fraud_score', 0.0)
-            rule = self.get_property_value(trans_vertex, 'rule', '')
-            
-            # Determine if fraud based on fraud_status
-            is_fraud = bool(fraud_status and fraud_status.strip() and fraud_status.lower() in ['blocked', 'review', 'flagged'])
-            
-            fraud_rules = []
-            if rule and rule.strip():
-                fraud_rules.append(rule)
-            
-            return {
-                'is_fraud': is_fraud,
-                'fraud_score': fraud_score,
-                'fraud_rules': fraud_rules
-            }
-        except Exception as e:
-            logger.error(f"Error getting fraud info: {e}")
-            return {
-                'is_fraud': False,
-                'fraud_score': 0.0,
-                'fraud_rules': []
-            }
-
-    async def get_user_summary(self, user_id: str) -> Optional[UserSummary]:
-        """Get user's profile, connected accounts, and transaction summary"""
-        try:
-            if self.client:
-                logger.info(f"Getting user summary for user {user_id}")
-                # Get user vertex and properties
-                user_vertex, user_props = await self.get_user_data(user_id)
-                if not user_vertex or not user_props:
-                    return None
-                
-                # Get user's accounts
-                accounts = await self.get_user_accounts(user_id)
-
-                # Get user's devices
-                devices = await self.get_user_devices(user_id)
-                
-                # Get transaction summary - find transactions where user's accounts are sender or receiver
-                logger.info(f"Looking for transactions for user {user_id}")
-                
-                # Get user's transactions (both sent and received)
-                sender_transaction_vertices, receiver_transaction_vertices = await self.get_user_transactions(user_id)
-                
-                # Combine and deduplicate transaction vertices
-                all_transaction_vertices = list(set(sender_transaction_vertices + receiver_transaction_vertices))
-                total_transactions = len(all_transaction_vertices)
-                logger.info(f"Total unique transactions: {total_transactions}")
-                
-                # Build recent transactions list with full transaction details
-                recent_transactions = []
-                total_amount_sent = 0.0
-                total_amount_received = 0.0
-                
-                for trans_vertex in all_transaction_vertices[-10:]:  # Get last 10 transactions
-                    try:
-                        # Get transaction properties
-                        trans_props = {
-                            'transaction_id': str(trans_vertex.id),  # Transaction ID is the vertex ID
-                            'amount': self.get_property_value(trans_vertex, 'amount', 0.0),
-                            'currency': self.get_property_value(trans_vertex, 'currency', 'INR'),
-                            'timestamp': self.get_property_value(trans_vertex, 'timestamp', ''),
-                            'location': self.get_property_value(trans_vertex, 'location', ''),
-                            'type': self.get_property_value(trans_vertex, 'type', ''),
-                            'status': self.get_property_value(trans_vertex, 'status', 'completed')
-                        }
-                        
-                        # Determine if this is a sent or received transaction for this user
-                        # Check if this transaction is in the sender_transaction_vertices list
-                        is_sent = any(str(tx.id) == trans_props['transaction_id'] for tx in sender_transaction_vertices)
-                        
-                        # Get sender and receiver account information
-                        loop = asyncio.get_event_loop()
-                        sender_account_vertices = await loop.run_in_executor(None, lambda: self.get_in_edge(trans_vertex, "TRANSFERS_TO"))
-                        receiver_account_vertices = await loop.run_in_executor(None, lambda: self.get_out_edge(trans_vertex, "TRANSFERS_FROM"))
-                        
-                        # Extract account and user info using helper function
-                        sender_info = await self.get_transaction_account_info(sender_account_vertices[0] if sender_account_vertices else None)
-                        receiver_info = await self.get_transaction_account_info(receiver_account_vertices[0] if receiver_account_vertices else None)
-                        
-                        # Get fraud detection info
-                        fraud_info = await self.get_transaction_fraud_info(trans_vertex)
-                        
-                        # Calculate display amount (negative if sent, positive if received)
-                        transaction_amount = trans_props['amount']
-                        display_amount = -transaction_amount if is_sent else transaction_amount
-                        
-                        # Create transaction dictionary
-                        transaction_dict = {
-                            "id": trans_props['transaction_id'],
-                            "sender_id": sender_info["account_id"],
-                            "receiver_id": receiver_info["account_id"],
-                            "amount": display_amount,
-                            "currency": trans_props['currency'],
-                            "timestamp": trans_props['timestamp'],
-                            "location": trans_props['location'],
-                            "status": trans_props['status'],
-                            "fraud_score": fraud_info['fraud_score'],
-                            # Enhanced fields for frontend
-                            "sender_name": sender_info["user_name"],
-                            "receiver_name": receiver_info["user_name"],
-                            "is_fraud": fraud_info['is_fraud'],
-                            "fraud_rules": fraud_info['fraud_rules'],
-                            "direction": "sent" if is_sent else "received",
-                            "original_amount": transaction_amount
-                        }
-                        
-                        # Update totals with original amount (not display amount)
-                        if is_sent:
-                            total_amount_sent += transaction_amount
-                        else:
-                            total_amount_received += transaction_amount
-                        
-                        recent_transactions.append(transaction_dict)
-                        
-                    except Exception as e:
-                        logger.error(f"Error processing transaction vertex: {e}")
-                        continue
-                
-                # Calculate fraud risk level based on risk score
-                risk_score = user_props.get('risk_score', 0.0)
-                if risk_score < 25:
-                    fraud_risk_level = FraudRiskLevel.LOW
-                elif risk_score < 50:
-                    fraud_risk_level = FraudRiskLevel.MEDIUM
-                elif risk_score < 75:
-                    fraud_risk_level = FraudRiskLevel.HIGH
-                else:
-                    fraud_risk_level = FraudRiskLevel.CRITICAL
-                
-                # For now, we'll set connected users to empty list
-                # In a real implementation, you'd find users connected via transactions
-                connected_users = []
-                
-                return UserSummary(
-                    user=User(
-                        id=user_vertex.id,
-                        name=user_props.get('name', ''),
-                        email=user_props.get('email', ''),
-                        age=user_props.get('age', 0),
-                        phone=user_props.get('phone', ''),
-                        occupation=user_props.get('occupation', ''),
-                        location=user_props.get('location', ''),
-                        risk_score=user_props.get('risk_score', 0.0),
-                        signup_date=user_props.get('signup_date', '')
-                    ),
-                    accounts=accounts,
-                    devices=devices,
-                    recent_transactions=recent_transactions,
-                    total_transactions=total_transactions,
-                    total_amount_sent=total_amount_sent,
-                    total_amount_received=total_amount_received,
-                    fraud_risk_level=fraud_risk_level,
-                    connected_users=connected_users
-                )
-            else:
-                logger.error("No graph client available. Cannot get user summary without graph database connection.")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error getting user summary: {e}")
-            return None
-
-    async def get_transaction_detail(self, transaction_id: str) -> Optional[Dict[str, Any]]:
-        """Get detailed transaction information"""
-        try:
-            if self.client:
-                # Query real graph - look for transaction vertex
-                loop = asyncio.get_event_loop()
-                logger.info(f"Looking for transaction with ID: {transaction_id}")
-                       
-                transaction_vertices = await loop.run_in_executor(None, lambda: self.get_vertex(transaction_id))
-                #logger.info(f"Found {len(transaction_vertices)} transaction vertices")
-                
-                if not transaction_vertices:
-                    return None
-                
-                transaction_vertex = transaction_vertices[0]
-                
-                transaction_props = {
-                    'transaction_id': str(transaction_vertex.id),  # Use T.id
-                    'amount': self.get_property_value(transaction_vertex, 'amount', 0.0),
-                    'currency': self.get_property_value(transaction_vertex, 'currency', ''),
-                    'timestamp': self.get_property_value(transaction_vertex, 'timestamp', ''),
-                    'location': self.get_property_value(transaction_vertex, 'location', ''),
-                    'type': self.get_property_value(transaction_vertex, 'type', ''),
-                    'status': self.get_property_value(transaction_vertex, 'status', ''),
-                    'method': self.get_property_value(transaction_vertex, 'method', 'transfer')
-                }
-                #logger.info(f"Transaction properties: {transaction_props}")
-                
-                # Get source and destination accounts from TRANSFERS_TO and TRANSFERS_FROM edges
-                source_account = await loop.run_in_executor(None, lambda: self.get_in_edge(str(transaction_vertex.id), "TRANSFERS_TO"))
-                dest_account = await loop.run_in_executor(None, lambda: self.get_out_edge(str(transaction_vertex.id), "TRANSFERS_FROM"))
-                
-                #logger.info(f"Found source accounts: {len(source_account)}, dest accounts: {len(dest_account)}")
-                
-                # Only proceed if we have both accounts AND their users
-                if source_account and dest_account:
-                    # Get account IDs directly from T.id
-                    source_account_id = str(source_account[0].id) if source_account else ''
-                    dest_account_id = str(dest_account[0].id) if dest_account else ''
-                     
-                    # Get other account properties 
-                    source_props = {
-                        'type': self.get_property_value(source_account[0], 'type', 'checking') if source_account else 'checking',
-                        'balance': self.get_property_value(source_account[0], 'balance', 0.0) if source_account else 0.0,
-                        'created_date': self.get_property_value(source_account[0], 'created_date', '') if source_account else ''
-                    }
-                    dest_props = {
-                        'type': self.get_property_value(dest_account[0], 'type', 'checking') if dest_account else 'checking',
-                        'balance': self.get_property_value(dest_account[0], 'balance', 0.0) if dest_account else 0.0,
-                        'created_date': self.get_property_value(dest_account[0], 'created_date', '') if dest_account else ''
-                    }
-                    
-                    # Get user information for source account
-                    source_users = await loop.run_in_executor(None, lambda: self.get_in_edge(source_account[0].id, "OWNS"))
-                    source_user = source_users[0] if source_users else None
-                    
-                    # Get user information for destination account
-                    dest_users = await loop.run_in_executor(None, lambda: self.get_in_edge(dest_account[0].id, "OWNS"))   
-                    dest_user = dest_users[0] if dest_users else None
-                    
-                    # Get user properties directly from vertices we already have
-                    source_user_props = {
-                        'name': self.get_property_value(source_user, 'name', '') if source_user else '',
-                        'email': self.get_property_value(source_user, 'email', '') if source_user else ''
-                    }
-                    dest_user_props = {
-                        'name': self.get_property_value(dest_user, 'name', '') if dest_user else '',
-                        'email': self.get_property_value(dest_user, 'email', '') if dest_user else ''
-                    }
-                    
-                    # Only return data if we have BOTH users - no mock data
-                    if not source_user or not dest_user:
-                        logger.warning(f"Transaction {transaction_id} missing source user ({bool(source_user)}) or dest user ({bool(dest_user)}) - returning None")
-                        return None
-                    
-                    # Build transaction data - ONLY from database properties
-                    transaction_data = {
-                        "id": transaction_props.get('transaction_id', ''),
-                        "amount": transaction_props.get('amount', 0.0),
-                        "currency": transaction_props.get('currency', ''),
-                        "timestamp": transaction_props.get('timestamp', ''),
-                        "status": transaction_props.get('status', ''),
-                        "transaction_type": transaction_props.get('type', ''),
-                        "location_city": transaction_props.get('location', ''),
-                        "method": transaction_props.get('method', 'transfer')
-                    }
-                    #logger.info(f"Transaction data: {transaction_data}")
-                    # Build account data - ONLY from database properties
-                    source_account_data = {
-                        "id": source_account_id,
-                        "account_type": source_props.get('type', ''),
-                        "balance": source_props.get('balance', 0.0),
-                        "created_date": source_props.get('created_date', ''),
-                        "user_id": source_user.id,
-                        "user_name": source_user_props.get('name', ''),
-                        "user_email": source_user_props.get('email', '')
-                    }
-                   # logger.info(f"Source account data: {source_account_data}")
-                    destination_account_data = {
-                        "id": dest_account_id,
-                        "account_type": dest_props.get('type', ''),
-                        "balance": dest_props.get('balance', 0.0),
-                        "created_date": dest_props.get('created_date', ''),
-                        "user_id": dest_user.id,
-                        "user_name": dest_user_props.get('name', ''),
-                        "user_email": dest_user_props.get('email', '')
-                    }
-                  #  logger.info(f"Destination account data: {destination_account_data}")
-                    # Get fraud results - read directly from transaction vertex properties
-                    fraud_status = self.get_property_value(transaction_vertex, 'fraud_status', '')
-                    fraud_score = self.get_property_value(transaction_vertex, 'fraud_score', 0.0)
-                    
-                    fraud_results = []
-                    
-                    # Check if fraud detection was performed (fraud_status exists and is not empty)
-                    if fraud_status and fraud_status.strip():
-                        logger.info(f"Found fraud properties on transaction vertex: status={fraud_status}, score={fraud_score}")
-                        
-                        # Extract fraud properties directly from transaction vertex
-                        fraud_result = {
-                            'fraud_score': fraud_score,
-                            'status': fraud_status,
-                            'rule': self.get_property_value(transaction_vertex, 'rule', 'unknown'),
-                            'evaluation_timestamp': self.get_property_value(transaction_vertex, 'evaluation_timestamp', ''),
-                            'reason': self.get_property_value(transaction_vertex, 'reason', ''),
-                            'details': self.get_property_value(transaction_vertex, 'details', ''),
-                            'is_fraud': fraud_status.lower() in ['blocked', 'review', 'flagged']  # Determine if fraud based on status
-                        }
-                        logger.info(f"Fraud result properties: {fraud_result}")
-                        fraud_results.append(fraud_result)
-                    else:
-                        logger.info("No fraud properties found on transaction vertex - transaction is clean")
-                            
-                    # logger.info(f"Found {len(fraud_results)} fraud results for transaction {transaction_id}")
-                    
-                    return {
-                        "transaction": transaction_data,
-                        "source_account": source_account_data,
-                        "destination_account": destination_account_data,
-                        "fraud_results": fraud_results
-                    }
-                else:
-                    # No mock data - return None if we don't have complete real data
-                    logger.warning(f"Transaction {transaction_id} found but missing source/destination accounts or users - returning None")
-                    return None
-            else:
-                # No graph client available
-                raise Exception("Graph client not available. Cannot get transaction detail without graph database connection.")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error getting transaction detail: {e}")
-            return None
-
-    async def get_all_accounts(self) -> List[Dict[str, Any]]:
-        """Get all accounts with their associated user information"""
-        try:
-            if self.client:
-                loop = asyncio.get_event_loop()
-                
-                def get_accounts():
-                    return self.client.V().has_label("account").to_list()
-                
-                account_vertices = await loop.run_in_executor(None, get_accounts)
-                accounts = []
-                logger.info(f"Found {len(account_vertices)} account vertices")
-                
-                for account_vertex in account_vertices:
-                    try:
-                        # Access properties directly from vertex (no additional DB calls needed)
-                        account_id = str(account_vertex.id)
-                        account_type = self.get_property_value(account_vertex, 'type', '')
-                        
-                        # # Get associated user
-                        # def get_user():
-                        #     return account_vertex.in_("OWNS").to_list()
-                        
-                        # users = await loop.run_in_executor(None, get_user)
-                        # user_name = "Unknown"
-                        
-                        # if users:
-                        #     # Access user name directly from user vertex
-                        #     user_vertex = users[0]
-                        #     user_name = self.get_property_value(user_vertex, 'name', 'Unknown')
-                        
-                        accounts.append({
-                            "account_id": account_id,
-                            "account_type": account_type
-                            # "user_name": user_name
-                        })
-                        
-                    except Exception as e:
-                        logger.error(f"Error processing account: {e}")
-                        continue
-                        
-                return accounts
-            else:
-                return []
-                
-        except Exception as e:
-            logger.error(f"Error getting all accounts: {e}")
-            return []
 
     def get_graph_summary(self) -> Dict[str, Any]:
         """Get graph summary using Aerospike Graph admin API - reusable method"""
@@ -898,86 +132,150 @@ class GraphService:
         except Exception as e:
             logger.error(f"Error getting graph summary: {e}")
             return {}
-
-    def get_dashboard_stats_sync(self) -> DashboardStats:
+        
+    def get_dashboard_stats(self) -> Dict[str, Any]:
         """Get dashboard statistics using Aerospike Graph summary API"""
         try:
             if self.client:
                 # Get graph summary using the reusable method
                 graph_summary = self.get_graph_summary()
                 if graph_summary:
-                    vertex_counts = graph_summary['vertex_counts']
-                    total_users = vertex_counts.get('user', 0)
-                    total_transactions = vertex_counts.get('transaction', 0)
-                    total_accounts = vertex_counts.get('account', 0)
-                    total_devices = vertex_counts.get('device', 0)
+                    vertices = graph_summary['vertex_counts']
+                    edges = graph_summary['edge_counts']
+                    users = vertices.get('user', 0)
+                    txns = edges.get('TRANSACTS', 0)
+                    accounts = vertices.get('account', 0)
+                    devices = vertices.get('device', 0)
                     
-                    logger.info(f"Dashboard stats from summary: users={total_users}, transactions={total_transactions}, accounts={total_accounts}, devices={total_devices}")
+                    logger.info(f"Dashboard stats from summary: users={users}, transactions={txns}, accounts={accounts}, devices={devices}")
                 else:
-                    total_users = total_transactions = total_accounts = total_devices = 0
+                    users = txns = accounts = devices = 0
                 
                 # For flagged transactions and total amount, we still need separate queries
                 # as these require filtering and aggregation
-                flagged_transactions = 0
-                total_amount = 0.0
-                
-                if total_transactions > 0:
+                flagged = 0
+                amount = 0.0
+                fraud_rate = 0.0
+
+                if txns > 0:
                     try:
-                        # Get flagged transactions (high risk transactions)
-                        flagged_transactions = len(self.client.V().has_label("transaction").has("amount", P.gte(10000)).to_list())
+                        txn_stats = (self.client.E()
+                            .has_label('TRANSACTS').fold()
+                            .project('flagged','amount')
+                            .by(__.unfold()
+                                .has('fraud_score', P.gt(0))
+                                .count())
+                            .by(__.unfold()
+                                .values('amount')
+                                .sum_())
+                            .next())
                         
-                        # Calculate total amount using optimized query
-                        amount_results = self.client.V().has_label("transaction").values("amount").to_list()
-                        total_amount = sum(amount for amount in amount_results if amount is not None)
+                        flagged = txn_stats.get("flagged", 0)
+                        amount = txn_stats.get("amount", 0)
+                        fraud_rate = (flagged / txns * 100)
                         
                     except Exception as e:
                         logger.warning(f"Error getting detailed transaction stats: {e}")
                         # Continue with basic stats from summary
                 
-                fraud_rate = (flagged_transactions / total_transactions * 100) if total_transactions > 0 else 0
-                
-                return DashboardStats(
-                    total_users=total_users,
-                    total_transactions=total_transactions,
-                    flagged_transactions=flagged_transactions,
-                    total_amount=total_amount,
-                    fraud_detection_rate=fraud_rate,
-                    graph_health="connected"
-                )
+                return {
+                    "users": users,
+                    "txns": txns,
+                    "flagged": flagged,
+                    "amount": amount,
+                    "fraud_rate": fraud_rate,
+                    "health": "connected"
+                }
             else:
                 # No graph client available
                 raise Exception("Graph client not available. Cannot get dashboard stats without graph database connection.")
                 
         except Exception as e:
             logger.error(f"Error getting dashboard stats: {e}")
-            return DashboardStats(
-                total_users=0,
-                total_transactions=0,
-                flagged_transactions=0,
-                total_amount=0.0,
-                fraud_detection_rate=0.0,
-                graph_health="error"
-            )
+            return {
+                "users": 0,
+                "txns": 0,
+                "flagged": 0,
+                "amount": 0.0,
+                "fraud_rate": 0.0,
+                "health": "error"
+            }
 
-    async def get_graph_summary_async(self) -> Dict[str, Any]:
-        """Get graph summary asynchronously - reusable method"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.get_graph_summary)
 
-    async def get_dashboard_stats(self) -> DashboardStats:
-        """Get dashboard statistics asynchronously"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.get_dashboard_stats_sync)
+    # ----------------------------------------------------------------------------------------------------------
+    # Search function
+    # ----------------------------------------------------------------------------------------------------------
 
-    async def get_user_stats(self) -> Dict[str, Any]:
+
+    def search(self, type: str, page: int, page_size: int | None, order_by: str, order: str, query: str | None) -> Dict[str, Any]:
+        """Get paginated list of all users or transactions"""
+        try:
+            if self.client:
+                start_idx = (page - 1) * page_size
+                end_idx = start_idx + page_size if page_size else -1
+                # Query real graph using run_in_executor to avoid event loop conflict
+                graph_query = self.client.V().has_label("user") if type == 'user' else self.client.E().has_label("TRANSACTS")
+                if query:
+                    if type == 'user':
+                        graph_query = graph_query.or_(
+                                __.has("name", containing(query.title())),
+                                __.hasId(containing(query.upper())),
+                                __.has("email", containing(query.lower())),
+                                __.has("location", containing(query.title()))
+                            )
+                    else:
+                        graph_query = graph_query.or_(
+                            __.has("sender", containing(query.upper())),
+                            __.has("receiver", containing(query.upper())),
+                            __.has("txn_id", containing(query.upper())),
+                            __.has("location", containing(query.title()))
+                        )
+                results = (
+                    graph_query.elementMap()
+                        .order()
+                        .by(order_by, Order.asc if order == 'asc' else Order.desc)
+                        .fold()
+                        .project("total", "results")
+                        .by(__.count(Scope.local))
+                        .by(__.unfold().range_(start_idx, end_idx).fold())
+                        .next())
+                        
+                for result in results["results"]:
+                    result["id"] = result.pop(T.id)
+                    result.pop(T.label)
+
+                return {
+                    'result': results["results"],
+                    'total': results["total"],
+                    'page': page,
+                    'page_size': page_size,
+                    'total_pages': (results["total"] + page_size - 1) // page_size
+                }
+            else:
+                # No graph client available
+                raise Exception("Graph client not available. Cannot get users without graph database connection.")
+                
+        except Exception as e:
+            logger.error(f"Error getting search results: {e}")
+            return {
+                'results': [],
+                'total': 0,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': 0
+            }
+    
+
+    # ----------------------------------------------------------------------------------------------------------
+    # User functions
+    # ----------------------------------------------------------------------------------------------------------
+
+        
+    def get_user_stats(self) -> Dict[str, Any]:
         """Get user statistics"""
         try:
             if self.client:
-                def get_user_dashboard_stats():
-                    return self.client.V().has_label("user").values('risk_score').to_list()
-
-                loop = asyncio.get_event_loop()
-                stats = await loop.run_in_executor(None, get_user_dashboard_stats)
+                stats = self.client.V().has_label("user").values('risk_score').to_list()
                 return {
                     'total_users': len(stats),
                     'total_low_risk': len(list(filter(lambda x: x < 25, stats))),
@@ -997,83 +295,111 @@ class GraphService:
                 'total_high_risk': 0
             }
 
-    async def get_users_paginated(self, page: int, page_size: int, order_by: str, order: str, query: str | None ) -> Dict[str, Any]:
-        """Get paginated list of all users"""
+
+    def get_user_summary(self, user_id: str) -> Dict[str, Any]:
+        """Get user's profile, connected accounts, and transaction summary"""
         try:
             if self.client:
-                # Get event loop for async operations
-                loop = asyncio.get_event_loop()
+                logger.info(f"Getting user summary for user {user_id}")
+                # Get user vertex and properties
+                user_summary = (
+                    self.client.V(user_id)
+                        .project("user", "accounts", "txns", "total_txns", "total_sent", "total_recd", "devices", "connected_users")
+                        .by(__.elementMap())
+                        .by(__.out("OWNS").elementMap().fold())
+                        .by(__.out("OWNS").bothE("TRANSACTS").order().by("timestamp", Order.asc).limit(10)
+                            .project("txn", "other_party")
+                            .by(__.elementMap())
+                            .by(__.bothV().in_("OWNS").where(__.not_(__.has_id(user_id))).elementMap())
+                            .fold())
+                        .by(__.out("OWNS").bothE("TRANSACTS").count())
+                        .by(__.coalesce(__.out("OWNS").inE("TRANSACTS").values("amount").sum_(), constant(0.00)))
+                        .by(__.coalesce(__.out("OWNS").outE("TRANSACTS").values("amount").sum_(), constant(0.00)))
+                        .by(__.out("USES").elementMap().fold())
+                        .by(__.out("USES").in_("USES").not_(__.hasId(user_id)).fold())
+                        .next())
+                if not user_summary:
+                    return None
                 
-                # Query real graph using run_in_executor to avoid event loop conflict
-                def get_all_users():
-                    if(query):
-                        return self.client.V().has_label("user").or_(
-                            __.has("name", containing(query.title())),
-                            __.hasId(containing(query.upper())),
-                            __.has("email", containing(query.lower())),
-                            __.has("location", containing(query.title()))
-                        ).order().by(order_by, Order.asc if order == 'asc' else Order.desc).to_list()
-                    else:
-                        return self.client.V().has_label("user").order().by(order_by, Order.asc if order == 'asc' else Order.desc).to_list()
+                user_summary["user"]["id"] = user_summary["user"].pop(T.id)
+                user_summary["user"].pop(T.label)
+                risk_score = user_summary["user"].get('risk_score', 0.0)
                 
-                all_users = await loop.run_in_executor(None, get_all_users)
-                
-                # Paginate
-                start_idx = (page - 1) * page_size
-                end_idx = start_idx + page_size
-                paginated_users = all_users[start_idx:end_idx]
-                
-                users_data = []
-                for user_vertex in paginated_users:
-                    # Get user properties
-                    users_data.append({
-                        'id': user_vertex.id,
-                        'name': self.get_property_value(user_vertex, 'name', ''),
-                        'email': self.get_property_value(user_vertex, 'email', ''),
-                        'age': self.get_property_value(user_vertex, 'age', 0),
-                        'location': self.get_property_value(user_vertex, 'location', ''),
-                        'occupation': self.get_property_value(user_vertex, 'occupation', ''),
-                        'phone': self.get_property_value(user_vertex, 'phone', ''),
-                        'risk_score': self.get_property_value(user_vertex, 'risk_score', 0.0),
-                        'signup_date': self.get_property_value(user_vertex, 'signup_date', ''),
-                    })
-                
-                return {
-                    'users': users_data,
-                    'total': len(all_users),
-                    'page': page,
-                    'page_size': page_size,
-                    'total_pages': (len(all_users) + page_size - 1) // page_size
-                }
+                # Calculate fraud risk level based on risk score
+                user_summary["risk_level"] = "LOW" if risk_score < 25 else "MEDIUM" if risk_score < 50 else "HIGH" if risk_score < 75 else "CRITICAL"
+                return user_summary
             else:
-                # No graph client available
-                raise Exception("Graph client not available. Cannot get users without graph database connection.")
+                logger.error("No graph client available. Cannot get user summary without graph database connection.")
+                return None
                 
         except Exception as e:
-            logger.error(f"Error getting users paginated: {e}")
-            return {
-                'users': [],
-                'total': 0,
-                'page': page,
-                'page_size': page_size,
-                'total_pages': 0
-            }
+            logger.error(f"Error getting user summary: {e}")
+            return None
 
-    async def get_transaction_stats(self) -> Dict[str, Any]:
+
+    def get_user_devices(self, user_id: str):
+        """Get all devices for a specific user"""
+        try:
+            pass
+        except Exception as e:
+            logger.error(f"Error getting user devices: {e}")
+            return []
+
+
+    def get_user_accounts(self, user_id: str):
+        """Get all accounts for a specific user"""
+        try:
+            pass
+        except Exception as e:
+            logger.error(f"Error getting user accounts: {e}")
+            return []
+
+
+    def get_user_transactions(self, user_id: str):
+        """Get all transactions for a specific user (both sent and received)"""
+        try:
+            pass
+        except Exception as e:
+            logger.error(f"Error getting user transactions: {e}")
+            return [], []
+
+
+    def get_user_connected_devices(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get users who share devices with the specified user"""
+        try:
+            pass
+            
+        except Exception as e:
+            logger.error(f"Error finding connected device users: {e}")
+            return [] 
+
+
+    # ----------------------------------------------------------------------------------------------------------
+    # Transaction functions
+    # ----------------------------------------------------------------------------------------------------------
+
+
+    def get_transaction_stats(self) -> Dict[str, Any]:
         """Get transaction stats"""
         try:
             if self.client:
-                def get_user_dashboard_stats():
-                    return self.client.V().has_label("transaction").coalesce(__.values('fraud_status'), constant("clean")).to_list()
-
-                loop = asyncio.get_event_loop()
-                stats = await loop.run_in_executor(None, get_user_dashboard_stats)
-                print(stats)
+                stats = (self.client.E()
+                    .has_label("TRANSACTS")
+                    .fold()
+                    .project("total", "blocked", "review")
+                    .by(__.unfold().count())
+                    .by(__.unfold().has("fraud_status", "blocked").count())
+                    .by(__.unfold().has("fraud_status", "review").count())
+                    .next())
+                
+                total = stats.get("total", 0)
+                blocked = stats.get("blocked", 0)
+                review = stats.get("review", 0)
                 return {
-                    'total_txns': len(stats),
-                    'total_blocked': len(list(filter(lambda x: x == 'blocked', stats))),
-                    'total_review': len(list(filter(lambda x: x == 'review', stats))),
-                    'total_clean': len(list(filter(lambda x: x == 'clean', stats)))
+                    'total_txns': total,
+                    'total_blocked': blocked,
+                    'total_review': review,
+                    'total_clean': total - blocked - review
                 }
             else:
                 # No graph client available
@@ -1088,141 +414,70 @@ class GraphService:
                 'total_clean': 0
             }
 
-    async def update_transaction_status(self, transaction_id: str, status: str) -> bool:
-        """Update transaction status"""
+
+    def get_transaction_summary(self, txn_edge_id: str) -> Optional[Dict[str, Any]]:
+        """Get detailed transaction information"""
         try:
             if self.client:
-                # Update in real graph
-                loop = asyncio.get_event_loop()
-                
-                def update_transaction():
-                    vertices = self.client.V(transaction_id).to_list()
-                    if vertices:
-                        vertex = vertices[0]
-                        self.client.V(vertex).property("status", status).iterate()
-                        return True
-                    return False
-                
-                return await loop.run_in_executor(None, update_transaction)
-                return False
-            else:
-                # Mock mode - no transactions to update
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error updating transaction status: {e}")
-            return False
+                txn_detail = (self.client.E(txn_edge_id)
+                    .project("txn", "src", "dest")
+                    .by(__.elementMap())
+                    .by(__.inV()
+                        .project("account", "user")
+                        .by(__.elementMap())
+                        .by(__.in_("OWNS").elementMap()))
+                    .by(__.outV()
+                        .project("account", "user")
+                        .by(__.elementMap())
+                        .by(__.in_("OWNS").elementMap()))
+                    .next())
 
-    def _calculate_risk_level(self, score: float) -> FraudRiskLevel:
-        """Calculate fraud risk level based on score"""
-        if score >= 80:
-            return FraudRiskLevel.HIGH
-        elif score >= 50:
-            return FraudRiskLevel.MEDIUM
-        else:
-            return FraudRiskLevel.LOW
-
-    def _convert_timestamp_to_long(self, date_str: str) -> int:
-        """Convert timestamp string to long integer"""
-        import datetime
-        timestamp = datetime.datetime.now().timestamp()
-        long_timestamp = int(timestamp)
-        return long_timestamp
-
-    async def get_transactions_paginated(self, page: int, page_size: int, order_by: str, order: str, query: str | None ) -> Dict[str, Any]:
-        """Get paginated list of all transactions"""
-        try:
-            if self.client:
-                loop = asyncio.get_event_loop()
-                
-                # Query real graph using run_in_executor to avoid event loop conflict
-                def get_all_transactions():
-                    if(query):
-                        return self.client.V().has_label("transaction").or_(
-                            __.has("sender_id", containing(query.upper())),
-                            __.has("receiver_id", containing(query.upper())),
-                            __.hasId(containing(query.lower())),
-                            __.has("location", containing(query.title()))
-                        ).order().by(order_by, Order.asc if order == 'asc' else Order.desc).to_list()
-                    else:
-                        return self.client.V().has_label("transaction").order().by(order_by, Order.asc if order == 'asc' else Order.desc).to_list()
-                
-                all_transactions = await loop.run_in_executor(None, get_all_transactions)
-                
-                # Paginate
-                start_idx = (page - 1) * page_size
-                end_idx = start_idx + page_size
-                paginated_transactions = all_transactions[start_idx:end_idx]
-                
-                transactions_data = []
-                for transaction_vertex in paginated_transactions:
-                    try:
-                        # Extract transaction properties directly from vertex object
-                        fraud_score = self.get_property_value(transaction_vertex, 'fraud_score', 0.0)                                                    
-                        transactions_data.append({
-                            'id': str(transaction_vertex.id),
-                            'amount': self.get_property_value(transaction_vertex, 'amount', 0.0),
-                            'sender_id': self.get_property_value(transaction_vertex, 'sender_id', ''),
-                            'receiver_id': self.get_property_value(transaction_vertex, 'receiver_id', ''),
-                            'currency': self.get_property_value(transaction_vertex, 'currency', ''),
-                            'timestamp': self.get_property_value(transaction_vertex, 'timestamp', ''),
-                            'location': self.get_property_value(transaction_vertex, 'location', ''),
-                            'status': self.get_property_value(transaction_vertex, 'status', ''),
-                            'transaction_type': self.get_property_value(transaction_vertex, 'type', ''),
-                            'fraud_score': fraud_score,
-                            'is_fraud': fraud_score >= 75,
-                            'fraud_status': self.get_property_value(transaction_vertex, 'fraud_status', 'clean'),
-                            'fraud_reason': self.get_property_value(transaction_vertex, 'reason', ''),
-                            'device_id': None
-                        })
-                    except Exception as e:
-                        logger.error(f"Error processing transaction vertex: {e}")
-                        continue
-                
                 return {
-                    'transactions': transactions_data,
-                    'total': len(all_transactions),
-                    'page': page,
-                    'page_size': page_size,
-                    'total_pages': (len(all_transactions) + page_size - 1) // page_size
+                    "txn": txn_detail.get("txn"),
+                    "src": txn_detail.get("src"),
+                    "dest": txn_detail.get("dest")
                 }
+
             else:
                 # No graph client available
-                raise Exception("Graph client not available. Cannot get transactions without graph database connection.")
+                raise Exception("Graph client not available. Cannot get transaction detail without graph database connection.")
                 
         except Exception as e:
-            logger.error(f"Error getting transactions paginated: {e}")
-            return {
-                'transactions': [],
-                'total': 0,
-                'page': page,
-                'page_size': page_size,
-                'total_pages': 0
-            }
+            logger.error(f"Error getting transaction detail: {e}")
+            return None
 
-    async def get_user_transactions_paginated(self, user_id: str, page: int, page_size: int) -> Dict[str, Any]:
-        """Get paginated transactions for a specific user"""
+
+    def drop_all_transactions(self):
+        if self.client:
+            try:
+                self.client.E().has_label("TRANSACTS").drop()
+                return True
+            except Exception as e:
+                logger.error(f"An error occured while dropping all transactions: {e}")
+                return False
+        logger.error("No graph client available. Cannot drop all transactions without graph database connection.")
+        return False
+
+
+    # ----------------------------------------------------------------------------------------------------------
+    # Account functions
+    # ----------------------------------------------------------------------------------------------------------
+
+
+    def get_all_accounts(self) -> List[Dict[str, Any]]:
+        """Get all accounts with their associated user information"""
         try:
             if self.client:
-                # Query real graph for user's transactions
-                # This would need to be implemented to query the graph database
-                # For now, return empty result
-                return {
-                    "transactions": [],
-                    "total": 0,
-                    "page": page,
-                    "page_size": page_size,
-                    "total_pages": 0,
-                    "user_id": user_id
-                }
+                accounts = self.client.V().has_label("account").project("account_id", "account_type").by(T.id).by("type").to_list()
+                logger.info(f"Found {len(accounts)} account vertices")
+                return accounts
             else:
-                # No graph client available
-                raise Exception("Graph client not available. Cannot get user transactions without graph database connection.")
+                return []
+                
         except Exception as e:
-            logger.error(f"Error in get_user_transactions_paginated: {e}")
-            raise Exception(f"Failed to get user transactions: {e}")
-
-
+            logger.error(f"Error getting all accounts: {e}")
+            return []
+        
     async def flag_account(self, account_id: str, reason: str) -> bool:
         """Flag an account as fraudulent"""
         try:
@@ -1597,81 +852,231 @@ class GraphService:
         except Exception as e:
             logger.error(f"Error in get_transaction_fraud_results: {e}")
             return [] 
+        
 
-    async def get_connected_device_users(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get users who share devices with the specified user"""
+    # ----------------------------------------------------------------------------------------------------------
+    # Utility functions
+    # ----------------------------------------------------------------------------------------------------------
+
+    def remove_all_transactions(self):
         try:
             if not self.client:
-                raise Exception("Graph client not available")
+                raise Exception("Graph client not available. Cannot bulk load data without graph database connection.")
+            self.client.E().has_label("TRANSACTS").drop()
+            return True
+        except Exception as e:
+            logger.error(f"Error dropping all transactions: {e}")
+
+    def bulk_load_csv_data(self, vertices_path: str = None, edges_path: str = None) -> Dict[str, Any]:
+        """Bulk load data from CSV files using Aerospike Graph bulk loader"""
+        try:
+            if not self.client:
+                raise Exception("Graph client not available. Cannot bulk load data without graph database connection.")
             
-            loop = asyncio.get_event_loop()
+            # Default paths if not provided
+            if not vertices_path:
+                vertices_path = "/data/graph_csv/vertices"
+            if not edges_path:
+                edges_path = "/data/graph_csv/edges"
             
-            def find_connected_users():
-                try:
-                    # Step 1: Find all devices used by the target user (user -> device)
-                    user_devices = self.get_out_edge(user_id, "USES")
-                    
-                    if not user_devices:
-                        logger.info(f"User {user_id} has no devices")
-                        return []
-                    
-                    logger.info(f"Found {len(user_devices)} devices for user {user_id}")
-                    
-                    connected_users = {}
-                    
-                    # Step 2: For each device, find all users who use it (device <- other users)
-                    for device_vertex in user_devices:
-                        device_id = str(device_vertex.id)
-                        
-                        # Find all users who use this device
-                        users_with_device = self.get_in_edge(device_vertex, "USES")
-                        
-                        for user_vertex in users_with_device:
-                            current_user_id = str(user_vertex.id)
-                            
-                            # Skip the target user (don't include self)
-                            if current_user_id == user_id:
-                                continue
-                            
-                            # Initialize user entry if not exists
-                            if current_user_id not in connected_users:
-                                connected_users[current_user_id] = {
-                                    'user_id': current_user_id,
-                                    'name': self.get_property_value(user_vertex, 'name', ''),
-                                    'email': self.get_property_value(user_vertex, 'email', ''),
-                                    'risk_score': self.get_property_value(user_vertex, 'risk_score', 0.0),
-                                    'shared_devices': [],
-                                    'shared_device_count': 0
-                                }
-                            
-                            # Add device info to shared devices
-                            device_info = {
-                                'id': device_id,
-                                'type': self.get_property_value(device_vertex, 'type', ''),
-                                'os': self.get_property_value(device_vertex, 'os', ''),
-                                'browser': self.get_property_value(device_vertex, 'browser', ''),
-                                'device_name': self.get_property_value(device_vertex, 'device_name', '')
-                            }
-                            
-                            # Avoid duplicate devices for the same user
-                            if device_info not in connected_users[current_user_id]['shared_devices']:
-                                connected_users[current_user_id]['shared_devices'].append(device_info)
-                    
-                    # Step 3: Update device counts and convert to list
-                    result = []
-                    for user_data in connected_users.values():
-                        user_data['shared_device_count'] = len(user_data['shared_devices'])
-                        result.append(user_data)
-                    
-                    logger.info(f"Found {len(result)} users sharing devices with user {user_id}")
-                    return result
-                    
-                except Exception as e:
-                    logger.error(f"Error finding connected device users: {e}")
-                    return []
+            logger.info(f"Starting bulk load with vertices path: {vertices_path}, edges path: {edges_path}")
             
-            return await loop.run_in_executor(None, find_connected_users)
+            bulk_load_result = {}
+            try:
+                # Execute bulk load using Aerospike Graph loader
+                logger.info("Starting bulk load operation...")
+                bulk_load_result["result"] = (self.client
+                            .with_("evaluationTimeout", 2000000)
+                            .call("aerospike.graphloader.admin.bulk-load.load")
+                            .with_("aerospike.graphloader.vertices", vertices_path)
+                            .with_("aerospike.graphloader.edges", edges_path)
+                            .next())
+                
+                logger.info("Bulk load operation started successfully")
+                bulk_load_result["success"] = True
+
+            except Exception as e:
+                logger.error(f"Bulk load failed: {e}")
+                bulk_load_result["success"] = False 
+                bulk_load_result["error"] = str(e)
+                      
+            if bulk_load_result["success"]:
+                logger.info("Bulk load completed successfully")
+                
+                # Get statistics about loaded data
+                stats = self._get_bulk_load_statistics()
+                
+                return {
+                    "success": True,
+                    "message": "Data bulk loaded successfully from CSV files",
+                    "vertices_path": vertices_path,
+                    "edges_path": edges_path,
+                    "statistics": stats,
+                    "bulk_load_result": bulk_load_result["result"]
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": bulk_load_result["error"],
+                    "vertices_path": vertices_path,
+                    "edges_path": edges_path
+                }
+                
+        except Exception as e:
+            logger.error(f"Error during bulk load: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "vertices_path": vertices_path if vertices_path else "default",
+                "edges_path": edges_path if edges_path else "default"
+            }
+
+    def _get_bulk_load_statistics(self) -> Dict[str, Any]:
+        """Get statistics about the loaded data after bulk load using Aerospike Graph Summary API"""
+        try:
+            # Use Aerospike Graph Summary API for efficient statistics
+            logger.info("Retrieving graph summary using Aerospike Graph Summary API...")
+            summary_result = self.client.call("aerospike.graph.admin.metadata.summary").next()
+            
+            # Parse the summary result which comes as a formatted string
+            summary_lines = str(summary_result).split('\n')
+            
+            # Initialize statistics
+            stats = {
+                "total_vertices": 0,
+                "total_edges": 0,
+                "users": 0,
+                "accounts": 0,
+                "devices": 0,
+                "owns_edges": 0,
+                "uses_edges": 0,
+                "vertex_counts_by_label": {},
+                "edge_counts_by_label": {},
+                "vertex_properties_by_label": {},
+                "edge_properties_by_label": {},
+                "supernode_count": 0,
+                "supernode_counts_by_label": {}
+            }
+            
+            # Parse summary output
+            for line in summary_lines:
+                line = line.strip()
+                if "Total vertex count=" in line:
+                    stats["total_vertices"] = int(line.split("=")[1])
+                elif "Vertex count by label=" in line:
+                    # Parse vertex counts: {user=1000, account=2500, device=1800}
+                    label_counts = line.split("=", 1)[1].strip("{}")
+                    for item in label_counts.split(", "):
+                        if "=" in item:
+                            label, count = item.split("=")
+                            count_val = int(count)
+                            stats["vertex_counts_by_label"][label] = count_val
+                            
+                            # Map to our expected format
+                            if label == "user":
+                                stats["users"] = count_val
+                            elif label == "account":
+                                stats["accounts"] = count_val
+                            elif label == "device":
+                                stats["devices"] = count_val
+                elif "Total edge count=" in line:
+                    stats["total_edges"] = int(line.split("=")[1])
+                elif "Edge count by label=" in line:
+                    # Parse edge counts: {OWNS=2500, USES=3200}
+                    label_counts = line.split("=", 1)[1].strip("{}")
+                    for item in label_counts.split(", "):
+                        if "=" in item:
+                            label, count = item.split("=")
+                            count_val = int(count)
+                            stats["edge_counts_by_label"][label] = count_val
+                            
+                            # Map to our expected format
+                            if label == "OWNS":
+                                stats["owns_edges"] = count_val
+                            elif label == "USES":
+                                stats["uses_edges"] = count_val
+                elif "Vertex properties by label=" in line:
+                    # Parse vertex properties
+                    props_str = line.split("=", 1)[1]
+                    # This is more complex parsing, store as string for now
+                    stats["vertex_properties_summary"] = props_str
+                elif "Edge properties by label=" in line:
+                    # Parse edge properties
+                    props_str = line.split("=", 1)[1]
+                    stats["edge_properties_summary"] = props_str
+                elif "Total supernode count=" in line:
+                    stats["supernode_count"] = int(line.split("=")[1])
+                elif "Supernode count by label=" in line:
+                    # Parse supernode counts
+                    label_counts = line.split("=", 1)[1].strip("{}")
+                    if label_counts:
+                        for item in label_counts.split(", "):
+                            if "=" in item:
+                                label, count = item.split("=")
+                                stats["supernode_counts_by_label"][label] = int(count)
+            
+            logger.info(f"Graph summary retrieved: {stats['total_vertices']} vertices, {stats['total_edges']} edges")
+            return stats
             
         except Exception as e:
-            logger.error(f"Error getting connected device users for {user_id}: {e}")
-            return [] 
+            logger.error(f"Error getting graph summary: {e}")
+            return {
+                "total_vertices": 0,
+                "total_edges": 0,
+                "users": 0,
+                "accounts": 0,
+                "devices": 0,
+                "owns_edges": 0,
+                "uses_edges": 0,
+                "error": str(e)
+            }
+
+    def get_bulk_load_status(self) -> Dict[str, Any]:
+        """Get the status of the current bulk load operation using Aerospike Graph Status API"""
+        try:
+            if not self.client:
+                raise Exception("Graph client not available. Cannot check bulk load status without graph database connection.")
+            logger.info("Checking bulk load status using Aerospike Graph Status API...")
+
+            # Use Aerospike Graph Status API to check bulk load progress
+            status_result = self.client.call("aerospike.graphloader.admin.bulk-load.status").next()
+            
+            # Parse the status result
+            status_info = {
+                "step": status_result.get("step", "unknown"),
+                "complete": status_result.get("complete", False),
+                "status": status_result.get("status", "unknown"),
+                "elements_written": status_result.get("elements-written"),
+                "complete_partitions_percentage": status_result.get("complete-partitions-percentage"),
+                "duplicate_vertex_ids": status_result.get("duplicate-vertex-ids"),
+                "bad_entries": status_result.get("bad-entries"),
+                "bad_edges": status_result.get("bad-edges"),
+                "message": status_result.get("message"),
+                "stacktrace": status_result.get("stacktrace")
+            }
+            
+            # Clean up None values
+            status_info = {k: v for k, v in status_info.items() if v is not None}
+            
+            logger.info(f"Bulk load status: {status_info['status']} - {status_info['step']}")
+            
+            if status_result["success"]:
+                return {
+                    "success": True,
+                    "message": "Bulk load status retrieved successfully",
+                    "status": status_result["status_info"]
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": status_result["error"],
+                    "message": "Failed to retrieve bulk load status"
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting bulk load status: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Error occurred while checking bulk load status"
+            }

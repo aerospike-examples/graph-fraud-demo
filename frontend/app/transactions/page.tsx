@@ -1,27 +1,9 @@
-import { Card, CardContent } from '@/components/ui/card'
-import { CreditCard, Shield } from 'lucide-react'
+'use server'
+
 import { api } from '@/lib/api'
 import Results from '@/components/ResultTable'
-
-export interface Transaction {
-	id: string
-	amount: number
-	currency: string
-	timestamp: string
-	status: string
-	method: string
-	ip_address?: string
-	location_city?: string
-	location_country?: string
-	latitude?: number
-	longitude?: number
-	fraud_score?: number
-	fraud_status?: string
-	fraud_reason?: string
-	transaction_type?: string
-	is_fraud?: boolean
-	fraud_type?: string
-}
+import Stat from '@/components/Stat'
+import Lookup from '@/components/Lookup'
 
 interface TransactionStats {
 	total_txns: number
@@ -43,94 +25,90 @@ export default async function TransactionsPage() {
         		</div>
       		</div>
 			<div className="grid gap-4 md:grid-cols-4">
-				<Card>
-					<CardContent className="p-4">
-						<div className="flex items-center justify-between">
-							<div>
-								<p className="text-sm font-medium text-muted-foreground">Total Transactions</p>
-								<p className="text-2xl font-bold">{total_txns}</p>
-							</div>
-							<CreditCard className="h-8 w-8 text-muted-foreground" />
-						</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="p-4">
-						<div className="flex items-center justify-between">
-							<div>
-								<p className="text-sm font-medium text-muted-foreground">Blocked</p>
-								<p className="text-2xl font-bold text-destructive">
-									{total_blocked}
-								</p>
-							</div>
-							<Shield className="h-8 w-8 text-destructive" />
-						</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="p-4">
-						<div className="flex items-center justify-between">
-							<div>
-								<p className="text-sm font-medium text-muted-foreground">Review</p>
-								<p className="text-2xl font-bold text-warning">
-									{total_review}
-								</p>
-							</div>
-							<Shield className="h-8 w-8 text-warning" />
-						</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="p-4">
-						<div className="flex items-center justify-between">
-							<div>
-								<p className="text-sm font-medium text-muted-foreground">Clean</p>
-								<p className="text-2xl font-bold text-green-600">
-									{total_clean}
-								</p>
-							</div>
-							<Shield className="h-8 w-8 text-green-600" />
-						</div>
-					</CardContent>
-				</Card>
+				<Stat
+					title='Total Transactions'
+					subtitle='Total transactions processed'
+					stat={total_txns}
+					icon='credit-card' />
+				<Stat
+					color='destructive'
+					title='Blocked'
+					subtitle='Total blocked transactions'
+					stat={total_blocked}
+					icon='shield' />
+				<Stat
+					title='Review'
+					subtitle='Total transactions needing review'
+					stat={total_review}
+					icon='shield' />
+				<Stat
+					color='green-600'
+					title='Clean'
+					subtitle='Total transactions without fraud'
+					stat={total_clean}
+					icon='shield' />
 			</div>
+			<Lookup type='txn'/>
 			<Results 
+				searchType='txns'
 				title='Transactions'
 				options={[
 					{
 						name: 'Transaction ID',
 						key: 'id',
-						icon: 'card',
-						renderer: 'small'
+						label: {
+							size: 'sm',
+							text: 'txn_id',
+							icon: 'credit-card'
+						}
 					},
 					{
 						name: 'Sender',
-						key: 'sender_id',
-						renderer: 'mono'
+						key: 'sender',
+						label: {
+							size: 'sm',
+							text: 'sender',
+							className: 'font-mono'
+						}
 					},
 					{
 						name: 'Receiver',
-						key: 'receiver_id',
-						renderer: 'mono'
+						key: 'receiver',
+						label: {
+							size: 'sm',
+							text: 'receiver',
+							className: 'font-mono'
+						}
 					},
 					{
 						name: 'Amount',
 						key: 'amount',
 						type: 'currency',
 						sortable: true,
-						renderer: 'medium'
+						label: {
+							text: 'amount'
+						}
 					},
 					{
 						name: 'Risk Score',
 						key: 'fraud_score',
-						renderer: 'risk',
+						type: 'risk',
+						sortable: true,
+						label: {
+							badge: {
+								text: 'fraud_score'
+							}
+						}
 					},
 					{
 						name: 'Date',
 						key: 'timestamp',
 						type: 'datetime',
-						renderer: 'small',
-						icon: 'calendar',
+						label: {
+							size: 'sm',
+							text: 'timestamp',
+							icon: 'calendar',
+						},
 						sortable: true,
 						defaultSort: true,
 						defaultOrder: 'desc'
@@ -138,17 +116,24 @@ export default async function TransactionsPage() {
 					{
 						name: 'Location',
 						key: 'location',
-						icon: 'map',
-						renderer: 'small'
+						label: {
+							size: 'sm',
+							text: 'location',
+							icon: 'map-pin',
+						},
 					},
 					{
 						name: 'Fraud Status',
 						key: 'fraud_status',
-						renderer: 'fraud'
+						type: 'fraud',
+						label: {
+							badge: {
+								text: 'fraud_status'
+							}
+						}
 					}
 				]}
-				path='/api/transactions'
-				dataKey='transactions' />
+				path='/api/transactions' />
 		</div>
   	)
 } 

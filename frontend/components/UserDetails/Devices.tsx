@@ -3,7 +3,7 @@ import { AlertTriangle, Monitor, Smartphone, Tablet } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
 export interface Device {
-    id: string
+    "1": string
     type: string
     os: string
     browser: string
@@ -38,7 +38,7 @@ const Devices = ({ devices }: { devices?: Device[]}) => (
             {devices && devices.length > 0 ? (
                 <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
                     {devices.map((device) => (
-                        <Card key={device.id} className="p-4 hover:shadow-md transition-shadow">
+                        <Card key={device["1"]} className="p-4 hover:shadow-md transition-shadow">
                             <div className="space-y-3">
                                 <div className="flex items-start justify-between">
                                     <div className="flex items-center gap-3">
@@ -57,7 +57,7 @@ const Devices = ({ devices }: { devices?: Device[]}) => (
                                         </div>
                                     </div>
                                     <Badge variant="secondary" className="text-xs">
-                                        {device.id}
+                                        {device["1"]}
                                     </Badge>
                                 </div>
                             </div>

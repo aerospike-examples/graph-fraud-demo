@@ -1,19 +1,9 @@
-import { Card, CardContent } from '@/components/ui/card'
-import { User, Shield } from 'lucide-react'
+'use server'
+
 import { api } from '@/lib/api'
 import Lookup from '@/components/Lookup'
 import Results from '@/components/ResultTable'
-
-interface User {
-	id: string
-	name: string
-	email: string
-	age: number
-	signup_date: string
-	location: string
-	risk_score: number
-	is_flagged: boolean
-}
+import Stat from '@/components/Stat'
 
 interface UserStats {
 	total_users: number
@@ -24,7 +14,12 @@ interface UserStats {
 
 export default async function UsersPage() {
     const response = await api.get('/users/stats')
-    const { total_users, total_low_risk, total_med_risk, total_high_risk }: UserStats = response.data
+    const { 
+		total_users,
+		total_low_risk,
+		total_med_risk,
+		total_high_risk
+	}: UserStats = response.data
 	
   	return (
     	<div className="space-y-6 flex flex-col grow">
@@ -32,60 +27,33 @@ export default async function UsersPage() {
 				<h1 className="text-3xl font-bold tracking-tight">User Explorer</h1>
 				<p className="text-muted-foreground">Browse and search user profiles with detailed information</p>
 			</div>
-			<Lookup />
 			<div className="grid gap-4 md:grid-cols-4">
-				<Card>
-					<CardContent className="p-4">
-						<div className="flex items-center justify-between">
-							<div>
-								<p className="text-sm font-medium text-muted-foreground">Total Users</p>
-								<p className="text-2xl font-bold">{total_users}</p>
-							</div>
-							<User className="h-8 w-8 text-muted-foreground" />
-						</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="p-4">
-						<div className="flex items-center justify-between">
-							<div>
-								<p className="text-sm font-medium text-muted-foreground">High Risk</p>
-								<p className="text-2xl font-bold text-destructive">
-									{total_high_risk}
-								</p>
-							</div>
-							<Shield className="h-8 w-8 text-destructive" />
-						</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="p-4">
-						<div className="flex items-center justify-between">
-							<div>
-								<p className="text-sm font-medium text-muted-foreground">Medium Risk</p>
-								<p className="text-2xl font-bold text-warning">
-									{total_med_risk}
-								</p>
-							</div>
-							<Shield className="h-8 w-8 text-warning" />
-						</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="p-4">
-						<div className="flex items-center justify-between">
-							<div>
-								<p className="text-sm font-medium text-muted-foreground">Low Risk</p>
-								<p className="text-2xl font-bold text-green-600">
-									{total_low_risk}
-								</p>
-							</div>
-							<Shield className="h-8 w-8 text-green-600" />
-						</div>
-					</CardContent>
-				</Card>
+				<Stat
+					title='Total Users'
+					subtitle='Total users in system'
+					stat={total_users}
+					icon='users' />
+				<Stat
+					color='destructive'
+					title='High Risk'
+					subtitle='Total users with a risk score > 70'
+					stat={total_high_risk}
+					icon='shield' />
+				<Stat
+					title='Medium Risk'
+					subtitle='Total users with a risk score > 25 & < 70'
+					stat={total_med_risk}
+					icon='shield' />
+				<Stat
+					color='green-600'
+					title='Low Risk'
+					subtitle='Total users with a risk score > 25'
+					stat={total_low_risk}
+					icon="shield" />
 			</div>
+			<Lookup type='user'/>
 			<Results 
+				searchType='user'
 				title='Users'
 				options={[
 					{
@@ -93,48 +61,70 @@ export default async function UsersPage() {
 						key: 'name',
 						sortable: true,
 						defaultSort: true,
-						icon: 'user',
-						renderer: 'medium'
+						label: {
+							size: 'md',
+							text: 'name',
+							icon: 'user'
+						}
 					},
 					{
 						name: "ID",
 						key: 'id',
-						renderer: 'muted'
+						label: {
+							subtitle: 'id'
+						}
 					},
 					{
 						name: "Email",
 						key: 'email',
-						icon: 'mail',
-						renderer: 'small'
+						label: {
+							size: 'sm',
+							text: 'email',
+							icon: 'mail',
+							className: 'lowercase'
+						}
 					},
 					{
 						name: "Location",
 						key: 'location',
-						icon: 'map',
-						renderer: 'small'
+						label: {
+							size: 'sm',
+							text: 'location',
+							icon: 'map-pin'
+						}
 					},
 					{
 						name: "Age",
 						key: 'age',
-						renderer: 'small'
+						label: {
+							size: 'sm',
+							text: 'age'
+						}
 					},
 					{
 						name: "Risk Score",
 						key: 'risk_score',
+						type: 'risk',
 						sortable: true,
-						renderer: 'risk'
+						label: {
+							badge: {
+								text: 'risk_score',
+							}
+						}
 					},
 					{
 						name: "Signup Date",
 						key: 'signup_date',
 						type: 'date',
 						sortable: true,
-						icon: 'calendar',
-						renderer: 'small'
+						label: {
+							size: 'sm',
+							text: 'signup_date',
+							icon: 'calendar'
+						}
 					}
 				]}
-				path='/api/users'
-				dataKey='users' />
+				path='/api/users' />
     	</div>
   	)
 }

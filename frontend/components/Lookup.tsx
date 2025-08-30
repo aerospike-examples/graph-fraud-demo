@@ -1,31 +1,33 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { User, ArrowRight } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { FormEvent } from 'react'
+import Label from './Label'
 
-const Lookup = () => {
+const Lookup = ({ type }: { type: 'txn' | 'user'}) => {
+    const isUser = type === 'user';
     const router = useRouter()
     const handleSubmit = (e: FormEvent) => {
         e.preventDefault()
         const form = e.target as HTMLFormElement
         const formData = new FormData(form)
-        router.push(`/users/${formData.get("search-uid")?.toString().toUpperCase()}`)
+        const id = formData.get("search-uid")?.toString() ?? ""
+        router.push(`/${isUser ? 'users' : 'transactions'}/${isUser ? id.toUpperCase() : id.toLowerCase()}`)
     }
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                    <User className="h-5 w-5" />
-                    Quick User Lookup
-                </CardTitle>
-                <CardDescription>
-                    Enter a user ID to directly view their profile
-                </CardDescription>
+                <Label
+                    size='2xl'
+                    className='font-semibold'
+                    text={`Quick ${isUser ? "User" : "Transaction"} Lookup`}
+                    icon={isUser ? 'user' : 'credit-card'}
+                    subtitle={`Enter a ${isUser ? "user" : "transaction"} ID to directly navigate`} />
             </CardHeader>
             <CardContent>
                 <form
@@ -43,11 +45,11 @@ const Lookup = () => {
                         data-form-type="other"
                         name='search-uid'
                         type='search'
-                        placeholder="Enter user ID (e.g., U0006)"
+                        placeholder={`Enter ${isUser ? "user" : "transaction"} ID`}
                         className="flex-1" />
                     <Button type='submit'>
                         <ArrowRight className="h-4 w-4 mr-2" />
-                        View Profile
+                        View {isUser ? "Profile" : "Transaction"}
                     </Button>
                 </form>
             </CardContent>

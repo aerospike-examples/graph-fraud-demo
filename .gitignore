@@ -145,7 +145,6 @@ temp/
 # Aerospike Graph specific
 *.aql
 *.aql.log
-aerospike.conf
 
 # Project specific
 run_app.sh.bak

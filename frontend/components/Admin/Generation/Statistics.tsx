@@ -48,17 +48,27 @@ const Statistics = ({
         }
     }, [stats.isRunning, stats.startTime])
 
-    const clearTxns = () => {
+    const clearTxns = async () => {
         if (!confirmed) {
             setConfirmed(true)
             return
         }
-
         setLoading(true);
-        setRecentTxns([])
-        setStats(prev => ({ ...prev, totalGenerated: 0 }))
-        setConfirmed(false)
-        setLoading(false);
+        try {
+            const response  = await fetch("/api/transactions", { method: "DELETE"})
+            if(response.ok) {
+                setRecentTxns([])
+                setStats(prev => ({ ...prev, totalGenerated: 0 }))
+                setConfirmed(false)
+            }
+            else alert("An error occured")
+        }
+        catch(e) {
+            alert(`An error occured: ${e}`)
+        }
+        finally {
+            setLoading(false);
+        }
     }
 
     return (
@@ -115,7 +125,7 @@ const Statistics = ({
                         <Button
                             variant="outline"
                             onClick={clearTxns}
-                            disabled={loading || recentTxns.length === 0}
+                            disabled={loading}
                             className="w-full"
                             size="sm"
                         >

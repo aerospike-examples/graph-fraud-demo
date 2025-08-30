@@ -1,22 +1,16 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { 
-	Users, 
-	CreditCard, 
-	AlertTriangle, 
-	TrendingUp,
-	Activity,
-	Shield
-} from 'lucide-react'
+import { Activity, Shield } from 'lucide-react'
 import { api } from '@/lib/api'
+import Stat from '@/components/Stat'
 
 interface DashboardStats {
-	total_users: number
-	total_transactions: number
-	flagged_transactions: number
-	total_amount: number
-	fraud_detection_rate: number
-	graph_health: string
+	users: number
+	txns: number
+	flagged: number
+	amount: number
+	fraud_rate: number
+	health: string
 }
 
 export default async function Dashboard() {
@@ -32,50 +26,28 @@ export default async function Dashboard() {
         		</div>
       		</div>
       		<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        		<Card>
-          			<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            			<CardTitle className="text-sm font-medium">Total Users</CardTitle>
-            			<Users className="h-4 w-4 text-muted-foreground" />
-          			</CardHeader>
-          			<CardContent>
-						<div className="text-2xl font-bold">{stats?.total_users || 0}</div>
-						<p className="text-xs text-muted-foreground">Registered users in the system</p>
-					</CardContent>
-        		</Card>
-        		<Card>
-					<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-						<CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-						<CreditCard className="h-4 w-4 text-muted-foreground" />
-					</CardHeader>
-					<CardContent>
-						<div className="text-2xl font-bold">{stats?.total_transactions || 0}</div>
-						<p className="text-xs text-muted-foreground">All processed transactions</p>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-						<CardTitle className="text-sm font-medium">Flagged Transactions</CardTitle>
-						<AlertTriangle className="h-4 w-4 text-muted-foreground" />
-					</CardHeader>
-					<CardContent>
-						<div className="text-2xl font-bold text-destructive">
-							{stats?.flagged_transactions || 0}
-						</div>
-						<p className="text-xs text-muted-foreground">Suspicious transactions detected</p>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-						<CardTitle className="text-sm font-medium">Total Amount</CardTitle>
-						<TrendingUp className="h-4 w-4 text-muted-foreground" />
-					</CardHeader>
-					<CardContent>
-						<div className="text-2xl font-bold">
-							${stats?.total_amount?.toLocaleString('en-US') || '0'}
-						</div>
-						<p className="text-xs text-muted-foreground">Total transaction volume</p>
-					</CardContent>
-				</Card>
+				<Stat 
+					title='Total Users'
+					stat={stats?.users || 0}
+					subtitle='Registered users in the system' 
+					icon='users' />
+				<Stat 
+					title='Total Transactions'
+					stat={stats?.txns || 0}
+					subtitle='All processed transactions' 
+					icon='credit-card' />
+				<Stat 
+					title='Flagged Transactions'
+					stat={stats?.flagged || 0}
+					subtitle='Suspicious transactions detected' 
+					icon='alert-triangle'
+					color='destructive' />
+				<Stat 
+					title='Total Amount'
+					stat={`$${stats?.amount?.toLocaleString('en-US')}` || 0}
+					subtitle='Total transaction volume' 
+					icon='trending-up'
+					color='green-600' />
       		</div>
 			<div className="grid gap-4 md:grid-cols-2">
 				<Card>
@@ -88,10 +60,10 @@ export default async function Dashboard() {
 					<CardContent>
 						<div className="flex items-center gap-2">
 							<Badge 
-								variant={stats?.graph_health === 'connected' ? 'default' : 'destructive'}
-								className={stats?.graph_health === 'connected' ? 'bg-green-600 hover:bg-green-700' : ''}
+								variant={stats?.health === 'connected' ? 'default' : 'destructive'}
+								className={stats?.health === 'connected' ? 'bg-green-600 hover:bg-green-700' : ''}
 							>
-								{stats?.graph_health || 'unknown'}
+								{stats?.health || 'unknown'}
 							</Badge>
 							<span className="text-sm text-muted-foreground">
 								Graph database status
@@ -108,7 +80,7 @@ export default async function Dashboard() {
 					</CardHeader>
 					<CardContent>
 						<div className="text-2xl font-bold">
-							{stats?.fraud_detection_rate?.toFixed(1) || '0'}%
+							{stats?.fraud_rate?.toFixed(1) || '0'}%
 						</div>
 						<p className="text-sm text-muted-foreground">Accuracy of fraud detection</p>
 					</CardContent>

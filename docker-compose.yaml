@@ -2,17 +2,18 @@ services:
   aerospike-db:
     image: aerospike/aerospike-server-enterprise:8.0.0.7
     container_name: aerospike-db
-    networks:
-      - asgraph_net
-    ports:
-      - "3000-3002:3000-3002"
-    environment:
-      - DEFAULT_TTL=0
+    command: --config-file /opt/aerospike/etc/aerospike.conf
+    volumes:
+      - ./conf:/opt/aerospike/etc
     healthcheck:
       test: ["CMD", "asinfo", "-p", "3000", "-v", "build"]
       interval: 5s
       timeout: 20s
       retries: 4
+    networks:
+      - asgraph_net
+    ports:
+      - "3000-3002:3000-3002"
   aerospike-graph-service:
     image: aerospike/aerospike-graph-service:3.0.0
     container_name: asgraph-service
@@ -21,24 +22,24 @@ services:
         condition: service_healthy
       zipkin:
         condition: service_healthy
-    ports:
-      - "8182:8182"
-      - "9090:9090"
+    volumes:
+      - ./data:/data
     environment:
-      - aerospike.client.namespace=test
+      - aerospike.client.namespace=data
       - aerospike.client.host=aerospike-db
       - aerospike.graph.index.vertex.label.enabled=true
       - aerospike.graph.query-tracing.threshold-ms=5
       - aerospike.graph.query-tracing.opentelemetry-host=zipkin
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/healthcheck"]
-      interval: 20s
+      interval: 5s
       timeout: 10s
       retries: 4
-    volumes:
-      - ./data:/data
     networks:
       - asgraph_net
+    ports:
+      - "8182:8182"
+      - "9090:9090"
   zipkin:
     image: openzipkin/zipkin
     container_name: asgraph-zipkin
@@ -51,8 +52,6 @@ services:
       context: .
       dockerfile: backend.Dockerfile
     container_name: "asgraph-backend"
-    environment:
-      GRAPH_HOST_ADDRESS: "asgraph-service"
     depends_on:
       aerospike-db:
         condition: service_healthy
@@ -60,7 +59,7 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://0.0.0.0:4000/health"]
-      interval: 20s
+      interval: 5s
       timeout: 10s
       retries: 4
     networks:
@@ -72,8 +71,6 @@ services:
       context: .
       dockerfile: frontend.Dockerfile
     container_name: "asgraph-frontend"
-    environment:
-      BACKEND_URL: "http://asgraph-backend:4000"
     depends_on:
       backend:
         condition: service_healthy
