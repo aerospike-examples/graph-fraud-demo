@@ -4,7 +4,6 @@ const backend = process.env.BACKEND_URL ?? "http://localhost:4000"
 const zipkin = process.env.ZIPKIN_URL ?? "http://localhost:9411"
 
 const nextConfig = {
-    cacheBust: true,
     async rewrites() {
         return [
             {

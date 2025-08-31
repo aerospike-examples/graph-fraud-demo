@@ -450,7 +450,7 @@ class GraphService:
     def drop_all_transactions(self):
         if self.client:
             try:
-                self.client.E().has_label("TRANSACTS").drop()
+                self.client.E().has_label("TRANSACTS").drop().iterate()
                 return True
             except Exception as e:
                 logger.error(f"An error occured while dropping all transactions: {e}")
@@ -857,15 +857,6 @@ class GraphService:
     # ----------------------------------------------------------------------------------------------------------
     # Utility functions
     # ----------------------------------------------------------------------------------------------------------
-
-    def remove_all_transactions(self):
-        try:
-            if not self.client:
-                raise Exception("Graph client not available. Cannot bulk load data without graph database connection.")
-            self.client.E().has_label("TRANSACTS").drop()
-            return True
-        except Exception as e:
-            logger.error(f"Error dropping all transactions: {e}")
 
     def bulk_load_csv_data(self, vertices_path: str = None, edges_path: str = None) -> Dict[str, Any]:
         """Bulk load data from CSV files using Aerospike Graph bulk loader"""

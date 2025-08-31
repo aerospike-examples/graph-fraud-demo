@@ -1,6 +1,5 @@
 'use server'
 
-import { api } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -9,10 +8,12 @@ import Stat from '@/components/Stat';
 import Label from '@/components/Label'
 import type { UserSummary } from '@/components/UserDetails'
 
+const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8080/api"
+
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }>}) {
   	const { id: userId } = await params;
-  	const response = await api.get(`/users/${userId}`)
-    const { user, risk_level, ...userDetails } = response.data as UserSummary;
+  	const response = await fetch(`${API_BASE_URL}/users/${userId}`, { cache: 'no-store' })
+    const { user, risk_level, ...userDetails }: UserSummary = await response.json();
 
   	return (
     	<div className="space-y-6">

@@ -6,14 +6,14 @@ import { Activity, BarChart3, Shield, Zap } from 'lucide-react'
 import Performance from './Performance'
 import Generation from './Generation'
 import Scenarios from './Scenarios'
-import Patterns from './Patterns'
+// import Patterns from './Patterns'
 
 const Admin = () => {
     const [active, setActive] = useState('generation');
 
     return (
         <Tabs value={active} onValueChange={setActive} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="generation" className="flex items-center space-x-2">
                     <Activity className="w-4 h-4" />
                     <span>Transaction Generation</span>
@@ -22,10 +22,10 @@ const Admin = () => {
                     <Zap className="w-4 h-4" />
                     <span>Real Time Fraud Scenarios</span>
                 </TabsTrigger>
-                <TabsTrigger value="fraud-patterns" className="flex items-center space-x-2">
+                {/* <TabsTrigger value="fraud-patterns" className="flex items-center space-x-2">
                     <Shield className="w-4 h-4" />
                     <span>Fraud Pattern</span>
-                </TabsTrigger>
+                </TabsTrigger> */}
                 <TabsTrigger value="performance" className="flex items-center space-x-2">
                     <BarChart3 className="w-4 h-4" />
                     <span>Performance</span>
@@ -37,9 +37,9 @@ const Admin = () => {
             <TabsContent value="real-time-fraud" className="space-y-4">
                 <Scenarios />
             </TabsContent>
-            <TabsContent value="fraud-patterns" className="space-y-4">
+            {/* <TabsContent value="fraud-patterns" className="space-y-4">
                 <Patterns />
-            </TabsContent>
+            </TabsContent> */}
             <TabsContent value="performance" className="space-y-4">
                 <Performance />                
             </TabsContent>

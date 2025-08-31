@@ -20,7 +20,7 @@ const AccountCard = ({
  }: Props) => {
     const isSource = variant === 'source';
     const { balance, created_date, type } = account
-    const { email, name } = user
+    const { email, name, location } = user
 
     return (
         <Card>
@@ -57,6 +57,11 @@ const AccountCard = ({
                     title='Created'
                     icon='calendar'
                     text={formatDate(created_date)} />
+                <Label
+                    size='sm'
+                    title='Location'
+                    icon='map-pin'
+                    text={location} />
             </CardContent>
             <CardFooter>
                 <Link href={`/users/${user[1]}`} className="w-full">

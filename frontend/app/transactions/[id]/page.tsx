@@ -9,17 +9,19 @@ import {
 	getTransactionTypeIcon,
 	getStatusIcon
 } from '@/lib/utils'
-import { api } from '@/lib/api'
 import TxnDetails, { type TxnDetail } from "@/components/TxnDetails"
 import Stat from '@/components/Stat'
 import Label from '@/components/Label'
 
-const TransactionDetailPage = async ({ params }: { params: Promise<{ id: string }>}) => {
+const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8080/api"
+
+export default async function TransactionsPage({ params }: { params: Promise<{ id: string }>}) {
 	const { id: transactionId } = await params;
 	const encodedID = encodeURIComponent(transactionId)
-  	const response = await api.get(`/transaction/${encodedID}`)
-    const { txn, src, dest } = response.data as TxnDetail
-
+  	
+	const response = await fetch(`${API_BASE_URL}/transaction/${encodedID}`, { cache: 'no-store' })
+    const { txn, src, dest }: TxnDetail = await response.json() 
+	
   	const calculateOverallRisk = (fraud_score: number = 0) => {
     	const riskLevel = getRiskLevel(fraud_score)
     	return { 
@@ -74,7 +76,7 @@ const TransactionDetailPage = async ({ params }: { params: Promise<{ id: string 
 					}} />
         		<Stat
 					title='Fraud Rules'
-					stat={1}
+					stat={txn.is_fraud ? txn.details!.length : 0}
 					icon='shield' />
       		</div>
 			<div className="grid gap-4 md:grid-cols-2">
@@ -152,5 +154,3 @@ const TransactionDetailPage = async ({ params }: { params: Promise<{ id: string 
     	</div>
   	)
 } 
-
-export default TransactionDetailPage

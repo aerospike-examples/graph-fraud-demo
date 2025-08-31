@@ -2,7 +2,6 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
-import Location from './Location'
 import Analysis from './Analysis'
 import AccountCard from './AccountCard'
 import type { Transaction } from "@/components/UserDetails/Transactions"
@@ -22,26 +21,22 @@ export interface TxnDetail {
 }
 
 const TxnDetails = ({ txn, src, dest }: TxnDetail) => {
-    const [active, setActive] = useState('accounts');
-
+    const [active, setActive] = useState('accounts')
+    
     return (
         <Tabs value={active} onValueChange={setActive} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="accounts">Accounts</TabsTrigger>
                 <TabsTrigger value="fraud">Fraud Analysis</TabsTrigger>
-                <TabsTrigger value="location">Location</TabsTrigger>
             </TabsList>
             <TabsContent value="accounts" className="space-y-4">
-                {/* <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-2">
                     <AccountCard {...src} variant='source' />
                     <AccountCard {...dest} variant='destination' />
-                </div> */}
+                </div>
             </TabsContent>
             <TabsContent value="fraud" className="space-y-4">
-                {/* <Analysis txn={txn} /> */}
-            </TabsContent>
-            <TabsContent value="location" className="space-y-4">
-                {/* <Location txn={txn} /> */}
+                <Analysis txn={txn} />
             </TabsContent>
         </Tabs>
     )

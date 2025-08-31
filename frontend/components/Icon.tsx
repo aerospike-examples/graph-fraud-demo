@@ -1,19 +1,57 @@
-import dynamic from 'next/dynamic'
-import { memo } from 'react';
-import type { LucideProps } from 'lucide-react'
-import dynamicIconImports from 'lucide-react/dynamicIconImports';
+'use client'
 
-export type IconName = keyof typeof dynamicIconImports
+import type { LucideProps } from 'lucide-react'
+import { 
+    Activity,
+    AlertTriangle,
+    Building,
+    Calendar,
+    Clock,
+    CreditCard,
+    CheckCircle,
+    Mail,
+    MapPin,
+    Flag,
+    Phone,
+    Shield,
+    TrendingDown,
+    TrendingUp,
+    User,
+    Users,
+    XCircle
+} from 'lucide-react'
+
+export type IconName = keyof typeof Icons
 
 interface Props extends LucideProps {
-    icon?: IconName
+    icon: IconName
 }
 
-const Icon = memo(({icon, ...props}: Props) => {
-    const LucideIcon = dynamic(dynamicIconImports[icon!])
+const Icons = {
+    activity: Activity,
+    'alert-triangle': AlertTriangle,
+    building: Building,
+    calendar: Calendar,
+    clock: Clock,
+    'credit-card': CreditCard,
+    'check-circle': CheckCircle,
+    flag: Flag,
+    mail: Mail,
+    'map-pin': MapPin,
+    phone: Phone,
+    shield: Shield,
+    'trending-down': TrendingDown,
+    'trending-up': TrendingUp,
+    user: User,
+    users: Users,
+    'x-circle': XCircle
+}
+
+const Icon = ({icon, ...props}: Props) => {
+    const Component = Icons[icon]
     return (
-        <LucideIcon {...props} />
-    )
-})
+        <Component {...props} />
+    )    
+}
 
 export default Icon

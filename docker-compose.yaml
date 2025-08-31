@@ -2,9 +2,6 @@ services:
   aerospike-db:
     image: aerospike/aerospike-server-enterprise:8.0.0.7
     container_name: aerospike-db
-    command: --config-file /opt/aerospike/etc/aerospike.conf
-    volumes:
-      - ./conf:/opt/aerospike/etc
     healthcheck:
       test: ["CMD", "asinfo", "-p", "3000", "-v", "build"]
       interval: 5s
@@ -25,7 +22,7 @@ services:
     volumes:
       - ./data:/data
     environment:
-      - aerospike.client.namespace=data
+      - aerospike.client.namespace=test
       - aerospike.client.host=aerospike-db
       - aerospike.graph.index.vertex.label.enabled=true
       - aerospike.graph.query-tracing.threshold-ms=5

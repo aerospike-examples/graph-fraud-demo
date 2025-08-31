@@ -1,7 +1,8 @@
+'use server'
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Activity, Shield } from 'lucide-react'
-import { api } from '@/lib/api'
 import Stat from '@/components/Stat'
 
 interface DashboardStats {
@@ -13,9 +14,11 @@ interface DashboardStats {
 	health: string
 }
 
+const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8080/api"
+
 export default async function Dashboard() {
-	const response = await api.get('/dashboard/stats')
-	const stats = response.data as DashboardStats;
+	const response = await fetch(`${API_BASE_URL}/dashboard/stats`, { cache: 'no-store' })
+	const stats: DashboardStats = await response.json();
 
   	return (
     	<div className="space-y-6">

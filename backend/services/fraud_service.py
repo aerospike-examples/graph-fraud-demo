@@ -3,7 +3,7 @@ import logging
 import time
 import json
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 from gremlin_python.process.graph_traversal import __
 
 from services.graph_service import GraphService
@@ -74,27 +74,42 @@ class FraudService:
             "details": details
         }
 
-    def _store_fraud_results(self, edge_id: str, checks: List[Dict[str, Any]]):
-        fraud_score = 0
-        rules = []
-        details = []
-        status = "review"
+    async def _store_fraud_results(self, edge_id: str, fraud_checks: Dict[str, Dict[str, Any]]):
+        try:
+            fraud_score = 0
+            details = []
+            status = "review"
+            checks = [
+                fraud_checks.get("rt1", {}),
+                fraud_checks.get("rt2", {}),
+                fraud_checks.get("rt3", {})
+            ]
 
-        for check in checks:
-            fraud_score = check["fraud_score"] if check["fraud_score"] > fraud_score else fraud_score
-            rules.append(check["details"]["rule"])
-            details.append[json.dumps(check["details"])]
-            status = "blocked" if check["status"] == "blocked" else status
+            for check in checks:
+                if not check == {}:
+                    this_fraud = check.get("fraud_score", 0)
+                    this_details = check.get("details", {})
+                    this_status = check.get("status", "review")
 
-        # Create fraud check result in graph
-        (self.graph_service.client.E(edge_id)
-            .property("is_fraud", True)
-            .property("fraud_score", fraud_score)
-            .property("fraud_status", status)
-            .property("rules", rules)
-            .property("eval_timestamp", datetime.now().isoformat())
-            .property("details", details)
-            .next())
+                    fraud_score = this_fraud if this_fraud > fraud_score else fraud_score
+                    details.append(json.dumps(this_details))
+                    status = "blocked" if this_status == "blocked" else status
+            
+            loop = asyncio.get_event_loop()
+            def write_fraud_result():
+                # Create fraud check result in graph
+                (self.graph_service.client.E(edge_id)
+                    .property("is_fraud", True)
+                    .property("fraud_score", fraud_score)
+                    .property("fraud_status", status)
+                    .property("eval_timestamp", datetime.now().isoformat())
+                    .property("details", details)
+                    .next())
+            await loop.run_in_executor(None, write_fraud_result)
+            
+        except Exception as e:
+            raise Exception(f"Error storing fraud result: {e}")
+        
 
     # ----------------------------------------------------------------------------------------------------------
     # Run fraud checks
@@ -109,34 +124,42 @@ class FraudService:
             return
         
         try:
-            checks = []
+            fraud_checks = {}
             # Run RT1 fraud detection (flagged accounts)
             if self.rt1_enabled:
-                rt1_fraud, rt1_reason, rt1_result = await self.rt1_service.check_transaction(edge_id, txn_id)
+                rt1_fraud, rt1_reason, rt1_result = await self.run_rt1_fraud_detection(edge_id, txn_id)
                 if rt1_fraud:
-                    checks.append(rt1_result)
+                    fraud_checks["rt1"] = rt1_result
                     logger.warning(f"🚨 RT1 FRAUD ALERT: {rt1_reason}")
-            
+        
+        except Exception as e:
+            raise Exception(f"❌ Error in RT1 fraud detection for transaction {txn_id}: {e}")
+        
+        try:
             # Run RT2 fraud detection (flagged devices)
             if self.rt2_enabled:
-                rt2_fraud, rt2_reason, rt2_result = await self.rt2_service.check_transaction_fraud(edge_id, txn_id)
+                rt2_fraud, rt2_reason, rt2_result = await self.run_rt2_fraud_detection(edge_id, txn_id)
                 if rt2_fraud:
-                    checks.append(rt2_result)
+                    fraud_checks["rt2"] = rt2_result
                     logger.warning(f"🚨 RT2 FRAUD ALERT: {rt2_reason}")
-            
+        
+        except Exception as e:
+            raise Exception(f"❌ Error in RT2 fraud detection for transaction {txn_id}: {e}")
+
+        try:
             # Run RT3 fraud detection (account velocity) for now
             if self.rt3_enabled:
-                rt3_fraud, rt3_reason, rt3_result = await self.rt3_service.check_transaction_fraud(edge_id, txn_id)
+                rt3_fraud, rt3_reason, rt3_result = await self.run_rt3_fraud_detection(edge_id, txn_id)
                 if rt3_fraud: 
-                    checks.append(rt3_result)
+                    fraud_checks["rt3"] = rt3_result
                     logger.warning(f"🚨 RT3 FRAUD ALERT: {rt3_reason}")
-                
-            if len(checks > 0):
-                self._store_fraud_results(edge_id, checks)
-                
+        
         except Exception as e:
-            logger.error(f"❌ Error in fraud detection for transaction {txn_id}: {e}")
-
+            raise Exception(f"❌ Error in RT3 fraud detection for transaction {txn_id}: {e}")    
+        
+        if not fraud_checks == {}:
+            await self._store_fraud_results(edge_id, fraud_checks)
+                
 
     # ----------------------------------------------------------------------------------------------------------
     # Fraud check functions
@@ -174,7 +197,7 @@ class FraudService:
                     
                 except Exception as e:
                     logger.error(f"Error checking flagged connections: {e}")
-                    return []
+                    return {}
             
             connections = await loop.run_in_executor(None, check_flagged_connections)
 
@@ -219,6 +242,8 @@ class FraudService:
                 "flagged_connections": flagged_connections,
                 "max_level": max_level,
                 "total_connections": total_connections,
+                "detection_time": datetime.now().isoformat(),
+                "fraud_score": fraud_score,
                 "reason": reason,
                 "rule": "RT1_MultiLevelFlaggedAccountRule"
             }            
@@ -280,10 +305,8 @@ class FraudService:
                 
                 logger.info(f"✅ RT2: Transaction {txn_id} passed flagged device check in transaction network")              
                 return False, "No flagged devices connected to transaction network", None
-                
-            execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
-            performance_monitor.record_rt2_performance(execution_time, success=True)
             
+            fraud_score = 85
             reason = f"Transaction involves accounts connected to flagged devices in transaction network: {', '.join(devices)}"
             details = {
                 "flagged_devices": devices,
@@ -291,11 +314,15 @@ class FraudService:
                 "receiver_account": receiver,
                 "connected_accounts_checked": len(accounts),
                 "detection_time": datetime.now().isoformat(),
+                "fraud_score": fraud_score,
                 "reason": reason,
                 "rule": "RT2_FlaggedDeviceConnection"
             }
-            fraud_result = self._create_fraud_result(85, "review", details)
+            fraud_result = self._create_fraud_result(fraud_score, "review", details)
             
+            execution_time = (time.time() - start_time) * 1000
+            performance_monitor.record_rt2_performance(execution_time, success=True)
+
             return True, reason, fraud_result
                 
         except Exception as e:

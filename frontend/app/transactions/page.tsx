@@ -1,6 +1,5 @@
 'use server'
 
-import { api } from '@/lib/api'
 import Results from '@/components/ResultTable'
 import Stat from '@/components/Stat'
 import Lookup from '@/components/Lookup'
@@ -12,9 +11,11 @@ interface TransactionStats {
 	total_clean: number
 }
 
+const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8080/api"
+
 export default async function TransactionsPage() {
-  	const response = await api.get('/transactions/stats')
-	const { total_txns, total_blocked, total_review, total_clean }: TransactionStats = response.data 
+  	const response = await fetch(`${API_BASE_URL}/transactions/stats`, { cache: 'no-store' })
+	const { total_txns, total_blocked, total_review, total_clean }: TransactionStats = await response.json() 
   
   	return (
     	<div className="space-y-6 flex flex-col grow">

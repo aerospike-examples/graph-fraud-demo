@@ -28,7 +28,7 @@ export interface Transaction {
 	fraud_type?: string
 	sender_id: string
 	receiver_id: string
-	rule?: string | string[]
+    details?: string[]
 }
 
 export interface TransactionDetail {

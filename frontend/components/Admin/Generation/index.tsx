@@ -63,7 +63,7 @@ const Generation = () => {
 				catch (err) {
 					console.error('Error polling status:', err)
 				}
-			}, 2000)
+			}, 1000)
 			: undefined
 		return interval
 	}
@@ -77,21 +77,28 @@ const Generation = () => {
 
 	const startGeneration = async (rate: number) => {
 		setLoading(true);
-		const startTime = new Date().toISOString()
-		const response = await fetch(`/api/transaction-generation/start?rate=${rate}&start=${startTime}`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' }
-		});
-		if(response.ok) {
-			setIsGenerating(true)
-			setStats(prev => ({ ...prev, isRunning: true, startTime }));
-			console.log('Transaction generation started successfully!');
+		try {
+			const startTime = new Date().toISOString()
+			const response = await fetch(`/api/transaction-generation/start?rate=${rate}&start=${startTime}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' }
+			});
+			if(response.ok) {
+				setIsGenerating(true)
+				setStats(prev => ({ ...prev, isRunning: true, startTime }));
+				console.log('Transaction generation started successfully!');
+			}
+			else {
+				const errorData = await response.json();
+				throw new Error(`${errorData.detail} || 'Failed to start generation`);
+			}
 		}
-		else {
-			const errorData = await response.json();
-			console.error(errorData.detail || 'Failed to start generation');
+		catch(e) {
+			console.error(e)
 		}
-		setLoading(false);
+		finally {
+			setLoading(false);
+		}
 	}
 
 	const stopGeneration = async () => {
@@ -133,7 +140,7 @@ const Generation = () => {
 				setRecentTxns={setRecentTxns} />
             <Manual />
         </div>
-        <Recent recentTxns={recentTxns} />
+        {/* <Recent recentTxns={recentTxns} /> */}
         </>
     )
 }

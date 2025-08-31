@@ -1,6 +1,5 @@
 'use server'
 
-import { api } from '@/lib/api'
 import Lookup from '@/components/Lookup'
 import Results from '@/components/ResultTable'
 import Stat from '@/components/Stat'
@@ -12,14 +11,16 @@ interface UserStats {
 	total_high_risk: number
 }
 
+const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8080/api"
+
 export default async function UsersPage() {
-    const response = await api.get('/users/stats')
+    const response = await fetch(`${API_BASE_URL}/users/stats`, { cache: 'no-store' })
     const { 
 		total_users,
 		total_low_risk,
 		total_med_risk,
 		total_high_risk
-	}: UserStats = response.data
+	}: UserStats = await response.json()
 	
   	return (
     	<div className="space-y-6 flex flex-col grow">

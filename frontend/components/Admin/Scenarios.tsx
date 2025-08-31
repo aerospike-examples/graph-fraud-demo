@@ -23,25 +23,41 @@ const fraudScenarios: FraudScenario[] = [
     // Real-time scenarios (RT1-RT4)
     {
         id: 'RT1',
-        name: 'Transaction to Flagged Account',
-        description: 'Immediate threat detection via 1-hop lookup',
+        name: 'Transaction with Flagged Accounts',
+        description: 'Threat detection via 2-hop lookup',
         riskLevel: 'High',
         enabled: true,
         priority: 'Phase 1',
         keyIndicators: [
             'Transaction directed to known flagged account',
             '1-hop graph lookup for immediate detection',
+            '2-hop graph lookup for neighborhood analysis',
             'Real-time risk assessment'
         ],
         commonUseCase: 'Immediate threat detection, known fraudster connections',
-        detailedDescription: 'Real-time detection system that flags transactions sent to accounts that have been previously identified as fraudulent. Uses 1-hop graph lookups for immediate threat assessment.'
+        detailedDescription: 'Real-time detection system that flags transactions sent to accounts that have been previously identified as fraudulent, or have transactions with accounts identified as fraudulaent. Uses 1-hop graph lookups for immediate threat assessment and 2-hop lookups for neighborhood analysis.'
+    },
+    {
+        id: 'RT2',
+        name: 'Transactions with Users Associated with Flagged Devices',
+        description: 'Detect threats through flagged device usage',
+        riskLevel: 'High',
+        enabled: true,
+        priority: 'Phase 1',
+        keyIndicators: [
+            'Transactions directed to users associated with fradulent devices',
+            'Multi-hop neighborhood analysis',
+            'Transaction history analysis'
+        ],
+        commonUseCase: 'Immediate threat detection, known fraudster connections',
+        detailedDescription: ''
     },
     {
         id: 'RT3',
         name: 'Supernode Detection (High-Degree)',
         description: 'Alert on highly connected accounts',
         riskLevel: 'Medium-High',
-        enabled: true,
+        enabled: false,
         priority: 'Phase 1',
         keyIndicators: [
             'Abnormally high connection count',
@@ -49,22 +65,7 @@ const fraudScenarios: FraudScenario[] = [
             'Hub-like transaction patterns'
         ],
         commonUseCase: 'Money laundering hubs, distribution networks',
-        detailedDescription: 'Identifies accounts with unusually high connectivity in the transaction graph, which may indicate central nodes in money laundering or distribution networks.'
-    },
-    {
-        id: 'RT2',
-        name: 'Repeated Small Ring Interactions',
-        description: 'Identify mule rings via 2-hop neighborhood analysis',
-        riskLevel: 'High',
-        enabled: false,
-        priority: 'Phase 1',
-        keyIndicators: [
-            'Multiple small transactions within ring',
-            '2-hop neighborhood analysis',
-            'Repeated interaction patterns'
-        ],
-        commonUseCase: 'Money mule ring detection, coordinated fraud networks',
-        detailedDescription: 'Detects patterns of repeated small transactions between accounts that form rings or networks, indicating coordinated money mule operations using 2-hop graph analysis.',
+        detailedDescription: 'Identifies accounts with unusually high connectivity in the transaction graph, which may indicate central nodes in money laundering or distribution networks.',
         disabled: true
     },
     {
@@ -88,7 +89,7 @@ const fraudScenarios: FraudScenario[] = [
         name: 'Transaction Burst',
         description: 'Detect rapid successive transactions from same user',
         riskLevel: 'High',
-        enabled: true,
+        enabled: false,
         priority: 'Phase 1',
         keyIndicators: [
             'Multiple transactions in short time window',
@@ -96,7 +97,8 @@ const fraudScenarios: FraudScenario[] = [
             'Rapid transaction succession pattern'
         ],
         commonUseCase: 'Account takeover, automated fraud attacks',
-        detailedDescription: 'Real-time detection of rapid successive transactions from the same user account, which may indicate account takeover or automated fraud attacks.'
+        detailedDescription: 'Real-time detection of rapid successive transactions from the same user account, which may indicate account takeover or automated fraud attacks.',
+        disabled: true
     },
     // Batch scenarios (A-H, corresponding to BT scenarios)
     {

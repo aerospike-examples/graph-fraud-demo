@@ -37,7 +37,7 @@ export interface User {
     occupation?: string
 }
 
-const Details = ({ userDetails }: { userDetails: UserSummary }) => {
+const UserDetails = ({ userDetails }: { userDetails: UserSummary }) => {
     const [active, setActive] = useState('accounts');
     return (
         <Tabs value={active} onValueChange={setActive} className="space-y-4">
@@ -63,4 +63,4 @@ const Details = ({ userDetails }: { userDetails: UserSummary }) => {
     )
 }
 
-export default Details;
+export default UserDetails;
