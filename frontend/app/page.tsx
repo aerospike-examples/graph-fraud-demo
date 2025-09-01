@@ -60,17 +60,15 @@ export default async function Dashboard() {
 							System Health
 						</CardTitle>
 					</CardHeader>
-					<CardContent>
-						<div className="flex items-center gap-2">
-							<Badge 
-								variant={stats?.health === 'connected' ? 'default' : 'destructive'}
-								className={stats?.health === 'connected' ? 'bg-green-600 hover:bg-green-700' : ''}
-							>
-								{stats?.health || 'unknown'}
-							</Badge>
-							<span className="text-sm text-muted-foreground">
-								Graph database status
-							</span>
+					<CardContent className='flex flex-col gap-2 items-start'>
+						<Badge 
+							variant={stats?.health === 'connected' ? 'default' : 'destructive'}
+							className={stats?.health === 'connected' ? 'bg-green-600 hover:bg-green-700' : ''}
+						>
+							{stats?.health || 'unknown'}
+						</Badge>
+						<div className="text-sm text-muted-foreground">
+							Graph database status
 						</div>
 					</CardContent>
 				</Card>

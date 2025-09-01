@@ -230,7 +230,6 @@ const fraudScenarios: FraudScenario[] = [
 
 const Scenarios = () => {
     const [scenarios, setScenarios] = useState<FraudScenario[]>(fraudScenarios)
-    const [expandedScenarios, setExpandedScenarios] = useState<Set<string>>(new Set())
 
     const toggleScenario = (scenarioId: string) => {
         setScenarios(prev => prev.map(scenario => 
@@ -238,15 +237,6 @@ const Scenarios = () => {
                 ? { ...scenario, enabled: !scenario.enabled }
                 : scenario
         ))
-    }
-
-    const toggleScenarioExpansion = (scenarioId: string) => {
-        setExpandedScenarios(prev => {
-            const newSet = new Set(prev)
-            if(newSet.has(scenarioId)) newSet.delete(scenarioId);
-            else newSet.add(scenarioId);
-            return newSet
-        })
     }
 
     return (
@@ -270,13 +260,10 @@ const Scenarios = () => {
             <CardContent className="space-y-6">
                 <div className="space-y-3">
                 {scenarios.filter(s => s.id.startsWith('RT')).map((scenario) => (
-                    <Collapsible key={scenario.id}>
+                    <Collapsible key={scenario.id} defaultOpen={!scenario.disabled}>
                         <div className={`border rounded-lg ${scenario.disabled ? 'opacity-50 bg-gray-50 dark:bg-gray-900' : ''}`}>
-                            <CollapsibleTrigger
-                                onClick={() => !scenario.disabled && toggleScenarioExpansion(scenario.id)}
-                                isOpen={expandedScenarios.has(scenario.id)}
-                            >
-                                <div className="flex items-center justify-between w-full">
+                            <CollapsibleTrigger asChild>
+                                <div className="flex items-center justify-between w-full p-3 hover:bg-gray-50">
                                     <div className="flex items-center space-x-3">
                                         <div onClick={(e) => e.stopPropagation()}>
                                             <Switch
@@ -309,20 +296,16 @@ const Scenarios = () => {
                                     </div>
                                 </div>
                             </CollapsibleTrigger>
-                            <CollapsibleContent isOpen={expandedScenarios.has(scenario.id)}>
-                                <div className="space-y-3 text-sm">
-                                    <div>
-                                        <strong>Key Indicators:</strong>
-                                        <ul className="list-disc list-inside mt-1 space-y-1">
-                                        {scenario.keyIndicators.map((indicator, index) => (
-                                            <li key={index} className="text-muted-foreground">{indicator}</li>
-                                        ))}
-                                        </ul>
-                                    </div>
-                                    <div>
-                                        <strong>Common Use Case:</strong>
-                                        <p className="text-muted-foreground mt-1">{scenario.commonUseCase}</p>
-                                    </div>
+                            <CollapsibleContent>
+                                <div className="space-y-3 text-sm p-3">
+                                    <strong>Key Indicators:</strong>
+                                    <ul className="list-disc list-inside mt-1 space-y-1">
+                                    {scenario.keyIndicators.map((indicator, index) => (
+                                        <li key={index} className="text-muted-foreground">{indicator}</li>
+                                    ))}
+                                    </ul>
+                                    <strong>Common Use Case:</strong>
+                                    <p className="text-muted-foreground mt-1">{scenario.commonUseCase}</p>
                                 </div>
                             </CollapsibleContent>
                         </div>

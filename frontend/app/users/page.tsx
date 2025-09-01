@@ -52,7 +52,6 @@ export default async function UsersPage() {
 					stat={total_low_risk}
 					icon="shield" />
 			</div>
-			<Lookup type='user'/>
 			<Results 
 				searchType='user'
 				title='Users'

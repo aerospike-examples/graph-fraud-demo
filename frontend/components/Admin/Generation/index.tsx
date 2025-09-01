@@ -1,14 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import type { Transaction } from '@/components/UserDetails/Transactions'
+import {type Dispatch, type SetStateAction, useEffect, useState } from 'react'
 import Statistics, { type GenerationStats } from './Statistics'
 import Controls from './Controls'
 import Manual from './Manual'
-import Recent from './Recent'
 import { getDuration } from '@/lib/utils'
+import { toast } from "sonner"
 
-const Generation = () => {
+
+interface Props {
+	isGenerating: boolean
+	setIsGenerating: Dispatch<SetStateAction<boolean>>
+}
+
+const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 	const [stats, setStats] = useState<GenerationStats>({
 		isRunning: false,
 		totalGenerated: 0,
@@ -16,17 +21,13 @@ const Generation = () => {
 		duration: '00:00:00',
 		startTime: new Date().toISOString()
 	})
-	const [isGenerating, setIsGenerating] = useState(stats.isRunning)
-	const [recentTxns, setRecentTxns] = useState<Transaction[]>([])
-	const [loading, setLoading] = useState(false)
 
 	const getGenerationStats = async () => {
 		const response = await fetch('/api/transaction-generation/status')
     	const { 
 			status, 
 			transaction_count: totalGenerated, 
-			generation_rate: currentRate, 
-			last_10_transactions,
+			generation_rate: currentRate,
 			start_time: startTime
 		} = await response.json()
 
@@ -39,7 +40,6 @@ const Generation = () => {
 			duration: (isRunning && startTime) ? getDuration(startTime) : "00:00:00",
 			startTime
 		})
-		setRecentTxns(last_10_transactions)
 	}
 	
 	const pollStatus = () => {
@@ -55,9 +55,6 @@ const Generation = () => {
 							totalGenerated: statusData.transaction_count,
 							currentRate: statusData.generation_rate
 						}))
-						if (statusData.last_10_transactions) {
-							setRecentTxns(statusData.last_10_transactions)
-						}
 					}
 				} 
 				catch (err) {
@@ -76,17 +73,15 @@ const Generation = () => {
 	}, [isGenerating])
 
 	const startGeneration = async (rate: number) => {
-		setLoading(true);
 		try {
 			const startTime = new Date().toISOString()
 			const response = await fetch(`/api/transaction-generation/start?rate=${rate}&start=${startTime}`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' }
-			});
+				method: 'POST'
+			})
 			if(response.ok) {
 				setIsGenerating(true)
-				setStats(prev => ({ ...prev, isRunning: true, startTime }));
-				console.log('Transaction generation started successfully!');
+				toast.success("Transaction generation started")
+				setStats(prev => ({ ...prev, isRunning: true, startTime }))
 			}
 			else {
 				const errorData = await response.json();
@@ -95,28 +90,29 @@ const Generation = () => {
 		}
 		catch(e) {
 			console.error(e)
-		}
-		finally {
-			setLoading(false);
+			toast.error("Transaction generation failed to start")
 		}
 	}
 
 	const stopGeneration = async () => {
-		setLoading(true);
-		const response = await fetch('/api/transaction-generation/stop', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' }
-		});
-		if(response.ok) {
-			setIsGenerating(false)
-			setStats(prev => ({ ...prev, isRunning: false }))
-			console.log('Transaction generation stopped successfully!')
-		} 
-		else {
-			const errorData = await response.json();
-			console.error(errorData.detail || 'Failed to stop generation');
+		try {
+			const response = await fetch('/api/transaction-generation/stop', {
+				method: 'POST'
+			});
+			if(response.ok) {
+				setIsGenerating(false)
+				toast.success("Transaction generation stopped")
+				setStats(prev => ({ ...prev, isRunning: false }))
+			} 
+			else {
+				const errorData = await response.json();
+				throw new Error(`${errorData.detail} || 'Failed to stop generation`);
+			}
 		}
-		setLoading(false)
+		catch(e) {
+			console.error(e)
+			toast.error("Transaction generation failed to stop")
+		}
 	}
 
 	useEffect(() => {
@@ -124,24 +120,19 @@ const Generation = () => {
 	}, []);
 
     return (
-        <>
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             <Controls
 				key={stats.currentRate.toString()}
-				loading={loading}
 				isGenerating={isGenerating}
 				currentRate={stats.currentRate}
 				startGeneration={startGeneration}
 				stopGeneration={stopGeneration} />
 			<Statistics
+				isGenerating={isGenerating}
 				stats={stats}
-				setStats={setStats}
-				recentTxns={recentTxns}
-				setRecentTxns={setRecentTxns} />
+				setStats={setStats} />
             <Manual />
         </div>
-        {/* <Recent recentTxns={recentTxns} /> */}
-        </>
     )
 }
 

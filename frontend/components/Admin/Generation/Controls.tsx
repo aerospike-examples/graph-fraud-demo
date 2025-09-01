@@ -1,13 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Play, RefreshCw, Settings, Square } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
 interface Props {
-    loading: boolean
     isGenerating: boolean
     currentRate: number
     startGeneration: (rate: number) => Promise<void>
@@ -15,13 +14,28 @@ interface Props {
 }
 
 const Controls = ({
-    loading,
     isGenerating,
     currentRate,
     startGeneration,
     stopGeneration
 }: Props) => {
     const [generationRate, setGenerationRate] = useState(currentRate)
+    const [maxGenerationRate, setMaxGenerationRate] = useState(0)
+
+    const getMaxRate = async () => {
+        try {
+            const response = await fetch("/api/transaction-generation/max-rate")
+            const data = await response.json()
+            setMaxGenerationRate(data.max_rate)
+        }
+        catch(e) {
+            console.error(`Could not get max generation rate: ${e}`)
+        }
+    }
+
+    useEffect(() => {
+        getMaxRate()
+    }, [])
 
     return (
         <Card className='flex flex-col'>
@@ -41,36 +55,22 @@ const Controls = ({
                         name='generation-rate'
                         type="number"
                         min="1"
-                        max="10000"
+                        max={maxGenerationRate}
                         value={generationRate}
                         onChange={(e) => setGenerationRate(parseInt(e.target.value) || 1)}
                         disabled={isGenerating}
                     />
+                    <Suspense>
+                        <span className='text-xs text-muted-foreground'>Maximum generation rate: {maxGenerationRate}</span>
+                    </Suspense>
                 </div>
                 <div className="flex space-x-2 grow items-end">
-                    <Button
-                        onClick={() => startGeneration(generationRate)}
-                        disabled={isGenerating || loading}
-                        className="flex-1"
-                    >
-                        {loading ? (
-                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                            <Play className="w-4 h-4 mr-2" />
-                        )}
+                    <Button onClick={() => startGeneration(generationRate)} disabled={isGenerating} className="flex-1">
+                        <Play className="w-4 h-4 mr-2" />
                         Start
                     </Button>
-                    <Button
-                        variant="destructive"
-                        onClick={stopGeneration}
-                        disabled={!isGenerating || loading}
-                        className="flex-1"
-                    >
-                        {loading ? (
-                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                            <Square className="w-4 h-4 mr-2" />
-                        )}
+                    <Button variant="destructive" onClick={stopGeneration} disabled={!isGenerating} className="flex-1">
+                        <Square className="w-4 h-4 mr-2" />
                         Stop
                     </Button>
                 </div>

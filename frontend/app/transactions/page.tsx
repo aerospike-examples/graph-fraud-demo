@@ -49,7 +49,6 @@ export default async function TransactionsPage() {
 					stat={total_clean}
 					icon='shield' />
 			</div>
-			<Lookup type='txn'/>
 			<Results 
 				searchType='txns'
 				title='Transactions'

@@ -3,6 +3,8 @@
 
 @layer base {
   :root {
+    --default-transition-duration: .3s;
+    --default-transition-timing-function: linear;
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
