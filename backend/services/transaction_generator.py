@@ -1,5 +1,6 @@
 import asyncio
 import random
+import pickle
 from datetime import datetime
 from typing import List, Dict, Any
 from enum import Enum
@@ -25,11 +26,21 @@ class FraudScenario(Enum):
     SCENARIO_G = "International Transfers to High-Risk Jurisdictions"
     SCENARIO_H = "Region-Specific Fraud (Indian Context)"
 
+def get_stored_max_transaction_rate():
+    try:
+        file = open('store.pckl', 'rb')
+        obj = pickle.load(file)
+        file.close()
+        return obj.get("rate", 50)
+    except:
+        return 50
+
 class TransactionGeneratorService:
     def __init__(self, graph_service: GraphService, fraud_service: FraudService):
         self.graph_service = graph_service
         self.fraud_service = fraud_service
         self.is_running = False
+        self.max_generation_rate = get_stored_max_transaction_rate()
         self.generation_rate = 1  # transactions per second
         self.generated_transactions = []
         self.transaction_counter = 0
@@ -76,6 +87,28 @@ class TransactionGeneratorService:
     # Transaction generation control
     # ----------------------------------------------------------------------------------------------------------
 
+    
+    def get_max_transaction_rate(self):
+        """Get the max rate for transactions genreated per second"""
+        return self.max_generation_rate
+
+    def set_max_transaction_rate(self, new_rate):
+        """Set the max rate for transactions genreated per second"""
+        try:
+            old_rate = self.max_generation_rate
+            
+            file = open('store.pckl', 'wb')
+            pickle.dump({ "rate": new_rate }, file)
+            file.close()
+
+            self.max_generation_rate = new_rate
+            
+            logger.info(f"📊 Max generation rate updated from {old_rate} to {new_rate} transactions/second")
+            return True
+        
+        except Exception as e:
+            logger.error(f"Unable to set new max generation rate: {e}")
+            return False
 
     async def start_generation(self, rate: int = 1, start: str = ""):
         """Start transaction generation at specified rate"""
@@ -194,6 +227,8 @@ class TransactionGeneratorService:
             except Exception as e:
                 raise Exception(f"Error running fraud detection: {e}")
             
+            return True
+        
         except Exception as e:
             logger.error(f"❌ Error creating manual transaction: {e}")
             return {"success": False, "error": f"❌ Error creating manual transaction: {e}"}
