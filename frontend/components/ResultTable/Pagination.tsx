@@ -58,7 +58,7 @@ const Pagination = ({
     return (totalPages > 0 &&
         <div className="flex items-center justify-between w-full mt-4">
             <div className="flex gap-6 items-center">
-                <span className='text-sm text-muted-foreground'>Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalEntries)} of {totalEntries} {title.toLowerCase()}</span>
+                <span className='text-sm text-muted-foreground'>Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalEntries)} of {totalEntries.toLocaleString('en-US')} {title.toLowerCase()}</span>
                 <div className='flex gap-2 items-center'>
                     {[10, 20, 30].map((size) => (
                         <BtnLayout 

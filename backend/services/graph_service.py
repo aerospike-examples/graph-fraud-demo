@@ -225,8 +225,8 @@ class GraphService:
                             )
                     else:
                         graph_query = graph_query.or_(
-                            __.has("sender", containing(query.upper())),
-                            __.has("receiver", containing(query.upper())),
+                            __.inV().hasId(containing(query.upper())),
+                            __.outV().hasId(containing(query.upper())),
                             __.has("txn_id", containing(query.upper())),
                             __.has("location", containing(query.title()))
                         )

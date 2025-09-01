@@ -1,6 +1,7 @@
 import asyncio
 import random
 import pickle
+import math
 from datetime import datetime
 from typing import List, Dict, Any
 from enum import Enum
@@ -44,7 +45,7 @@ class TransactionGeneratorService:
         self.generation_rate = 1  # transactions per second
         self.generated_transactions = []
         self.transaction_counter = 0
-        self.task = None
+        self.tasks = []
         self.account_vertices = []
         self.start_time = None
 
@@ -131,8 +132,10 @@ class TransactionGeneratorService:
         logger.info(f"🚀 Starting transaction generation at {self.generation_rate} transactions/second")
         stats_logger.info(f"START: Generation started at {self.generation_rate} txn/sec")
         
+        num_tasks = max(1, math.ceil(rate / 50))
         # Start the generation task
-        self.task = asyncio.create_task(self._generation_loop())
+        for _ in range(num_tasks):
+            self.tasks.append(asyncio.create_task(self._generation_loop()))
         return True
 
     async def stop_generation(self):
@@ -145,13 +148,14 @@ class TransactionGeneratorService:
         self.start_time = None
         self.transaction_counter = 0
 
-        if self.task:
-            self.task.cancel()
-            try:
-                await self.task
-            except asyncio.CancelledError:
-                pass
-            self.task = None
+        if len(self.tasks) > 0:
+            for task in self.tasks:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self.tasks = []
         
         logger.info("🛑 Transaction generation stopped")
         logger.info(f"📊 Generated {self.transaction_counter} transactions")
@@ -168,7 +172,7 @@ class TransactionGeneratorService:
                 # Generate transaction (already stores in memory, graph, and runs fraud detection)
                 await self._generate_transaction()
                 # Wait for next generation
-                await asyncio.sleep(1.0 / self.generation_rate)
+                await asyncio.sleep(1.0 / 50)
                 
             except Exception as e:
                 logger.error(f"❌ Error in generation loop: {e}")
@@ -248,7 +252,8 @@ class TransactionGeneratorService:
             transaction_type = random.choice(["transfer", "payment", "deposit", "withdrawal"])
             
             await self.create_manual_transaction(sender_account_id, receiver_account_id, amount, transaction_type, "AUTO")
-            
+            return True
+        
         except Exception as e:
             logger.error(f"Error generating normal transaction: {e}")
             raise e
