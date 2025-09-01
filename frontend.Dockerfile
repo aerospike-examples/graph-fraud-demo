@@ -8,4 +8,4 @@ WORKDIR /frontend
 
 RUN npm install
 
-CMD [ "sh", "-c", "wget --post-data='' http://asgraph-backend:4000/bulk-load-csv ; npm run build ; npm run start"]
+CMD [ "sh", "-c", "wget --post-data='' http://asgraph-backend:4000/bulk-load-csv ; npm run deploy"]
