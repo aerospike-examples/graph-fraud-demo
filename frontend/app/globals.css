@@ -1,9 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+@config "../tailwind.config.js";
 
 @layer base {
   :root {
+    --default-transition-duration: .3s;
+    --default-transition-timing-function: linear;
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -47,39 +48,19 @@
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 94.1%;
   }
-}
-
-@layer base {
-  * {
+  .text-xl {
+    font-size: 1.25rem;
+  }
+  *{
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
   }
-}
 
-@layer components {
-  .btn {
-    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background;
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
   }
-  
-  .btn-primary {
-    @apply btn bg-primary text-primary-foreground hover:bg-primary/90 h-10 py-2 px-4;
-  }
-  
-  .btn-secondary {
-    @apply btn bg-secondary text-secondary-foreground hover:bg-secondary/80 h-10 py-2 px-4;
-  }
-  
-  .btn-danger {
-    @apply btn bg-destructive text-destructive-foreground hover:bg-destructive/90 h-10 py-2 px-4;
-  }
-  
-  /* .card {
-    @apply rounded-lg border bg-card text-card-foreground shadow-sm;
-  } */
-  
-  .input {
-    @apply flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
-  }
-} 
+}

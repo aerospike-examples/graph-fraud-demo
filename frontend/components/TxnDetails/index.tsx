@@ -2,35 +2,44 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
-import Location from './Location'
 import Analysis from './Analysis'
-import { TransactionDetail } from '@/app/transactions/[id]/page'
 import AccountCard from './AccountCard'
+import type { Transaction } from "@/components/UserDetails/Transactions"
+import type { Account } from '@/components/UserDetails/Accounts'
+import type { User } from '@/components/UserDetails/'
 
-const Details = ({ txnDetails }: { txnDetails: TransactionDetail }) => {
-    const [active, setActive] = useState('accounts');
+export interface TxnDetail {
+    txn: Transaction
+    src: {
+        account: Account
+        user: User
+    }
+    dest: {
+        account: Account
+        user: User
+    }
+}
 
+const TxnDetails = ({ txn, src, dest }: TxnDetail) => {
+    const [active, setActive] = useState('accounts')
+    
     return (
         <Tabs value={active} onValueChange={setActive} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="accounts">Accounts</TabsTrigger>
-                <TabsTrigger value="devices">Fraud Analysis</TabsTrigger>
-                <TabsTrigger value="connections">Location</TabsTrigger>
+                <TabsTrigger value="fraud">Fraud Analysis</TabsTrigger>
             </TabsList>
             <TabsContent value="accounts" className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
-                    <AccountCard {...txnDetails.source_account} variant='source' />
-                    <AccountCard {...txnDetails.destination_account} variant='destination' />
+                    <AccountCard {...src} variant='source' />
+                    <AccountCard {...dest} variant='destination' />
                 </div>
             </TabsContent>
-            <TabsContent value="devices" className="space-y-4">
-                <Analysis fraudResults={txnDetails.fraud_results} />
-            </TabsContent>
-            <TabsContent value="connections" className="space-y-4">
-                <Location transaction={txnDetails.transaction} />
+            <TabsContent value="fraud" className="space-y-4">
+                <Analysis txn={txn} />
             </TabsContent>
         </Tabs>
     )
 }
 
-export default Details;
+export default TxnDetails;

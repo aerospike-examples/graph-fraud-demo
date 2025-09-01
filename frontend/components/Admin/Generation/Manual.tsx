@@ -4,8 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import Search, { type Account } from './Search'
-import { CheckCircle, CreditCard, RefreshCw } from 'lucide-react'
-import { FormEvent, useEffect, useState } from 'react'
+import { CreditCard, RefreshCw } from 'lucide-react'
+import { type FormEvent, useEffect, useState } from 'react'
+import { toast } from "sonner"
 
 interface ManualTxn {
     fromAcct: string
@@ -20,7 +21,6 @@ const Manual = () => {
     const [toAcct, setToAcct] = useState<ManualTxn['toAcct']>("")
     const [amount, setAmount] = useState<ManualTxn['amount']>("")
     const [txnType, setTxnType] = useState<ManualTxn['txnType']>('transfer')
-    const [success, setSuccess] = useState<string | null>(null)
     const [accounts, setAccounts] = useState<Account[]>([])
 
     const getAccounts = async () => {
@@ -50,17 +50,18 @@ const Manual = () => {
             const response = await fetch(`/api/transaction-generation/manual?from_account_id=${from}&to_account_id=${to}&amount=${amnt}&transaction_type=${type}`, {
                 method: 'POST'
             })
-            const { transaction_id } = await response.json()
-            setSuccess(`Transaction ${transaction_id} created successfully!`)
-            setFromAcct("")
-            setToAcct("")
-            setAmount("")
-            setTxnType('transfer')
-            setTimeout(() => setSuccess(null), 5000)
-            console.log('Manual transaction created successfully:', transaction_id)
+            if(response.ok) {
+                toast.success("Transaction created successfully!")
+                setFromAcct("")
+                setToAcct("")
+                setAmount("")
+                setTxnType('transfer')
+            }
+            else throw new Error(`Server returned: ${response.status}`)
         } 
         catch(error) {
             console.error('Failed to create manual transaction:', error)
+            toast.error("Failed to create manual transaction")
         } 
         finally {
             setLoading(false)
@@ -151,12 +152,6 @@ const Manual = () => {
                         )}
                         Create Transaction
                     </Button>
-                    
-                    {success &&
-                    <div className="flex items-center space-x-2 p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md">
-                        <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
-                        <span className="text-sm text-green-800 dark:text-green-200">{success}</span>
-                    </div>}
                 </form>
               </CardContent>
         </Card>

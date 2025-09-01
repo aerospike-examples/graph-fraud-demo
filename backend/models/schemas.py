@@ -93,7 +93,6 @@ class UserSummary(BaseModel):
     total_amount_sent: float
     total_amount_received: float
     fraud_risk_level: FraudRiskLevel
-    connected_users: List[str]
 
 class TransactionDetail(BaseModel):
     transaction: Transaction

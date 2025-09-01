@@ -1,5 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import type { Color } from "@/components/Stat"
+import type { IconName } from "@/components/Icon"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -81,4 +83,30 @@ export const getDuration = (startTime: string) => {
 	const seconds = Math.floor((diff % (1000 * 60)) / 1000)
 
 	return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+}
+
+export const getTransactionTypeIcon = (type: string | undefined): { name: IconName, color: Color } => {
+	switch (type?.toLowerCase()) {
+		case 'deposit':
+			return { name: 'trending-up', color: 'green-600' }
+		case 'withdrawal':
+			return { name: 'trending-down', color: 'destructive' }
+		case 'transfer':
+			return { name: 'activity', color: 'blue-600' }
+		default:
+			return { name: 'activity', color: 'foreground' }
+	}
+}
+
+export const getStatusIcon = (status: string | undefined): { name: IconName, color: Color } => {
+	switch (status?.toLowerCase()) {
+		case 'completed':
+			return { name: 'check-circle', color: 'green-600' }
+		case 'pending':
+			return { name: 'clock', color: 'yellow-600' }
+		case 'failed':
+			return { name: 'x-circle', color: 'destructive' }
+		default:
+			return { name: 'clock', color: 'foreground' }
+	}
 }

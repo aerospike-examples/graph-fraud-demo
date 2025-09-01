@@ -4,9 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Activity, Database, RefreshCw, Trash2 } from 'lucide-react'
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
-import { Transaction } from '@/components/UserDetails/Transactions'
+import { useEffect, type Dispatch, type SetStateAction } from 'react'
 import { getDuration } from '@/lib/utils'
+import Confirm from '@/components/Confirm'
 
 export interface GenerationStats {
     isRunning: boolean
@@ -17,20 +17,16 @@ export interface GenerationStats {
 }
 
 interface Props {
+    isGenerating: boolean
     stats: GenerationStats
     setStats: Dispatch<SetStateAction<GenerationStats>>
-    recentTxns: Transaction[]
-    setRecentTxns: Dispatch<SetStateAction<Transaction[]>>
 }
 
 const Statistics = ({
+    isGenerating,
     stats,
-    setStats,
-    recentTxns,
-    setRecentTxns
+    setStats
 }: Props) => {
-    const [loading, setLoading] = useState(false)
-    const [confirmed, setConfirmed] = useState(false)
 
     useEffect(() => {
         let timer: NodeJS.Timeout
@@ -48,17 +44,15 @@ const Statistics = ({
         }
     }, [stats.isRunning, stats.startTime])
 
-    const clearTxns = () => {
-        if (!confirmed) {
-            setConfirmed(true)
-            return
+    const clearTxns = async () => {
+        try {
+            const response  = await fetch("/api/transactions", { method: "DELETE"})
+            if(response.ok) setStats(prev => ({ ...prev, totalGenerated: 0 }))
+            else alert("An error occured")
         }
-
-        setLoading(true);
-        setRecentTxns([])
-        setStats(prev => ({ ...prev, totalGenerated: 0 }))
-        setConfirmed(false)
-        setLoading(false);
+        catch(e) {
+            alert(`An error occured: ${e}`)
+        }
     }
 
     return (
@@ -105,47 +99,19 @@ const Statistics = ({
                         <span>Quick Actions</span>
                     </h4>
                     <div className="text-xs text-muted-foreground mb-2">
-                        {confirmed
-                            ? "This action cannot be undone. Click 'Confirm Clear' to proceed."
-                            : "This will remove all generated transactions from the system."
-                        }
+                        This will remove all generated transactions from the system.
                     </div>
                     <div className="space-y-3">
-                        {!confirmed &&
-                        <Button
-                            variant="outline"
-                            onClick={clearTxns}
-                            disabled={loading || recentTxns.length === 0}
-                            className="w-full"
-                            size="sm"
+                        <Confirm
+                            title='Are you absolutely sure?'
+                            message='This action cannot be undone. This will permanently delete all transactions.'
+                            action={clearTxns}
                         >
-                            {loading ? (
-                                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
+                            <Button variant="outline" disabled={isGenerating} className="w-full" size="sm">
                                 <Trash2 className="w-4 h-4 mr-2" />
-                            )}
-                            Clear All Transactions
-                        </Button>}
-                        {confirmed && (
-                        <div className='flex gap-2'>
-                            <Button
-                                variant={"destructive"}
-                                onClick={clearTxns}
-                                size="sm"
-                                className='w-1/2'
-                            >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Confirm
+                                Clear All Transactions
                             </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => setConfirmed(false)}
-                                size="sm"
-                                className='w-1/2'
-                            >
-                                Cancel
-                            </Button>
-                        </div>)}
+                        </Confirm>
                     </div>
                 </div>
             </CardContent>

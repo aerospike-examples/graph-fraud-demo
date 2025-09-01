@@ -1,5 +1,7 @@
 FROM python:3.12.11-alpine3.22
 
+ENV GRAPH_HOST_ADDRESS="asgraph-service"
+
 RUN mkdir /backend
 COPY ./backend /backend
 WORKDIR /backend

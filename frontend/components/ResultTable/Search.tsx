@@ -8,17 +8,20 @@ import { useRef, useState } from 'react'
 interface Props {
     fetchData: (q: string) => void
     placeholder: string
+    setCurrentPage: () => void
 }
 
 const Search = ({
     fetchData,
-    placeholder = "Search"
+    placeholder = "Search",
+    setCurrentPage
 }: Props ) => {
     const [query, setQuery] = useState("");
     const debounce = useRef<NodeJS.Timeout | null>(null)
     
     const handleChange = (q: string) => {
         setQuery(q);
+        setCurrentPage();
         if(debounce.current) clearTimeout(debounce.current);
         debounce.current = setTimeout(() => fetchData(q), 300)
     }

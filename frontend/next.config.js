@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 
-const backend = "http://localhost:4000"
+const backend = process.env.BACKEND_URL ?? "http://localhost:4000"
+const zipkin = process.env.ZIPKIN_URL ?? "http://localhost:9411"
 
 const nextConfig = {
     async rewrites() {
@@ -8,6 +9,10 @@ const nextConfig = {
             {
                 source: '/api/:path*',
                 destination: `${backend}/:path*`,
+            },
+            {
+                source: '/zipkin/:path*',
+                destination: `${zipkin}/zipkin/:path*`,
             }
         ]
     },

@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 
-interface BadgeProps {
+export interface BadgeProps {
   children: React.ReactNode
   variant?: 'default' | 'destructive' | 'secondary'
   className?: string
