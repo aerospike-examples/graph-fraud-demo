@@ -13,7 +13,7 @@ import TxnDetails, { type TxnDetail } from "@/components/TxnDetails"
 import Stat from '@/components/Stat'
 import Label from '@/components/Label'
 
-const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8080/api"
+const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api"
 
 export default async function TransactionsPage({ params }: { params: Promise<{ id: string }>}) {
 	const { id: transactionId } = await params;

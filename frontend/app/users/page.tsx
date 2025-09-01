@@ -11,7 +11,7 @@ interface UserStats {
 	total_high_risk: number
 }
 
-const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8080/api"
+const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api"
 
 export default async function UsersPage() {
     const response = await fetch(`${API_BASE_URL}/users/stats`, { cache: 'no-store' })

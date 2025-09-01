@@ -8,7 +8,7 @@ import Stat from '@/components/Stat';
 import Label from '@/components/Label'
 import type { UserSummary } from '@/components/UserDetails'
 
-const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8080/api"
+const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api"
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }>}) {
   	const { id: userId } = await params;
