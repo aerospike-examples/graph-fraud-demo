@@ -235,10 +235,10 @@ class FraudService:
             connections = (self.graph_service.client.E(edge_id)
                 .project("sender", "receiver")
                 .by(__.outV()
-                        .bothE("TRANSACTS")
+                        .bothE("TRANSACTS").bothV()
                         .has("fraud_flag", True).id_().dedup().fold())
                 .by(__.inV()
-                        .bothE("TRANSACTS")
+                        .bothE("TRANSACTS").bothV()
                         .has("fraud_flag", True).id_().dedup().fold())
                 .next())
                     
