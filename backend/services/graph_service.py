@@ -451,7 +451,7 @@ class GraphService:
     def drop_all_transactions(self):
         if self.client:
             try:
-                self.client.with_('evaluationTimeout', 2000000).E().has_label("TRANSACTS").drop().iterate()
+                self.client.with_('evaluationTimeout', 4000000).E().has_label("TRANSACTS").drop().iterate()
                 
                 edges = 1
                 while edges > 0:

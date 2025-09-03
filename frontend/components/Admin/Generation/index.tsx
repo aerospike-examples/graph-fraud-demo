@@ -1,6 +1,6 @@
 'use client'
 
-import {type Dispatch, type SetStateAction, useEffect, useState } from 'react'
+import {type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react'
 import Statistics, { type GenerationStats } from './Statistics'
 import Controls from './Controls'
 import Manual from './Manual'
@@ -15,110 +15,101 @@ interface Props {
 
 const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 	const [stats, setStats] = useState<GenerationStats>({
-		isRunning: false,
-		totalGenerated: 0,
+		running: false,
+		total: 0,
+		errors: 0,
+		maxRate: 200,
 		currentRate: 1,
 		duration: '00:00:00',
 		startTime: new Date().toISOString()
 	})
-
-	const getGenerationStats = async () => {
-		const response = await fetch('/api/transaction-generation/status')
-    	const { 
-			status, 
-			transaction_count: totalGenerated, 
-			generation_rate: currentRate,
-			start_time: startTime
-		} = await response.json()
-
-		const isRunning = status === 'running';
-		setIsGenerating(isRunning)
-		setStats({
-			isRunning,
-			totalGenerated,
-			currentRate,
-			duration: (isRunning && startTime) ? getDuration(startTime) : "00:00:00",
-			startTime
-		})
-	}
+	const pollingRef = useRef<NodeJS.Timeout | undefined>(undefined)
 	
-	const pollStatus = () => {
-		const interval: NodeJS.Timeout | undefined =
-			isGenerating ?
-			setInterval(async () => {
-				try {
-					const response = await fetch('/api/transaction-generation/status')
-					if (response.ok) {
-						const statusData = await response.json()
-						setStats(prev => ({
-							...prev,
-							totalGenerated: statusData.transaction_count,
-							currentRate: statusData.generation_rate
-						}))
-					}
-				} 
-				catch (err) {
-					console.error('Error polling status:', err)
-				}
-			}, 1000)
-			: undefined
-		return interval
+	const getGenerationStats = async (): Promise<GenerationStats> => {
+		const response = await fetch('/generate/status')
+		const status = await response.json() as GenerationStats
+		return status
 	}
-	
-	useEffect(() => {	
-		const interval = pollStatus();
-		return () => {
-			if (interval) clearInterval(interval);
-		}
-	}, [isGenerating])
+
+	const getPollingInterval = () => {
+		return setInterval(async () => {
+			getGenerationStats()
+			.then(({running, startTime, ...rest}) => setStats({
+				running,
+				startTime,
+				...rest,
+				duration: (running && startTime) ? getDuration(startTime) : "00:00:00",
+			}))
+			.catch((error) => console.error('Error polling status:', error))
+		}, 1000)
+	}
 
 	const startGeneration = async (rate: number) => {
+		if(isGenerating) return
 		try {
-			const startTime = new Date().toISOString()
+			pollingRef.current = getPollingInterval()
+			const start = new Date().toISOString()
 			const response = await fetch('/generate/start', {
 				headers: {
 					"Content-Type": "application/json"
 				},
 				method: 'POST',
-				body: JSON.stringify({ rate })
+				body: JSON.stringify({ rate, start })
 			})
-			if(response.ok) {
+			const { error } = await response.json()
+			if(!error) {
 				setIsGenerating(true)
 				toast.success("Transaction generation started")
-				setStats(prev => ({ ...prev, isRunning: true, startTime }))
+				setStats(prev => ({ ...prev, isRunning: true, startTime: start }))
 			}
 			else {
-				const errorData = await response.json();
-				throw new Error(`${errorData.detail} || 'Failed to start generation`);
+				throw new Error(error);
 			}
 		}
 		catch(e) {
-			console.error(e)
-			toast.error("Transaction generation failed to start")
+			console.error("Error starting generator", e)
+			toast.error(e as string)
 		}
 	}
 
 	const stopGeneration = async () => {
 		try {
-			const response = await fetch('/generate/stop');
-			if(response.ok) {
+			clearInterval(pollingRef.current)
+			const response = await fetch('/generate/stop', { method: 'POST' });
+			const { error } = await response.json()
+			if(!error) {
 				setIsGenerating(false)
 				toast.success("Transaction generation stopped")
 				setStats(prev => ({ ...prev, isRunning: false }))
 			} 
 			else {
-				const errorData = await response.json();
-				throw new Error(`${errorData.detail} || 'Failed to stop generation`);
+				throw new Error(error);
 			}
 		}
 		catch(e) {
-			console.error(e)
-			toast.error("Transaction generation failed to stop")
+			console.error("Error stopping generator", e)
+			toast.error(e as string)
 		}
 	}
 
 	useEffect(() => {
 		getGenerationStats()
+		.then(({ running, startTime, ...rest }) => {
+			if(running) {
+				setIsGenerating(true)
+				pollingRef.current = getPollingInterval()
+			}
+			setStats({
+				running,
+				...rest,
+				duration: (running && startTime) ? getDuration(startTime) : "00:00:00"
+			})
+		})
+		return () => {
+			if(pollingRef.current) {
+				clearInterval(pollingRef.current)
+			}
+		}
 	}, []);
 
     return (

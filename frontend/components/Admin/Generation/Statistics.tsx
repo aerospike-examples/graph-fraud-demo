@@ -4,15 +4,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Activity, Database, RefreshCw, Trash2 } from 'lucide-react'
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
-import { getDuration } from '@/lib/utils'
+import { useState, type Dispatch, type SetStateAction } from 'react'
 import Confirm from '@/components/Confirm'
 
 export interface GenerationStats {
-    isRunning: boolean
-    totalGenerated: number
-    currentRate: number
+    running: boolean
+    total: number
     startTime?: string
+    currentRate: number
+    maxRate: number
+    errors: number
     duration: string
 }
 
@@ -28,22 +29,6 @@ const Statistics = ({
     setStats
 }: Props) => {
     const [loading, setLoading] = useState(false)
-
-    useEffect(() => {
-        let timer: NodeJS.Timeout
-        if (stats.isRunning && stats.startTime) {
-            timer = setInterval(() => {
-                setStats(prev => ({
-                    ...prev,
-                    duration: getDuration(stats.startTime!)
-                }))
-            }, 1000)
-        }
-
-        return () => {
-            if (timer) clearInterval(timer)
-        }
-    }, [stats.isRunning, stats.startTime])
 
     const clearTxns = async () => {
         setLoading(true)
@@ -76,7 +61,7 @@ const Statistics = ({
                 <div className="grid grid-cols-2 gap-4">
                     <div className="text-center">
                         <div className="text-2xl font-bold text-primary">
-                            {stats.totalGenerated.toLocaleString()}
+                            {stats.total.toLocaleString()}
                         </div>
                         <div className="text-xs text-muted-foreground">Total Generated</div>
                     </div>
@@ -94,8 +79,8 @@ const Statistics = ({
                     </div>
                     <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">Status</span>
-                        <Badge variant={stats.isRunning ? "default" : "secondary"}>
-                            {stats.isRunning ? "Running" : "Stopped"}
+                        <Badge variant={stats.running ? "default" : "secondary"}>
+                            {stats.running ? "Running" : "Stopped"}
                         </Badge>
                     </div>
                 </div>

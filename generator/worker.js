@@ -3,14 +3,14 @@ const baseUrl = process.env.BACKEND_URL ?? "http://localhost:4000"
 
 const createTransaction = async () => {
     try {
-        const res = await fetch(`${baseUrl}/transaction-generation/generate`, {
+        await fetch(`${baseUrl}/transaction-generation/generate`, {
             method: "POST"
         })
-        if(!res.ok) return false
-        return true
+        parentPort.postMessage({ status: "created" })
     }
-    catch(e) {
-        console.error(`Error creating transaction: ${e}`)
+    catch(error) {
+        console.error(`Error creating transaction: ${error}`)
+        parentPort.postMessage({ status: 'error' })
     }
 }
 
@@ -19,10 +19,10 @@ parentPort.on("message", (data) => {
     let task = null
     if(start) {
         task = setInterval(async () => await createTransaction(), (1000/rate))
-        parentPort.postMessage("Started");
+        parentPort.postMessage({ status: "running" });
     }
     if(stop) {
         if(task) clearInterval(task)
-        parentPort.postMessage("Stopped");
+        parentPort.postMessage({ status: "stopped" });
     }
 })

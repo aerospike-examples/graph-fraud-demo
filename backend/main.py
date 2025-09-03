@@ -2,10 +2,7 @@ from fastapi import FastAPI, HTTPException, Query, Path
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import Optional
-import time
 from datetime import datetime
-import random
-import uuid
 import urllib.parse
 
 from services.fraud_service import FraudService
@@ -490,7 +487,7 @@ async def unflag_account(account_id: str):
 
 
 @app.get("/performance/stats")
-async def get_performance_stats(time_window: int = Query(5, ge=1, le=60, description="Time window in minutes")):
+def get_performance_stats(time_window: int = Query(5, ge=1, le=60, description="Time window in minutes")):
     """Get performance statistics for all fraud detection methods"""
     try:
         stats = performance_monitor.get_all_stats(time_window)
@@ -505,7 +502,7 @@ async def get_performance_stats(time_window: int = Query(5, ge=1, le=60, descrip
 
 
 @app.get("/performance/timeline")
-async def get_performance_timeline(minutes: int = Query(5, ge=1, le=60, description="Timeline window in minutes")):
+def get_performance_timeline(minutes: int = Query(5, ge=1, le=60, description="Timeline window in minutes")):
     """Get timeline data for performance charts"""
     try:
         timeline_data = performance_monitor.get_recent_timeline_data(minutes)
@@ -519,137 +516,8 @@ async def get_performance_timeline(minutes: int = Query(5, ge=1, le=60, descript
         raise HTTPException(status_code=500, detail=f"Failed to get performance timeline: {str(e)}")
 
 
-@app.post("/performance/test/rt1")
-async def test_rt1_performance(transaction_count: int = Query(10, ge=1, le=100, description="Number of test transactions")):
-    """Test RT1 performance with sample transactions"""
-    try:
-        # Generate test transactions and measure RT1 performance
-        test_results = []
-        for i in range(transaction_count):
-            # Create a mock transaction for testing
-            test_transaction = {
-                "id": f"test_rt1_{i}_{uuid.uuid4().hex[:8]}",
-                "account_id": f"test_account_{i}",
-                "receiver_account_id": f"test_receiver_{i}",
-                "amount": random.uniform(10, 1000),
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            # Get RT1 service and test it
-            rt1_service = transaction_generator.rt1_service
-            start_time = time.time()
-            result = await rt1_service.check_transaction(test_transaction)
-            execution_time = (time.time() - start_time) * 1000
-            
-            test_results.append({
-                "transaction_id": test_transaction["id"],
-                "execution_time_ms": round(execution_time, 2),
-                "success": result.get("is_fraud") is not None,
-                "fraud_detected": result.get("is_fraud", False)
-            })
-        
-        avg_time = sum(r["execution_time_ms"] for r in test_results) / len(test_results)
-        
-        return {
-            "test_type": "RT1",
-            "transaction_count": transaction_count,
-            "results": test_results,
-            "average_execution_time_ms": round(avg_time, 2),
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"❌ Failed to test RT1 performance: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to test RT1 performance: {str(e)}")
-
-
-@app.post("/performance/test/rt2")
-async def test_rt2_performance(transaction_count: int = Query(10, ge=1, le=100, description="Number of test transactions")):
-    """Test RT2 performance with sample transactions"""
-    try:
-        # Generate test transactions and measure RT2 performance
-        test_results = []
-        for i in range(transaction_count):
-            # Create a mock transaction for testing
-            test_transaction = {
-                "id": f"test_rt2_{i}_{uuid.uuid4().hex[:8]}",
-                "account_id": f"test_account_{i}",
-                "receiver_account_id": f"test_receiver_{i}",
-                "amount": random.uniform(10, 1000),
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            # Get RT2 service and test it
-            rt2_service = transaction_generator.rt2_service
-            start_time = time.time()
-            result = await rt2_service.check_transaction_fraud(test_transaction)
-            execution_time = (time.time() - start_time) * 1000
-            
-            test_results.append({
-                "transaction_id": test_transaction["id"],
-                "execution_time_ms": round(execution_time, 2),
-                "success": result.get("is_fraud") is not None,
-                "fraud_detected": result.get("is_fraud", False)
-            })
-        
-        avg_time = sum(r["execution_time_ms"] for r in test_results) / len(test_results)
-        
-        return {
-            "test_type": "RT2",
-            "transaction_count": transaction_count,
-            "results": test_results,
-            "average_execution_time_ms": round(avg_time, 2),
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"❌ Failed to test RT2 performance: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to test RT2 performance: {str(e)}")
-
-
-@app.post("/performance/test/rt3")
-async def test_rt3_performance(transaction_count: int = Query(10, ge=1, le=100, description="Number of test transactions")):
-    """Test RT3 performance with sample transactions"""
-    try:
-        # Generate test transactions and measure RT3 performance
-        test_results = []
-        for i in range(transaction_count):
-            # Create a mock transaction for testing
-            test_transaction = {
-                "id": f"test_rt3_{i}_{uuid.uuid4().hex[:8]}",
-                "account_id": f"test_account_{i}",
-                "receiver_account_id": f"test_receiver_{i}",
-                "amount": random.uniform(10, 1000),
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            # Get RT3 service and test it
-            rt3_service = transaction_generator.rt3_service
-            start_time = time.time()
-            result = await rt3_service.check_transaction(test_transaction)
-            execution_time = (time.time() - start_time) * 1000
-            
-            test_results.append({
-                "transaction_id": test_transaction["id"],
-                "execution_time_ms": round(execution_time, 2),
-                "success": result.get("is_fraud") is not None,
-                "fraud_detected": result.get("is_fraud", False)
-            })
-        
-        avg_time = sum(r["execution_time_ms"] for r in test_results) / len(test_results)
-        
-        return {
-            "test_type": "RT3",
-            "transaction_count": transaction_count,
-            "results": test_results,
-            "average_execution_time_ms": round(avg_time, 2),
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"❌ Failed to test RT3 performance: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to test RT3 performance: {str(e)}")
-
-
 @app.post("/performance/reset")
-async def reset_performance_metrics():
+def reset_performance_metrics():
     """Reset all performance metrics"""
     try:
         performance_monitor.reset_metrics()

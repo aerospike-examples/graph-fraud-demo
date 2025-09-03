@@ -132,7 +132,7 @@ export default function Performance() {
   useEffect(() => {
     if (!autoRefresh) return
 
-    const interval = setInterval(fetchPerformanceData, 20000) // Refresh every 20 seconds
+    const interval = setInterval(fetchPerformanceData, 5000) // Refresh every 20 seconds
     return () => clearInterval(interval)
   }, [autoRefresh, timeWindow])
 

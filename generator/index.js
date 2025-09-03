@@ -8,46 +8,108 @@ app.use(express.json());
 app.use(cors({origin: "*"}));
 const server = http.createServer(app);
 
-const baseUrl = process.env.BACKEND_URL ?? "http://localhost:4000"
 const workers = []
+const baseUrl = process.env.BACKEND_URL ?? "http://localhost:4000"
+
+let maxRate = 200
+let currentRate = 0
 let running = false
+let total = 0
+let errors = 0
+let startTime = null
 
-app.post("/generate/start", async (req, res) => {
-    if(running) return res.send({ status: "Generation already running" })
-    const { rate } = req.body
-    const startTime = new Date().toISOString()
-    const response = await fetch(`${baseUrl}/transaction-generation/start?rate=${rate}&start=${startTime}`, {
-		method: 'POST'
-    })
-    if(response.ok) {
-        running = true
-        const numWorkers = Math.ceil(rate / 100)
-        const remainder = rate % 100
-        
-        for(let i = 0; i < numWorkers; i++) {
-            workers.push(new Worker('./worker.js'))
-            if(remainder && i === numWorkers - 1) {
-                workers[i].postMessage({ start: true, rate: remainder })
-            }
-            else workers[i].postMessage({ start: true, rate: 100 })
+const startWorkers = async (rate, start) => {
+    startTime = start
+    running = true
+    total = 0
+    errors = 0
+    currentRate = rate
+    
+    const numWorkers = Math.ceil(rate / 100)
+    const remainder = rate % 100
+    
+    for(let i = 0; i < numWorkers; i++) {
+        workers.push(new Worker('./worker.js'))
+        workers[i]?.on("message", listenToWorker)
+        if(remainder && i === numWorkers - 1) {
+            workers[i].postMessage({ start: true, rate: remainder })
         }
-        res.send({ status: "running" })
+        else workers[i].postMessage({ start: true, rate: 100 })
     }
-    else res.send({ error: "Could not start generator" })
-})
+}
 
-app.get("/generate/stop", async (req, res) => {
-    if(!running) res.send({ status: "Generation not running" })
-    while(workers.length > 0) {
-        workers[0]?.terminate();
-        workers.shift();
-    }
-    const response = await fetch(`${baseUrl}/transaction-generation/stop`, { method: "POST" })
-    if(response.ok) {
+const stopWorkers = async () => {
+    try {
+        while(workers.length > 0) {
+            workers[0]?.terminate();
+            workers.shift();
+        }
         running = false
-        res.send({ status: "stopped" })
+        total = 0
+        errors = 0
         return
     }
+    catch (e) {
+        console.error(`Error stopping workers: {e}`)
+        return
+    }
+}
+
+const listenToWorker = async (data) => {
+    const { status } = data
+    if(status === 'created') total++
+    if(status === 'error') {
+        errors++
+        if(errors > 100) {
+            await stopWorkers()
+        }
+    }
+}
+
+app.post("/generate/start", async (req, res) => {
+    if(running) {
+        res.send({ error: "Generation already running" })
+        return
+    }
+    
+    const { rate, start } = req.body
+    if(rate > maxRate) {
+        res.send({ error: "Rate is greater than maximum rate" })
+        return
+    }
+    
+    fetch(`${baseUrl}/performance/reset`, { method: 'POST' })
+    .then(() => {
+        startWorkers(rate, start)
+        .then(() =>{
+            res.send({ status: "running" })
+        })
+        .catch((error) => { throw new Error(error) })
+    })
+    .catch((error) => res.send({ error }))
+})
+
+app.post("/generate/stop", async (_, res) => {
+    if(!running) {
+        res.send({ error: "Generation not running" })
+        return
+    }
+    stopWorkers()
+    .then(() => {
+        res.send({ status: "stopped" })
+    })
+    .catch(error => res.send({ error }))
+})
+
+app.get("/generate/status", async (_, res) => {
+    res.send({
+        running,
+        total,
+        startTime,
+        currentRate,
+        maxRate,
+        errors
+    })
 })
 
 server.listen(4001, () => console.log("Listening on port 4001"))
