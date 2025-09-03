@@ -152,8 +152,8 @@ export default function Performance() {
   const renderMethodCard = (method: 'rt1' | 'rt2' | 'rt3', data: PerformanceStats) => {
     const methodInfo = {
       rt1: { name: 'RT1', description: 'Flagged Account Detection', icon: Shield, color: 'bg-blue-500' },
-      rt2: { name: 'RT2', description: 'Flagged Device Detection', icon: Database, color: 'bg-green-500' },
-      rt3: { name: 'RT3', description: 'Supernode Detection', icon: Target, color: 'bg-purple-500' }
+      rt2: { name: 'RT2', description: 'Flagged Account Multi-hop Detection', icon: Database, color: 'bg-green-500' },
+      rt3: { name: 'RT3', description: 'Flagged Device Detection', icon: Target, color: 'bg-purple-500' }
     }
 
     const info = methodInfo[method]

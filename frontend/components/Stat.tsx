@@ -1,11 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from './ui/skeleton';
 import Icon, { type IconName } from './Icon';
 import Label from './Label';
 export type Color = 'destructive' | 'warning' | 'foreground' | 'green-600' | 'blue-600' | 'yellow-600'
 
-interface Props {
+export interface StatProps {
     color?: Color
-    stat: string | number | {
+    stat?: string | number | {
         icon: {
             name: IconName
             color: Color
@@ -15,6 +16,8 @@ interface Props {
     title: string
     subtitle?: string
     icon?: IconName
+    loading?: boolean
+    label?: boolean
 }
 
 const Stat = ({
@@ -22,9 +25,10 @@ const Stat = ({
     stat,
     title,
     subtitle, 
-    icon
-}: Props) => {
-    
+    icon,
+    loading,
+    label
+}: StatProps) => {
     return (
         <Card>
             <CardHeader className='p-4 pb-1'>
@@ -36,9 +40,13 @@ const Stat = ({
                 <div className={`flex items-center justify-between text-${color}`}>
                     <div>
                         {typeof stat === 'object' ? (
-                            <Label icon={stat.icon.name} color={stat.icon.color} text={stat.text} size='lg'/>
+                            <Label icon={stat.icon.name} color={stat.icon.color} text={stat.text} size='lg' loading={loading} />
                         ) : (
-                            <p className="text-2xl font-bold">{typeof stat === 'number' ? stat.toLocaleString('en-US') : stat}</p>
+                            loading ? (
+                                <Skeleton className="h-[28px] w-[120px] rounded-2xl mb-[2px] mt-[2px]" />
+                            ): (
+                                <p className="text-2xl font-bold">{typeof stat === 'number' ? stat.toLocaleString('en-US') : stat}</p>
+                            )
                         )}
                         {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
                     </div>

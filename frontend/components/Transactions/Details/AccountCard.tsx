@@ -1,11 +1,11 @@
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import Link from 'next/link'
-import { Button } from '../ui/button'
+import { Button } from '@/components/ui/button'
 import { ExternalLink } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import Label from '../Label'
-import { type User } from '@/components/UserDetails'
-import { type Account } from '@/components/UserDetails/Accounts'
+import Label from '@/components/Label'
+import { type User } from '@/components/Users/Details'
+import { type Account } from '@/components/Users/Details/Accounts'
 
 interface Props {
     variant: 'source' | 'destination'

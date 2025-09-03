@@ -11,6 +11,8 @@ interface Props {
     setCurrentPage: () => void
 }
 
+export const SearchNoProps = ({ placeholder }: { placeholder: string }) => <Search fetchData={() => {}} placeholder={placeholder} setCurrentPage={() => {}} />
+
 const Search = ({
     fetchData,
     placeholder = "Search",

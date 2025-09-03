@@ -66,7 +66,7 @@ def setup_logging():
 
     # Console handler
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.ERROR)
     console_handler.setFormatter(simple_formatter)
 
     # Add handlers to logger
@@ -77,13 +77,13 @@ def setup_logging():
     
     # Create specific loggers
     graph_logger = logging.getLogger('fraud_detection.graph')
-    graph_logger.setLevel(logging.INFO)
+    graph_logger.setLevel(logging.ERROR)
     graph_logger.addHandler(graph_logs_handler)
     graph_logger.addHandler(console_handler)
     graph_logger.propagate = False  # Prevent propagation to parent logger
     
     api_logger = logging.getLogger('fraud_detection.api')
-    api_logger.setLevel(logging.INFO)
+    api_logger.setLevel(logging.ERROR)
     api_logger.addHandler(all_logs_handler)
     api_logger.addHandler(console_handler)
     api_logger.propagate = False  # Prevent propagation to parent logger

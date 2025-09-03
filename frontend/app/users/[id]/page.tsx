@@ -1,12 +1,10 @@
 'use server'
 
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import Details from '@/components/UserDetails';
-import Stat from '@/components/Stat';
+import Details, { type UserSummary } from '@/components/Users/Details';
 import Label from '@/components/Label'
-import type { UserSummary } from '@/components/UserDetails'
 
 const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api"
 
@@ -29,28 +27,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
 				</Badge>
 			</div>
 			<div className="grid gap-4 md:grid-cols-4">
-				<Stat
-					title='Total Transactions'
-					subtitle='Total transactions for this user'
-					stat={userDetails.total_txns}
-					icon='activity' />
-				<Stat
-					color='destructive'
-					title='Amount Sent'
-					subtitle='Total debit amount'
-					stat={formatCurrency(userDetails.total_sent)}
-					icon='trending-down' />
-				<Stat
-					color='green-600'
-					title='Amount Received'
-					subtitle='Total credit amount'
-					stat={formatCurrency(userDetails.total_recd)}
-					icon='trending-up' />
-				<Stat
-					title='Accounts'
-					subtitle='Total accounts for this user'
-					stat={userDetails.accounts.length}
-					icon='credit-card' />
+
 			</div>
             <div className="grid gap-4 md:grid-cols-2">
 				<Card>

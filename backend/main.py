@@ -274,8 +274,19 @@ def get_transaction_detail(transaction_id: str):
 # ----------------------------------------------------------------------------------------------------------
 
 
+@app.post("/transaction-generation/generate")
+def generate_random_transaction():
+    try:
+        transaction_generator.generate_transaction()
+        return True
+    
+    except Exception as e:
+        logger.error(f"❌ Failed to generate transaction: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate transaction: {str(e)}")
+
+
 @app.post("/transaction-generation/start")
-async def start_transaction_generation(
+def start_transaction_generation(
     rate: int = Query(1, ge=1, description="Generation rate (transactions per second)"),
     start: str = Query("", description="Generation start time")
 ):
@@ -290,7 +301,7 @@ async def start_transaction_generation(
                 detail=f"Generation rate {rate} exceeds maximum allowed rate of {max_generation_rate}"
             )
         
-        success = await transaction_generator.start_generation(rate, start)
+        success = transaction_generator.start_generation(rate, start)
         if success:
             logger.info(f"🎯 Transaction generation started at {rate} transactions/second")
             return {
@@ -307,10 +318,10 @@ async def start_transaction_generation(
 
 
 @app.post("/transaction-generation/stop")
-async def stop_transaction_generation():
+def stop_transaction_generation():
     """Stop transaction generation"""
     try:
-        success = await transaction_generator.stop_generation()
+        success = transaction_generator.stop_generation()
         if success:
             logger.info("🛑 Transaction generation stopped")
             return {
@@ -325,7 +336,7 @@ async def stop_transaction_generation():
 
 
 @app.post("/transaction-generation/manual")
-async def create_manual_transaction(
+def create_manual_transaction(
     from_account_id: str = Query(..., description="Source account ID"),
     to_account_id: str = Query(..., description="Destination account ID"), 
     amount: float = Query(..., gt=0, description="Transaction amount"),
@@ -334,7 +345,7 @@ async def create_manual_transaction(
     """Create a manual transaction between specific accounts"""
     try:
         logger.info(f"Attempting to create manual transaction from {from_account_id} to {to_account_id} amount {amount}")
-        result = await transaction_generator.create_manual_transaction(
+        result = transaction_generator.create_manual_transaction(
             from_id=from_account_id,
             to_id=to_account_id,
             amount=amount,

@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Activity, Database, RefreshCw, Trash2 } from 'lucide-react'
-import { useEffect, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { getDuration } from '@/lib/utils'
 import Confirm from '@/components/Confirm'
 
@@ -27,6 +27,7 @@ const Statistics = ({
     stats,
     setStats
 }: Props) => {
+    const [loading, setLoading] = useState(false)
 
     useEffect(() => {
         let timer: NodeJS.Timeout
@@ -45,6 +46,7 @@ const Statistics = ({
     }, [stats.isRunning, stats.startTime])
 
     const clearTxns = async () => {
+        setLoading(true)
         try {
             const response  = await fetch("/api/transactions", { method: "DELETE"})
             if(response.ok) setStats(prev => ({ ...prev, totalGenerated: 0 }))
@@ -53,9 +55,13 @@ const Statistics = ({
         catch(e) {
             alert(`An error occured: ${e}`)
         }
+        finally {
+            setLoading(false)
+        }
     }
 
     return (
+        <>
         <Card>
             <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
@@ -116,6 +122,14 @@ const Statistics = ({
                 </div>
             </CardContent>
         </Card>
+        {loading &&
+        <div className='fixed inset-0 z-50 bg-black/80 flex items-center justify-center'>
+            <div className="flex flex-col gap-4 items-center justify-center text-white">
+                <p className='text-2xl'>Deleting transactions...</p>
+                <RefreshCw className='w-16 h-16 animate-spin' />
+            </div>
+        </div>}
+        </>
     )
 }
 

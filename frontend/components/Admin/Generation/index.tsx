@@ -75,8 +75,12 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 	const startGeneration = async (rate: number) => {
 		try {
 			const startTime = new Date().toISOString()
-			const response = await fetch(`/api/transaction-generation/start?rate=${rate}&start=${startTime}`, {
-				method: 'POST'
+			const response = await fetch('/generate/start', {
+				headers: {
+					"Content-Type": "application/json"
+				},
+				method: 'POST',
+				body: JSON.stringify({ rate })
 			})
 			if(response.ok) {
 				setIsGenerating(true)
@@ -96,9 +100,7 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 
 	const stopGeneration = async () => {
 		try {
-			const response = await fetch('/api/transaction-generation/stop', {
-				method: 'POST'
-			});
+			const response = await fetch('/generate/stop');
 			if(response.ok) {
 				setIsGenerating(false)
 				toast.success("Transaction generation stopped")

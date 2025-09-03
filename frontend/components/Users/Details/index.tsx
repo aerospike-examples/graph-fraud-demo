@@ -2,14 +2,10 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
-import Accounts from './Accounts'
-import Transactions from './Transactions'
-import Devices from './Devices'
-import Connections from './Connections'
-import type { TransactionDetail } from '@/components/UserDetails/Transactions';
-import type { Device } from '@/components/UserDetails/Devices';
-import type { Account } from '@/components/UserDetails/Accounts'
-import type { Connection } from '@/components/UserDetails/Connections'
+import Accounts, { type Account } from './Accounts'
+import Transactions, { type TransactionDetail } from './Transactions'
+import Devices, { type Device } from './Devices'
+import Connections, { type Connection } from './Connections'
 
 export interface UserSummary {
     user: User

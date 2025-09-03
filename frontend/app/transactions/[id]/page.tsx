@@ -9,7 +9,7 @@ import {
 	getTransactionTypeIcon,
 	getStatusIcon
 } from '@/lib/utils'
-import TxnDetails, { type TxnDetail } from "@/components/TxnDetails"
+import TxnDetails, { type TxnDetail } from "@/components/Transactions/Details"
 import Stat from '@/components/Stat'
 import Label from '@/components/Label'
 

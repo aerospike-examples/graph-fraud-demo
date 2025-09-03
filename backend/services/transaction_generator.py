@@ -2,12 +2,14 @@ import asyncio
 import random
 import pickle
 import math
+import time
 from datetime import datetime
 from typing import List, Dict, Any
 from enum import Enum
 import json
 import uuid
 from gremlin_python.process.graph_traversal import __
+from concurrent.futures import ThreadPoolExecutor
 
 # Import local modules
 from services.fraud_service import FraudService
@@ -45,7 +47,7 @@ class TransactionGeneratorService:
         self.generation_rate = 1  # transactions per second
         self.generated_transactions = []
         self.transaction_counter = 0
-        self.tasks = []
+        self.task = None
         self.account_vertices = []
         self.start_time = None
 
@@ -111,7 +113,7 @@ class TransactionGeneratorService:
             logger.error(f"Unable to set new max generation rate: {e}")
             return False
 
-    async def start_generation(self, rate: int = 1, start: str = ""):
+    def start_generation(self, rate: int = 1, start: str = ""):
         """Start transaction generation at specified rate"""
         if self.is_running:
             logger.warning("Transaction generation is already running")
@@ -132,13 +134,11 @@ class TransactionGeneratorService:
         logger.info(f"🚀 Starting transaction generation at {self.generation_rate} transactions/second")
         stats_logger.info(f"START: Generation started at {self.generation_rate} txn/sec")
         
-        num_tasks = max(1, math.ceil(rate / 50))
-        # Start the generation task
-        for _ in range(num_tasks):
-            self.tasks.append(asyncio.create_task(self._generation_loop()))
+        # self.task = asyncio.create_task(self._generation_loop())
+
         return True
 
-    async def stop_generation(self):
+    def stop_generation(self):
         """Stop transaction generation"""
         if not self.is_running:
             logger.warning("Transaction generation is not running")
@@ -148,14 +148,13 @@ class TransactionGeneratorService:
         self.start_time = None
         self.transaction_counter = 0
 
-        if len(self.tasks) > 0:
-            for task in self.tasks:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        self.tasks = []
+        # if self.task:
+        #     self.task.cancel()
+        #     try:
+        #         await self.task
+        #     except asyncio.CancelledError:
+        #         pass
+        # self.task = None
         
         logger.info("🛑 Transaction generation stopped")
         logger.info(f"📊 Generated {self.transaction_counter} transactions")
@@ -168,15 +167,14 @@ class TransactionGeneratorService:
     async def _generation_loop(self):
         """Main generation loop"""
         while self.is_running:
-            try:
-                # Generate transaction (already stores in memory, graph, and runs fraud detection)
-                await self._generate_transaction()
-                # Wait for next generation
-                await asyncio.sleep(1.0 / 50)
-                
+            try:    
+                asyncio.create_task(self._generate_transaction())
+                await asyncio.sleep(.0005)
+        
             except Exception as e:
                 logger.error(f"❌ Error in generation loop: {e}")
                 await asyncio.sleep(1)
+
 
 
     # ----------------------------------------------------------------------------------------------------------
@@ -184,14 +182,14 @@ class TransactionGeneratorService:
     # ----------------------------------------------------------------------------------------------------------
 
        
-    async def create_manual_transaction(self, from_id: str, to_id: str, amount: float, type: str = "transfer", gen_type: str = "MANUAL") -> Dict[str, Any]:
+    def create_manual_transaction(self, from_id: str, to_id: str, amount: float, type: str = "transfer", gen_type: str = "MANUAL") -> Dict[str, Any]:
         """Create a manual transaction between specified accounts"""
         try:
             logger.info(f"Creating {gen_type.lower()} transaction from {from_id} to {to_id} amount {amount}")
             # Validate accounts exist
-            if not await self._validate_account_exists(from_id):
+            if not self._validate_account_exists(from_id):
                 raise Exception(f"Source account {from_id} not found")
-            if not await self._validate_account_exists(to_id):
+            if not self._validate_account_exists(to_id):
                 raise Exception(f"Destination account {to_id} not found")
             # Prevent self-transactions
             if from_id == to_id:
@@ -199,34 +197,27 @@ class TransactionGeneratorService:
 
             # Create transaction
             txn_id = str(uuid.uuid4())
-            loop = asyncio.get_event_loop()
-            def create_transaction():
-                try:
-                    return (
-                        self.graph_service.client.addE("TRANSACTS")
-                            .from_(__.V(from_id))
-                            .to(__.V(to_id))
-                            .property("txn_id", txn_id)
-                            .property("amount", round(amount, 2))
-                            .property("currency", "USD")
-                            .property("type", type)
-                            .property("method", "electronic_transfer")
-                            .property("location", random.choice(self.normal_locations))
-                            .property("timestamp", datetime.now().isoformat())
-                            .property("status", "completed")
-                            .property("gen_type", gen_type)
-                            .id_()
-                            .next())
-                except Exception as e:
-                    raise Exception(f"❌ Error storing transaction in graph: {e}")
-
-            edge_id = await loop.run_in_executor(None, create_transaction)
+            edge_id = (self.graph_service.client.V(from_id)
+                .addE("TRANSACTS")
+                .to(__.V(to_id))
+                .property("txn_id", txn_id)
+                .property("amount", round(amount, 2))
+                .property("currency", "USD")
+                .property("type", type)
+                .property("method", "electronic_transfer")
+                .property("location", random.choice(self.normal_locations))
+                .property("timestamp", datetime.now().isoformat())
+                .property("status", "completed")
+                .property("gen_type", gen_type)
+                .id_()
+                .next())
+            
             self.transaction_counter += 1
             logger.info(f"✅ Transaction {txn_id} stored in graph database with both sender and receiver edges")
                        
             # Run fraud detection
             try:
-                await self.fraud_service.run_fraud_detection(edge_id, txn_id)
+                self.fraud_service.run_fraud_detection(edge_id, txn_id)
                 logger.info(f"✅ {gen_type} transaction created: {txn_id} from {from_id} to {to_id} amount {amount}")
             except Exception as e:
                 raise Exception(f"Error running fraud detection: {e}")
@@ -237,9 +228,14 @@ class TransactionGeneratorService:
             logger.error(f"❌ Error creating manual transaction: {e}")
             return {"success": False, "error": f"❌ Error creating manual transaction: {e}"}
 
-    async def _generate_transaction(self) -> Dict[str, Any]:
+    def generate_transaction(self) -> Dict[str, Any]:
         """Generate a normal transaction between real users and accounts"""
-        try:    
+        try:
+            if len(self.account_vertices) < 1:
+                self.account_vertices = self.graph_service.client.V().has_label("account").id_().to_list()
+            if len(self.account_vertices) < 1:
+                raise Exception("No accounts available")
+            
             # Get 2 random accounts from the graph database
             sender_account_id, receiver_account_id = random.sample(self.account_vertices, 2)
             
@@ -251,24 +247,20 @@ class TransactionGeneratorService:
             amount = random.uniform(100.0, 15000.0)
             transaction_type = random.choice(["transfer", "payment", "deposit", "withdrawal"])
             
-            await self.create_manual_transaction(sender_account_id, receiver_account_id, amount, transaction_type, "AUTO")
-            return True
+            self.create_manual_transaction(sender_account_id, receiver_account_id, amount, transaction_type, "AUTO")
         
         except Exception as e:
             logger.error(f"Error generating normal transaction: {e}")
             raise e
         
-    async def _validate_account_exists(self, account_id: str) -> bool:
+    def _validate_account_exists(self, account_id: str) -> bool:
         """Validate that an account exists in the graph database"""
         try:
             if self.graph_service.client:
-                loop = asyncio.get_event_loop()
-                def check_account():
-                    accounts = self.graph_service.client.V(str(account_id)).to_list()
-                    return len(accounts) > 0
-                
-                return await loop.run_in_executor(None, check_account)
+                accounts = self.graph_service.client.V(str(account_id)).to_list()
+                return len(accounts) > 0
             return False
+        
         except Exception as e:
             logger.error(f"Error validating account {account_id}: {e}")
             return False

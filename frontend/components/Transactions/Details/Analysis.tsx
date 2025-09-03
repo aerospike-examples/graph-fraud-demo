@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { AlertTriangle, Clock, Flag, Shield, Target } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { formatDateTime, getRiskLevel } from "@/lib/utils";
-import { type Transaction } from '../UserDetails/Transactions';
+import { type Transaction } from '@/components/Users/Details/Transactions';
 
 export interface FraudResult {
     fraud_score: number

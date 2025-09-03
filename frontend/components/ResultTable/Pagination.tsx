@@ -36,7 +36,7 @@ interface Props {
     totalPages: number
     totalEntries: number
     handlePagination: (newPage: number) => void
-    setPageSize: Dispatch<SetStateAction<number>>
+    setPageSize: (newSize: number) => void
 }
 
 const Pagination = ({
@@ -55,7 +55,7 @@ const Pagination = ({
         }
     }
 
-    return (totalPages > 0 &&
+    return (
         <div className="flex items-center justify-between w-full mt-4">
             <div className="flex gap-6 items-center">
                 <span className='text-sm text-muted-foreground'>Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalEntries)} of {totalEntries.toLocaleString('en-US')} {title.toLowerCase()}</span>
@@ -86,7 +86,7 @@ const Pagination = ({
                     disabled={currentPage === 1}
                     contents={<ChevronLeft className="h-4 w-4" />} />
                 <div className="flex items-center gap-1">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    {Array.from({ length: Math.min(5, Math.max(totalPages, 1)) }, (_, i) => {
                         let pageNum
                         if(totalPages <= 5) pageNum = i + 1;
                         else if(currentPage <= 3) pageNum = i + 1;

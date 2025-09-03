@@ -6,11 +6,9 @@ This service monitors the performance of RT1, RT2, and RT3 fraud detection
 methods and provides real-time metrics for the frontend dashboard.
 """
 
-import asyncio
 import logging
-import time
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from collections import deque
 import statistics
 
@@ -20,7 +18,7 @@ logger = logging.getLogger('performance_monitor')
 class PerformanceMonitor:
     """Performance monitoring for fraud detection methods"""
     
-    def __init__(self, max_history: int = 1000):
+    def __init__(self, max_history: int = 1000000):
         self.max_history = max_history
         
         # Performance data storage
@@ -84,7 +82,7 @@ class PerformanceMonitor:
             self.rt2_failure += 1
     
     def record_rt3_performance(self, execution_time: float, success: bool = True,
-                              query_complexity: str = "time-windowed aggregation", cache_hit: bool = False):
+                              query_complexity: str = "multi-hop network", cache_hit: bool = False):
         """Record RT3 performance metrics"""
         metric = {
             'timestamp': datetime.now(),

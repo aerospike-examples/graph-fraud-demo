@@ -4,9 +4,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import Analysis from './Analysis'
 import AccountCard from './AccountCard'
-import type { Transaction } from "@/components/UserDetails/Transactions"
-import type { Account } from '@/components/UserDetails/Accounts'
-import type { User } from '@/components/UserDetails/'
+import type { Transaction } from "@/components/Users/Details/Transactions"
+import type { Account } from '@/components/Users/Details/Accounts'
+import type { User } from '@/components/Users/Details/'
 
 export interface TxnDetail {
     txn: Transaction

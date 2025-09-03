@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
 import os
+import time
 from typing import List, Dict, Any
 
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
@@ -307,7 +308,7 @@ class GraphService:
                         .project("user", "accounts", "txns", "total_txns", "total_sent", "total_recd", "devices", "connected_users")
                         .by(__.elementMap())
                         .by(__.out("OWNS").elementMap().fold())
-                        .by(__.out("OWNS").bothE("TRANSACTS").order().by("timestamp", Order.asc).limit(10)
+                        .by(__.out("OWNS").bothE("TRANSACTS").order().by("timestamp", Order.desc).limit(10)
                             .project("txn", "other_party")
                             .by(__.elementMap())
                             .by(__.bothV().in_("OWNS").where(__.not_(__.has_id(user_id))).elementMap())
@@ -422,11 +423,11 @@ class GraphService:
                 txn_detail = (self.client.E(txn_edge_id)
                     .project("txn", "src", "dest")
                     .by(__.elementMap())
-                    .by(__.inV()
+                    .by(__.outV()
                         .project("account", "user")
                         .by(__.elementMap())
                         .by(__.in_("OWNS").elementMap()))
-                    .by(__.outV()
+                    .by(__.inV()
                         .project("account", "user")
                         .by(__.elementMap())
                         .by(__.in_("OWNS").elementMap()))
@@ -450,8 +451,15 @@ class GraphService:
     def drop_all_transactions(self):
         if self.client:
             try:
-                self.client.E().has_label("TRANSACTS").drop().iterate()
+                self.client.with_('evaluationTimeout', 2000000).E().has_label("TRANSACTS").drop().iterate()
+                
+                edges = 1
+                while edges > 0:
+                    edges = len(self.client.E().has_label("TRANSACTS").to_list())
+                    time.sleep(.2)
+                
                 return True
+            
             except Exception as e:
                 logger.error(f"An error occured while dropping all transactions: {e}")
                 return False
