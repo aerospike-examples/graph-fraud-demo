@@ -85,13 +85,13 @@ app.post("/generate/start", async (req, res) => {
             .then(() =>{
                 res.send({ status: "running" })
             })
-            .catch((error) => { throw new Error(error) })
+            .catch((e) => { throw e })
         }
         else {
             throw new Error(`Error resetting performance: ${response.status}`)
         }
     })
-    .catch((error) => res.send({ error }))
+    .catch((e) => res.send({ error: e.message }))
 })
 
 app.post("/generate/stop", async (_, res) => {
