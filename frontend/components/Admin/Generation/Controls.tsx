@@ -29,7 +29,9 @@ const Controls = ({
             setMaxGenerationRate(data.max_rate)
         }
         catch(e) {
-            console.error(`Could not get max generation rate: ${e}`)
+            if(e instanceof Error) {
+                console.error(`Could not get max generation rate: ${e.message}`)
+            }
         }
     }
 

@@ -13,6 +13,8 @@ interface Props {
 	setIsGenerating: Dispatch<SetStateAction<boolean>>
 }
 
+const generator = process.env.GENERATOR_URL ?? "http://localhost:4001"
+
 const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 	const [stats, setStats] = useState<GenerationStats>({
 		running: false,
@@ -26,7 +28,7 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 	const pollingRef = useRef<NodeJS.Timeout | undefined>(undefined)
 	
 	const getGenerationStats = async (): Promise<GenerationStats> => {
-		const response = await fetch('/generate/status')
+		const response = await fetch(`${generator}/generate/status`)
 		const status = await response.json() as GenerationStats
 		return status
 	}
@@ -47,9 +49,8 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 	const startGeneration = async (rate: number) => {
 		if(isGenerating) return
 		try {
-			pollingRef.current = getPollingInterval()
 			const start = new Date().toISOString()
-			const response = await fetch('/generate/start', {
+			const response = await fetch(`${generator}/generate/start`, {
 				headers: {
 					"Content-Type": "application/json"
 				},
@@ -59,6 +60,7 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 			const { error } = await response.json()
 			if(!error) {
 				setIsGenerating(true)
+				pollingRef.current = getPollingInterval()
 				toast.success("Transaction generation started")
 				setStats(prev => ({ ...prev, isRunning: true, startTime: start }))
 			}
@@ -77,7 +79,7 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 	const stopGeneration = async () => {
 		try {
 			clearInterval(pollingRef.current)
-			const response = await fetch('/generate/stop', { method: 'POST' });
+			const response = await fetch(`${generator}/generate/stop`, { method: 'POST' });
 			const { error } = await response.json()
 			if(!error) {
 				setIsGenerating(false)
