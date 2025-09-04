@@ -79,12 +79,17 @@ app.post("/generate/start", async (req, res) => {
     }
     
     fetch(`${baseUrl}/performance/reset`, { method: 'POST' })
-    .then(() => {
-        startWorkers(rate, start)
-        .then(() =>{
-            res.send({ status: "running" })
-        })
-        .catch((error) => { throw new Error(error) })
+    .then((response) => {
+        if(response.ok) {
+            startWorkers(rate, start)
+            .then(() =>{
+                res.send({ status: "running" })
+            })
+            .catch((error) => { throw new Error(error) })
+        }
+        else {
+            throw new Error(`Error resetting performance: ${response.status}`)
+        }
     })
     .catch((error) => res.send({ error }))
 })
