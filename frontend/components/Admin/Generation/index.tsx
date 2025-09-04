@@ -67,8 +67,10 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 			}
 		}
 		catch(e) {
-			console.error("Error starting generator", e)
-			toast.error(e as string)
+			if(e instanceof Error) {
+				console.error("Error starting generator", e.message)
+				toast.error(e.message)
+			}
 		}
 	}
 
@@ -87,8 +89,10 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
 			}
 		}
 		catch(e) {
-			console.error("Error stopping generator", e)
-			toast.error(e as string)
+			if(e instanceof Error) {
+				console.error("Error stopping generator", e.message)
+				toast.error(e.message)
+			}
 		}
 	}
 
