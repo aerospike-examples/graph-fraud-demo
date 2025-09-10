@@ -66,7 +66,7 @@ def setup_logging():
 
     # Console handler
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.ERROR)
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(simple_formatter)
 
     # Add handlers to logger
@@ -95,7 +95,7 @@ def setup_logging():
     txn_logger.addHandler(console_handler)
 
     stats_logger = logging.getLogger('fraud_detection.stats')
-    stats_logger.setLevel(logging.ERROR)
+    stats_logger.setLevel(logging.DEBUG)
     stats_logger.addHandler(stats_handler)
     stats_logger.addHandler(console_handler)
     

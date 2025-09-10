@@ -25,7 +25,7 @@ services:
       - aerospike.client.namespace=test
       - aerospike.client.host=aerospike-db
       - aerospike.graph.index.vertex.label.enabled=true
-      - aerospike.graph.query-tracing.threshold-ms=5
+      - aerospike.graph.query-tracing.threshold-ms=20
       - aerospike.graph.query-tracing.opentelemetry-host=zipkin
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/healthcheck"]

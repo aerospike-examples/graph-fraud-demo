@@ -5,6 +5,7 @@ import logging
 import os
 import time
 from typing import List, Dict, Any
+import psutil
 
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.driver.aiohttp.transport import AiohttpTransport
@@ -29,13 +30,26 @@ class GraphService:
     # ----------------------------------------------------------------------------------------------------------
 
 
+    def get_connection_count(self):
+        #Debug: Get current connection count
+        try:
+            process = psutil.Process(os.getpid())
+            connections = process.net_connections()
+            return len(connections)
+        except Exception as e:
+            logger.error(f"Error getting connection count: {e}")
+            return 0
+
+
     def connect(self):
         """Synchronous connection to Aerospike Graph (to be called outside async context)"""
         try:
             url = f'ws://{self.host}:{self.port}/gremlin'
             logger.info(f"🔄 Connecting to Aerospike Graph: {url}")
-            
-            # Use the same approach as the working sample
+            logger.info(f"Current connections: {self.get_connection_count()}")
+
+
+        # Use the same approach as the working sample
             self.connection = DriverRemoteConnection(url, "g", transport_factory=lambda:AiohttpTransport(call_from_event_loop=True))
             self.client = traversal().with_remote(self.connection)
             
@@ -62,7 +76,8 @@ class GraphService:
                 logger.info("✅ Disconnected from Aerospike Graph")
             except Exception as e:
                 logger.warning(f"⚠️  Error closing connection: {e}")
-
+        self.connection = None
+        self.client = None
 
     # ----------------------------------------------------------------------------------------------------------
     # Helper functions
