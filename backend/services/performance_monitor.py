@@ -7,6 +7,7 @@ methods and provides real-time metrics for the frontend dashboard.
 """
 
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 from collections import deque
@@ -19,6 +20,7 @@ class PerformanceMonitor:
     """Performance monitoring for fraud detection methods"""
     
     def __init__(self, max_history: int = 1000000):
+        self._lock = threading.Lock
         self.max_history = max_history
         
         # Performance data storage
@@ -116,29 +118,30 @@ class PerformanceMonitor:
     def _get_method_stats(self, metrics: deque, time_window_minutes: int, method: str) -> Dict[str, Any]:
         """Calculate performance statistics for a method"""
         cutoff_time = datetime.now() - timedelta(minutes=time_window_minutes)
-        
-        # Filter metrics within time window
-        recent_metrics = [m for m in metrics if m['timestamp'] >= cutoff_time]
-        
-        if not recent_metrics:
-            return {
-                'method': method,
-                'avg_execution_time': 0,
-                'max_execution_time': 0,
-                'min_execution_time': 0,
-                'total_queries': 0,
-                'success_rate': 0,
-                'queries_per_second': 0,
-                'cache_enabled': self._get_cache_status(method)
-            }
-        
-        execution_times = [m['execution_time'] for m in recent_metrics]
-        success_count = sum(1 for m in recent_metrics if m['success'])
-        
-        # Calculate queries per second
-        time_span = (datetime.now() - cutoff_time).total_seconds()
-        queries_per_second = len(recent_metrics) / time_span if time_span > 0 else 0
-        
+
+        with self._lock:
+            # Filter metrics within time window
+            recent_metrics = [m for m in metrics if m['timestamp'] >= cutoff_time]
+
+            if not recent_metrics:
+                return {
+                    'method': method,
+                    'avg_execution_time': 0,
+                    'max_execution_time': 0,
+                    'min_execution_time': 0,
+                    'total_queries': 0,
+                    'success_rate': 0,
+                    'queries_per_second': 0,
+                    'cache_enabled': self._get_cache_status(method)
+                }
+
+            execution_times = [m['execution_time'] for m in recent_metrics]
+            success_count = sum(1 for m in recent_metrics if m['success'])
+
+            # Calculate queries per second
+            time_span = (datetime.now() - cutoff_time).total_seconds()
+            queries_per_second = len(recent_metrics) / time_span if time_span > 0 else 0
+
         return {
             'method': method,
             'avg_execution_time': round(statistics.mean(execution_times), 2),
@@ -172,21 +175,22 @@ class PerformanceMonitor:
     def get_recent_timeline_data(self, minutes: int = 5) -> Dict[str, List[Dict[str, Any]]]:
         """Get timeline data for charts"""
         cutoff_time = datetime.now() - timedelta(minutes=minutes)
-        
-        rt1_timeline = [
-            {'timestamp': m['timestamp'].isoformat(), 'execution_time': m['execution_time'], 'method': 'RT1'}
-            for m in self.rt1_metrics if m['timestamp'] >= cutoff_time
-        ]
-        
-        rt2_timeline = [
-            {'timestamp': m['timestamp'].isoformat(), 'execution_time': m['execution_time'], 'method': 'RT2'}
-            for m in self.rt2_metrics if m['timestamp'] >= cutoff_time
-        ]
-        
-        rt3_timeline = [
-            {'timestamp': m['timestamp'].isoformat(), 'execution_time': m['execution_time'], 'method': 'RT3'}
-            for m in self.rt3_metrics if m['timestamp'] >= cutoff_time
-        ]
+
+        with self._lock:
+            rt1_timeline = [
+                {'timestamp': m['timestamp'].isoformat(), 'execution_time': m['execution_time'], 'method': 'RT1'}
+                for m in self.rt1_metrics if m['timestamp'] >= cutoff_time
+            ]
+
+            rt2_timeline = [
+                {'timestamp': m['timestamp'].isoformat(), 'execution_time': m['execution_time'], 'method': 'RT2'}
+                for m in self.rt2_metrics if m['timestamp'] >= cutoff_time
+            ]
+
+            rt3_timeline = [
+                {'timestamp': m['timestamp'].isoformat(), 'execution_time': m['execution_time'], 'method': 'RT3'}
+                for m in self.rt3_metrics if m['timestamp'] >= cutoff_time
+            ]
         
         return {
             'rt1': rt1_timeline,
