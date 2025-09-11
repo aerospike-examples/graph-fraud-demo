@@ -1,5 +1,6 @@
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 
 def setup_logging():
     """Setup logging configuration for the backend"""
@@ -34,70 +35,58 @@ def setup_logging():
         '%(asctime)s - STATS - %(message)s'
     )
 
-    # File handler for all logs
-    all_logs_handler = logging.FileHandler(f'{log_dir}/all.log')
-    all_logs_handler.setLevel(logging.DEBUG)
+    # Rotating file handler for all logs (50MB max, 5 backups)
+    all_logs_handler = RotatingFileHandler(
+        f'{log_dir}/all.log',
+        maxBytes=50*1024*1024,
+        backupCount=5
+    )
+    all_logs_handler.setLevel(logging.INFO)
     all_logs_handler.setFormatter(detailed_formatter)
-    
-    # File handler for errors only
-    error_logs_handler = logging.FileHandler(f'{log_dir}/errors.log')
+
+    # Rotating file handler for errors only (10MB max, 3 backups)
+    error_logs_handler = RotatingFileHandler(
+        f'{log_dir}/errors.log',
+        maxBytes=10*1024*1024,
+        backupCount=3
+    )
     error_logs_handler.setLevel(logging.ERROR)
     error_logs_handler.setFormatter(detailed_formatter)
-    
-    # File handler for Aerospike Graph specific logs
-    graph_logs_handler = logging.FileHandler(f'{log_dir}/graph.log')
-    graph_logs_handler.setLevel(logging.DEBUG)
-    graph_logs_handler.setFormatter(detailed_formatter)
-
-    # Separate file handler for fraud transactions
-    fraud_handler = logging.FileHandler(f'{log_dir}/fraud_transactions.log')
-    fraud_handler.setLevel(logging.ERROR)
-    fraud_handler.setFormatter(fraud_formatter)
-    
-    # Separate file handler for normal transactions
-    normal_handler = logging.FileHandler(f'{log_dir}/normal_transactions.log')
-    normal_handler.setLevel(logging.ERROR)
-    normal_handler.setFormatter(normal_formatter)
-    
-    # Separate file handler for transaction stats
-    stats_handler = logging.FileHandler('logs/statistics.log')
-    stats_handler.setLevel(logging.ERROR)
-    stats_handler.setFormatter(stats_formatter)
 
     # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(simple_formatter)
 
-    # Add handlers to logger
+    # Add handlers to main logger
     logger.addHandler(all_logs_handler)
     logger.addHandler(error_logs_handler)
-    logger.addHandler(graph_logs_handler)
     logger.addHandler(console_handler)
-    
-    # Create specific loggers
+
+    # Create specific loggers - all use the same rotating handlers
     graph_logger = logging.getLogger('fraud_detection.graph')
     graph_logger.setLevel(logging.ERROR)
-    graph_logger.addHandler(graph_logs_handler)
+    graph_logger.addHandler(all_logs_handler)  # Use main rotating handler
     graph_logger.addHandler(console_handler)
-    graph_logger.propagate = False  # Prevent propagation to parent logger
-    
+    graph_logger.propagate = False
+
     api_logger = logging.getLogger('fraud_detection.api')
     api_logger.setLevel(logging.ERROR)
-    api_logger.addHandler(all_logs_handler)
+    api_logger.addHandler(all_logs_handler)  # Use main rotating handler
     api_logger.addHandler(console_handler)
-    api_logger.propagate = False  # Prevent propagation to parent logger
-    
+    api_logger.propagate = False
+
     txn_logger = logging.getLogger('fraud_detection.transaction_generator')
     txn_logger.setLevel(logging.ERROR)
-    txn_logger.addHandler(normal_handler)
-    txn_logger.addHandler(fraud_handler)
+    txn_logger.addHandler(all_logs_handler)  # Use main rotating handler
     txn_logger.addHandler(console_handler)
+    txn_logger.propagate = False
 
     stats_logger = logging.getLogger('fraud_detection.stats')
-    stats_logger.setLevel(logging.DEBUG)
-    stats_logger.addHandler(stats_handler)
+    stats_logger.setLevel(logging.INFO)
+    stats_logger.addHandler(all_logs_handler)  # Use main rotating handler
     stats_logger.addHandler(console_handler)
+    stats_logger.propagate = False
     
     return logger
 
