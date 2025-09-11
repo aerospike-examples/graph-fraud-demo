@@ -20,7 +20,7 @@ class PerformanceMonitor:
     """Performance monitoring for fraud detection methods"""
     
     def __init__(self, max_history: int = 1000000):
-        self._lock = threading.Lock
+        self._lock = threading.Lock()
         self.max_history = max_history
         
         # Performance data storage
@@ -54,14 +54,15 @@ class PerformanceMonitor:
             'cache_hit': cache_hit,
             'method': 'RT1'
         }
-        
-        self.rt1_metrics.append(metric)
-        self.rt1_counter += 1
-        
-        if success:
-            self.rt1_success += 1
-        else:
-            self.rt1_failure += 1
+
+        with self._lock:
+            self.rt1_metrics.append(metric)
+            self.rt1_counter += 1
+
+            if success:
+                self.rt1_success += 1
+            else:
+                self.rt1_failure += 1
     
     def record_rt2_performance(self, execution_time: float, success: bool = True,
                               query_complexity: str = "multi-hop network", cache_hit: bool = False):
@@ -74,14 +75,14 @@ class PerformanceMonitor:
             'cache_hit': cache_hit,
             'method': 'RT2'
         }
-        
-        self.rt2_metrics.append(metric)
-        self.rt2_counter += 1
-        
-        if success:
-            self.rt2_success += 1
-        else:
-            self.rt2_failure += 1
+        with self._lock:
+            self.rt2_metrics.append(metric)
+            self.rt2_counter += 1
+
+            if success:
+                self.rt2_success += 1
+            else:
+                self.rt2_failure += 1
     
     def record_rt3_performance(self, execution_time: float, success: bool = True,
                               query_complexity: str = "multi-hop network", cache_hit: bool = False):
@@ -94,14 +95,14 @@ class PerformanceMonitor:
             'cache_hit': cache_hit,
             'method': 'RT3'
         }
-        
-        self.rt3_metrics.append(metric)
-        self.rt3_counter += 1
-        
-        if success:
-            self.rt3_success += 1
-        else:
-            self.rt3_failure += 1
+        with self._lock:
+            self.rt3_metrics.append(metric)
+            self.rt3_counter += 1
+
+            if success:
+                self.rt3_success += 1
+            else:
+                self.rt3_failure += 1
     
     def get_rt1_stats(self, time_window_minutes: int = 5) -> Dict[str, Any]:
         """Get RT1 performance statistics"""
@@ -121,26 +122,26 @@ class PerformanceMonitor:
 
         with self._lock:
             # Filter metrics within time window
-            recent_metrics = [m for m in metrics if m['timestamp'] >= cutoff_time]
+            recent_metrics = [m for m in list(metrics) if m['timestamp'] >= cutoff_time]
 
-            if not recent_metrics:
-                return {
-                    'method': method,
-                    'avg_execution_time': 0,
-                    'max_execution_time': 0,
-                    'min_execution_time': 0,
-                    'total_queries': 0,
-                    'success_rate': 0,
-                    'queries_per_second': 0,
-                    'cache_enabled': self._get_cache_status(method)
-                }
+        if not recent_metrics:
+            return {
+                'method': method,
+                'avg_execution_time': 0,
+                'max_execution_time': 0,
+                'min_execution_time': 0,
+                'total_queries': 0,
+                'success_rate': 0,
+                'queries_per_second': 0,
+                'cache_enabled': self._get_cache_status(method)
+            }
 
-            execution_times = [m['execution_time'] for m in recent_metrics]
-            success_count = sum(1 for m in recent_metrics if m['success'])
+        execution_times = [m['execution_time'] for m in recent_metrics]
+        success_count = sum(1 for m in recent_metrics if m['success'])
 
-            # Calculate queries per second
-            time_span = (datetime.now() - cutoff_time).total_seconds()
-            queries_per_second = len(recent_metrics) / time_span if time_span > 0 else 0
+        # Calculate queries per second
+        time_span = (datetime.now() - cutoff_time).total_seconds()
+        queries_per_second = len(recent_metrics) / time_span if time_span > 0 else 0
 
         return {
             'method': method,
@@ -200,20 +201,21 @@ class PerformanceMonitor:
     
     def reset_metrics(self):
         """Reset all performance metrics"""
-        self.rt1_metrics.clear()
-        self.rt2_metrics.clear()
-        self.rt3_metrics.clear()
-        
-        self.rt1_counter = 0
-        self.rt2_counter = 0
-        self.rt3_counter = 0
-        
-        self.rt1_success = 0
-        self.rt1_failure = 0
-        self.rt2_success = 0
-        self.rt2_failure = 0
-        self.rt3_success = 0
-        self.rt3_failure = 0
+        with self._lock:
+            self.rt1_metrics.clear()
+            self.rt2_metrics.clear()
+            self.rt3_metrics.clear()
+
+            self.rt1_counter = 0
+            self.rt2_counter = 0
+            self.rt3_counter = 0
+
+            self.rt1_success = 0
+            self.rt1_failure = 0
+            self.rt2_success = 0
+            self.rt2_failure = 0
+            self.rt3_success = 0
+            self.rt3_failure = 0
         
         logger.info("🔄 Performance metrics reset")
 
