@@ -1,21 +1,24 @@
 const { parentPort } = require("worker_threads");
-const { Agent } = require("undici");
+const { Agent, setGlobalDispatcher} = require("undici");
 const baseUrl = process.env.BACKEND_URL ?? "http://localhost:4000";
 
 const agent = new Agent({
   connections: 64,
   pipelining: 1,
   keepAliveTimeout: 10_000,
-  keepAliveMaxTimeout: 10_000,
+  keepAliveMaxTimeout: 30_000,
 });
+setGlobalDispatcher(agent);
 
 async function createTransaction() {
   const res = await fetch(`${baseUrl}/transaction-generation/generate`, {
     method: "POST",
     dispatcher: agent,
+    headers: { "content-type": "application/json" },
+    body: "{}"
   });
 
-  await res.text();
+  if (res.body) await res.text();
 }
 
 let running = false;
@@ -37,6 +40,13 @@ async function runAtRate(rate) {
 }
 
 parentPort.on("message", ({ start, stop, rate }) => {
-  if (start && !running) { running = true; runAtRate(rate); parentPort.postMessage({ status: "running" }); }
-  if (stop && running) { running = false; parentPort.postMessage({ status: "stopped" }); }
+  if (start && !running) {
+    running = true;
+    runAtRate(rate);
+    parentPort.postMessage({ status: "running" });
+  }
+  if (stop && running) {
+    running = false;
+    parentPort.postMessage({ status: "stopped" });
+  }
 });

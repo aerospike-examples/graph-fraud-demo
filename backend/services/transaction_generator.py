@@ -2,12 +2,15 @@ import asyncio
 import random
 import pickle
 import math
+import socket
 import time
 from datetime import datetime
 from typing import List, Dict, Any
 from enum import Enum
 import json
 import uuid
+import psutil
+from fastapi import HTTPException
 from gremlin_python.process.graph_traversal import __
 from concurrent.futures import ThreadPoolExecutor
 
@@ -50,6 +53,7 @@ class TransactionGeneratorService:
         self.task = None
         self.account_vertices = []
         self.start_time = None
+        self.gremlin_slots = asyncio.Semaphore(64)
 
         # High-risk jurisdictions for international transfers
         self.high_risk_jurisdictions = ['Dubai', 'Bahrain', 'Thailand', 'Cayman Islands', 'Panama']
@@ -182,7 +186,7 @@ class TransactionGeneratorService:
     # ----------------------------------------------------------------------------------------------------------
 
        
-    def create_manual_transaction(self, from_id: str, to_id: str, amount: float, type: str = "transfer", gen_type: str = "MANUAL") -> Dict[str, Any]:
+    async def create_manual_transaction(self, from_id: str, to_id: str, amount: float, type: str = "transfer", gen_type: str = "MANUAL") -> Dict[str, Any]:
         """Create a manual transaction between specified accounts"""
         try:
             logger.info(f"Creating {gen_type.lower()} transaction from {from_id} to {to_id} amount {amount}")
@@ -197,7 +201,7 @@ class TransactionGeneratorService:
 
             # Create transaction
             txn_id = str(uuid.uuid4())
-            edge_id = (self.graph_service.client.V(from_id)
+            edge_id = (await self.graph_service.client.V(from_id)
                 .addE("TRANSACTS")
                 .to(__.V(to_id))
                 .property("txn_id", txn_id)
@@ -217,7 +221,7 @@ class TransactionGeneratorService:
                        
             # Run fraud detection
             try:
-                self.fraud_service.run_fraud_detection(edge_id, txn_id)
+                await self.fraud_service.run_fraud_detection(edge_id, txn_id)
                 logger.info(f"✅ {gen_type} transaction created: {txn_id} from {from_id} to {to_id} amount {amount}")
             except Exception as e:
                 raise Exception(f"Error running fraud detection: {e}")
@@ -228,9 +232,11 @@ class TransactionGeneratorService:
             logger.error(f"❌ Error creating manual transaction: {e}")
             return {"success": False, "error": f"❌ Error creating manual transaction: {e}"}
 
-    def generate_transaction(self) -> Dict[str, Any]:
+    async def generate_transaction(self) -> Dict[str, Any]:
         """Generate a normal transaction between real users and accounts"""
         try:
+            if self.gremlin_slots.locked() and self.gremlin_slots._value == 0:
+                raise HTTPException(status_code=429, detail="Busy", headers={"Retry-After": "1"})
             if len(self.account_vertices) < 1:
                 self.account_vertices = self.graph_service.client.V().has_label("account").id_().to_list()
             if len(self.account_vertices) < 1:
@@ -246,8 +252,9 @@ class TransactionGeneratorService:
             # Generate transaction data
             amount = random.uniform(100.0, 15000.0)
             transaction_type = random.choice(["transfer", "payment", "deposit", "withdrawal"])
-            
-            self.create_manual_transaction(sender_account_id, receiver_account_id, amount, transaction_type, "AUTO")
+            async with self.gremlin_slots:
+                return await self.create_manual_transaction(sender_account_id, receiver_account_id, amount, transaction_type, "AUTO")
+
         
         except Exception as e:
             logger.error(f"Error generating normal transaction: {e}")
