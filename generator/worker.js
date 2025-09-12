@@ -1,10 +1,21 @@
 const { parentPort } = require('worker_threads');
 const baseUrl = process.env.BACKEND_URL ?? "http://localhost:4000"
+const http = require('http');
+
+
+const httpAgent = new http.Agent({
+    keepAlive: true,
+    maxSockets: 5,
+    maxFreeSockets: 2,
+    timeout: 5000,
+    freeSocketTimeout: 30000
+});
 
 const createTransaction = async () => {
     try {
         await fetch(`${baseUrl}/transaction-generation/generate`, {
-            method: "POST"
+            method: "POST",
+            agent: httpAgent
         })
         parentPort.postMessage({ status: "created" })
     }
