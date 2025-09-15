@@ -92,6 +92,15 @@ def get_dashboard_stats():
     try:
         return graph_service.get_dashboard_stats()
     except Exception as e:
+        error_str = str(e).lower()
+        if any(keyword in error_str for keyword in ["timeout", "598", "econnreset", "socket hang up", "connection reset"]):
+            logger.warning(f"Graph service unavailable for dashboard stats: {e}")
+            return {
+                "users": 0,
+                "accounts": 0,
+                "transactions": 0,
+                "flagged_accounts": 0
+            }
         raise HTTPException(status_code=500, detail=f"Failed to get dashboard stats: {str(e)}")
 
 
@@ -112,6 +121,16 @@ def get_users(
     try:
         return graph_service.search("user", page, page_size, order_by, order, query)
     except Exception as e:
+        error_str = str(e).lower()
+        if any(keyword in error_str for keyword in ["timeout", "598", "econnreset", "socket hang up", "connection reset"]):
+            logger.warning(f"Graph service unavailable for users: {e}")
+            return {
+                "result": [],
+                "total": 0,
+                "page": page,
+                "page_size": page_size or 10,
+                "total_pages": 0
+            }
         raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
 
 
@@ -121,7 +140,16 @@ def get_users_stats():
     try:
         return graph_service.get_user_stats()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
+        error_str = str(e).lower()
+        if any(keyword in error_str for keyword in ["timeout", "598", "econnreset", "socket hang up", "connection reset"]):
+            logger.warning(f"Graph service unavailable for user stats: {e}")
+            return {
+                "total_users": 0,
+                "total_flagged": 0,
+                "total_accounts": 0,
+                "total_devices": 0
+            }
+        raise HTTPException(status_code=500, detail=f"Failed to get user stats: {str(e)}")
 
 
 @app.get("/users/{user_id}")
@@ -268,6 +296,16 @@ def get_flagged_transactions(
         results = graph_service.get_flagged_transactions_paginated(page, page_size)
         return results
     except Exception as e:
+        error_str = str(e).lower()
+        if any(keyword in error_str for keyword in ["timeout", "598", "econnreset", "socket hang up", "connection reset"]):
+            logger.warning(f"Graph service unavailable for flagged transactions: {e}")
+            return {
+                "result": [],
+                "total": 0,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": 0
+            }
         raise HTTPException(status_code=500, detail=f"Failed to get flagged transactions: {str(e)}")
 
 
@@ -441,7 +479,11 @@ def get_all_accounts():
         accounts = graph_service.get_all_accounts()
         return { "accounts": accounts }
     except Exception as e:
-        logger.error(f"❌ Failed to get accounts: {e}")
+        error_str = str(e).lower()
+        if any(keyword in error_str for keyword in ["timeout", "598", "econnreset", "socket hang up", "connection reset"]):
+            logger.warning(f"Graph service unavailable for accounts: {e}")
+            return { "accounts": [] }
+        logger.error(f"Failed to get accounts: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get accounts: {str(e)}")
 
 
@@ -602,3 +644,13 @@ def get_index_info():
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get index info: {str(e)}")
+
+
+@app.post("/admin/indexes/create-transaction-indexes")
+def create_transaction_indexes():
+    """Create optimized indexes for transaction queries"""
+    try:
+        result = graph_service.create_transaction_indexes()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create transaction indexes: {str(e)}")

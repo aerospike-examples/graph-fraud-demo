@@ -31,12 +31,17 @@ class GraphService:
                 # Get index cardinality information
                 cardinality_info = self.client.call("aerospike.graph.admin.index.cardinality").next()
 
-                # You can also get index list
-                # index_list = self.client.call("aerospike.graph.admin.index.list").next()
+                # Get index list
+                try:
+                    index_list = self.client.call("aerospike.graph.admin.index.list").next()
+                except Exception as e:
+                    index_list = f"Error getting index list: {e}"
 
                 logger.info(f"📊 Index cardinality: {cardinality_info}")
+                logger.info(f"📋 Index list: {index_list}")
                 return {
                     "cardinality": cardinality_info,
+                    "index_list": index_list,
                     "status": "success"
                 }
             else:
@@ -44,6 +49,55 @@ class GraphService:
 
         except Exception as e:
             logger.error(f"❌ Error inspecting indexes: {e}")
+            return {"error": str(e), "status": "error"}
+
+    def create_transaction_indexes(self, minimal: bool = False) -> Dict[str, Any]:
+        """Create optimized indexes for transaction queries"""
+        try:
+            if not self.client:
+                raise Exception("Graph client not available")
+
+            results = []
+            
+            try:
+                result1 = (self.client
+                    .call("aerospike.graph.admin.index.create")
+                    .with_("name", "transacts_timestamp_desc")
+                    .with_("elementType", "edge")
+                    .with_("label", "TRANSACTS")
+                    .with_("properties", ["timestamp"])
+                    .with_("order", "desc")
+                    .next())
+                results.append({"index": "transacts_timestamp_desc", "status": "created", "result": result1})
+                logger.info("Created CRITICAL index: transacts_timestamp_desc")
+            except Exception as e:
+                results.append({"index": "transacts_timestamp_desc", "status": "error", "error": str(e)})
+                logger.warning(f"CRITICAL index transacts_timestamp_desc: {e}")
+
+            if not minimal:
+                try:
+                    result2 = (self.client
+                        .call("aerospike.graph.admin.index.create")
+                        .with_("name", "transacts_fraud_status")
+                        .with_("elementType", "edge")
+                        .with_("label", "TRANSACTS")
+                        .with_("properties", ["fraud_status"])
+                        .next())
+                    results.append({"index": "transacts_fraud_status", "status": "created", "result": result2})
+                    logger.info("Created index: transacts_fraud_status")
+                except Exception as e:
+                    results.append({"index": "transacts_fraud_status", "status": "error", "error": str(e)})
+                    logger.warning(f"Index transacts_fraud_status: {e}")
+
+            return {
+                "status": "completed",
+                "results": results,
+                "message": f"Created {len([r for r in results if r['status'] == 'created'])} indexes successfully",
+                "mode": "minimal" if minimal else "full"
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating transaction indexes: {e}")
             return {"error": str(e), "status": "error"}
 
     # ----------------------------------------------------------------------------------------------------------
