@@ -216,6 +216,16 @@ def get_transactions(
         results = graph_service.search("txns", page, page_size, order_by, order, query)
         return results
     except Exception as e:
+        error_str = str(e).lower()
+        if any(keyword in error_str for keyword in ["timeout", "598", "econnreset", "socket hang up", "connection reset"]):
+            logger.warning(f"Graph service unavailable: {e}")
+            return {
+                "result": [],
+                "total": 0,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": 0
+            }
         raise HTTPException(status_code=500, detail=f"Failed to get transactions: {str(e)}")
 
 
@@ -236,7 +246,16 @@ def get_transaction_stats():
         results = graph_service.get_transaction_stats()
         return results
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
+        error_str = str(e).lower()
+        if any(keyword in error_str for keyword in ["timeout", "598", "econnreset", "socket hang up", "connection reset"]):
+            logger.warning(f"Graph service unavailable for stats: {e}")
+            return {
+                "total_txns": 0,
+                "total_blocked": 0,
+                "total_review": 0,
+                "total_clean": 0
+            }
+        raise HTTPException(status_code=500, detail=f"Failed to get transaction stats: {str(e)}")
 
 
 @app.get("/transactions/flagged")
