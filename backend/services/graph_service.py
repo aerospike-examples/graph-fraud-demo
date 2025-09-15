@@ -23,7 +23,28 @@ class GraphService:
         self.client = None
         self.connection = None
         self.users_data = []
-    
+
+    def inspect_indexes(self) -> Dict[str, Any]:
+        """Inspect existing indexes in the graph"""
+        try:
+            if self.client:
+                # Get index cardinality information
+                cardinality_info = self.client.call("aerospike.graph.admin.index.cardinality").next()
+
+                # You can also get index list
+                # index_list = self.client.call("aerospike.graph.admin.index.list").next()
+
+                logger.info(f"📊 Index cardinality: {cardinality_info}")
+                return {
+                    "cardinality": cardinality_info,
+                    "status": "success"
+                }
+            else:
+                raise Exception("Graph client not available")
+
+        except Exception as e:
+            logger.error(f"❌ Error inspecting indexes: {e}")
+            return {"error": str(e), "status": "error"}
 
     # ----------------------------------------------------------------------------------------------------------
     # Connection maintenance
@@ -59,6 +80,14 @@ class GraphService:
                 raise Exception("Failed to connect to graph instance")
             
             logger.info("✅ Connected to Aerospike Graph Service")
+            
+            # Inspect existing indexes
+            try:
+                cardinality_info = self.client.call("aerospike.graph.admin.index.cardinality").next()
+                logger.info(f"📊 Current index cardinality: {cardinality_info}")
+            except Exception as e:
+                logger.warning(f"⚠️  Could not inspect indexes: {e}")
+            
             return True
                 
         except Exception as e:

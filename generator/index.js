@@ -40,7 +40,7 @@ const startWorkers = async (rate, start) => {
 
 const stopWorkers = async () => {
     try {
-        while(workers.length > 0) {
+        while(workers?.length > 0) {
             workers[0]?.terminate();
             workers.shift();
         }

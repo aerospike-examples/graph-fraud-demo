@@ -573,3 +573,13 @@ def get_bulk_load_status():
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get bulk load status: {str(e)}")
+
+
+@app.get("/admin/indexes")
+def get_index_info():
+    """Get information about existing indexes"""
+    try:
+        result = graph_service.inspect_indexes()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get index info: {str(e)}")

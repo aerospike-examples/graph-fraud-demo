@@ -100,7 +100,7 @@ const Search = ({
             </button>}
             {show &&
             <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                {filteredAccts.length > 0 ? (
+                {filteredAccts?.length > 0 ? (
                     filteredAccts.slice(0, 10).map(({ account_id, account_type }) => (
                         <div
                             key={account_id}
@@ -114,7 +114,7 @@ const Search = ({
                 ) : (
                     <div className="px-3 py-2 text-gray-500 text-sm">No accounts found</div>
                 )}
-                {filteredAccts.length > 10 &&
+                {filteredAccts?.length > 10 &&
                 <div className="px-3 py-2 text-gray-500 text-xs border-t">
                     Showing first 10 results. Type more to narrow down.
                 </div>}

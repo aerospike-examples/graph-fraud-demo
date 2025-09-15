@@ -20,11 +20,11 @@ const Accounts = ({ accounts }: { accounts: Account[] }) => {
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <CreditCard className="h-5 w-5" />
-                    Accounts ({accounts.length})
+                    Accounts ({accounts?.length})
                 </CardTitle>
             </CardHeader>
             <CardContent>
-                {accounts.length > 0 ? (
+                {accounts?.length > 0 ? (
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {accounts.map((account) => (
                         <Card key={account["1"]} className="p-4">

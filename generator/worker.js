@@ -1,21 +1,20 @@
 const { parentPort } = require("worker_threads");
-const { Agent, setGlobalDispatcher} = require("undici");
+const { Agent } = require("undici");
 const baseUrl = process.env.BACKEND_URL ?? "http://localhost:4000";
 
 const agent = new Agent({
-  connections: 64,
+  connections: 32,
   pipelining: 1,
   keepAliveTimeout: 10_000,
   keepAliveMaxTimeout: 30_000,
 });
-setGlobalDispatcher(agent);
 
 async function createTransaction() {
   const res = await fetch(`${baseUrl}/transaction-generation/generate`, {
     method: "POST",
     dispatcher: agent,
     headers: { "content-type": "application/json" },
-    body: "{}"
+    body: "{}",
   });
 
   if (res.body) await res.text();
@@ -35,7 +34,7 @@ async function runAtRate(rate) {
     }
     const elapsed = Date.now() - started;
     const sleep = Math.max(0, period - elapsed);
-    if (sleep) await new Promise(r => setTimeout(r, sleep));
+    if (sleep) await new Promise((r) => setTimeout(r, sleep));
   }
 }
 

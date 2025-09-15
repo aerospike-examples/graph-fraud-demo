@@ -34,7 +34,7 @@ const Analysis = ({ txn }: Props) => {
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <Shield className="h-5 w-5" />
-                    Fraud Detection Results ({details.length})
+                    Fraud Detection Results ({details?.length})
                 </CardTitle>
                 <CardDescription>
                     Detailed analysis of fraud detection rules and their results
