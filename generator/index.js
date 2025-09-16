@@ -18,6 +18,11 @@ let total = 0
 let errors = 0
 let startTime = null
 
+let total_attempts = 0;
+let total_success = 0;
+let total_rate_limited = 0;
+let total_rejected = 0;
+
 const startWorkers = async (rate, start) => {
   startTime = start;
   running = true;
@@ -69,19 +74,20 @@ const stopWorkers = async () => {
 const listenToWorker = async (data) => {
   const { status, error } = data;
   if (status === "created") {
-    total++;
+    total_attempts++;
+    total_success++;
   }
-  if (status === "error") {
-    errors++;
-    if (error) {
-      console.error(`Worker error: ${error}`);
-    }
-
-    // Stop if too many errors (reduced threshold)
-    if (errors > 50) {
-      console.error(`Too many errors (${errors}), stopping workers`);
-      await stopWorkers();
-    }
+  if (status === "rate_limited") {
+    total_attempts++;
+    total_rate_limited++;
+  }
+  if (status === "rejected") {
+    total_attempts++;
+    total_rejected++;
+  }
+  if (total_attempts % 25 === 0) {
+    const success_rate = (total_success / total_attempts * 100).toFixed(1);
+    console.log(`Attempts: ${total_attempts}, Success: ${total_success} (${success_rate}%), Rate Limited: ${total_rate_limited}, Rejected: ${total_rejected}`);
   }
 };
 
@@ -119,6 +125,10 @@ app.post("/generate/stop", async (_, res) => {
     stopWorkers()
     .then(() => {
         res.send({ status: "stopped" })
+      total_attempts = 0;
+      total_success = 0;
+      total_rate_limited = 0;
+      total_rejected = 0;
     })
     .catch(error => res.send({ error }))
 })
@@ -133,3 +143,8 @@ app.get("/generate/status", async (_, res) => {
         errors
     })
 })
+
+server.listen(4001, () => {
+  console.log("Generator listening on port 4001");
+  console.log(`Backend URL: ${baseUrl}`);
+});

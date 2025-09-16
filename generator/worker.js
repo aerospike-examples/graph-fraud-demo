@@ -3,7 +3,7 @@ const { Agent } = require("undici");
 const baseUrl = process.env.BACKEND_URL ?? "http://localhost:4000";
 
 const agent = new Agent({
-  connections: 16,
+  connections: 4,
   pipelining: 1,
   keepAliveTimeout: 10_000,
   keepAliveMaxTimeout: 30_000,
@@ -23,17 +23,7 @@ async function createTransaction() {
       });
 
       if (res.status === 503 || res.status === 429) {
-        // Service unavailable or too many requests - wait and retry
-        attempt++;
-        if (attempt < maxRetries) {
-          const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
-          console.log(
-            `${res.status} error, retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`
-          );
-          await new Promise((r) => setTimeout(r, backoffMs));
-          continue;
-        }
-        throw new Error(`Service unavailable after ${maxRetries} attempts`);
+        throw new Error(`Service unavailable for CreateTransaction`);
       }
 
       if (!res.ok) {

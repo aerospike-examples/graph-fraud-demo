@@ -25,12 +25,6 @@ transaction_generator = TransactionGeneratorService(graph_service, fraud_service
 # Configuration variables
 max_generation_rate = 200
 
-# Request queue and rate limiting
-request_queue = Queue(maxsize=1000)
-processing_requests = 0
-MAX_CONCURRENT_PROCESSING = 150
-last_requests = []
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 # Startup
@@ -311,47 +305,13 @@ def get_transaction_detail(transaction_id: str):
 
 @app.post("/transaction-generation/generate")
 async def generate_random_transaction():
-    global processing_requests, last_requests
-
-    now = datetime.now()
-    cutoff_time = now - timedelta(seconds=1)
-    
-    if len(last_requests) > 250:  # Clean up when list gets large
-        last_requests = [req_time for req_time in last_requests if req_time >= cutoff_time]
-    
-    if len(last_requests) >= 180:  # Pre-filter check
-        recent_count = sum(1 for req_time in last_requests if req_time >= cutoff_time)
-        if recent_count >= 200:
-            logger.warning(f"API: Rate limit exceeded ({recent_count}/200 req/sec), rejecting request")
-            raise HTTPException(status_code=429, detail="Rate limit exceeded - max 200 requests per second")
-    
-    # Concurrency limiting check
-    if processing_requests >= MAX_CONCURRENT_PROCESSING:
-        logger.warning(f"API: Too many concurrent requests ({processing_requests}/{MAX_CONCURRENT_PROCESSING}), rejecting")
-        raise HTTPException(status_code=503, detail=f"Service busy - {processing_requests} requests processing")
-    
-    # Queue is full check
-    if request_queue.full():
-        logger.warning(f"API: Request queue full ({request_queue.qsize()}/1000), rejecting")
-        raise HTTPException(status_code=503, detail="Service overloaded - request queue full")
-    
-    last_requests.append(now)
-    processing_requests += 1
-    
     try:
-        # Reduced logging for performance - only log every 50th transaction
-        if processing_requests % 50 == 1:
-            logger.info(f"API: Processing transaction batch (slot {processing_requests}/{MAX_CONCURRENT_PROCESSING})")
-        
-        result = await transaction_generator.generate_transaction()
+        result = transaction_generator.generate_transaction()
         return {"success": True, "result": result}
     
     except Exception as e:
         logger.error(f"❌ API: Failed to generate transaction: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate transaction: {str(e)}")
-    
-    finally:
-        processing_requests -= 1
 
 
 @app.post("/transaction-generation/start")
