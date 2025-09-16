@@ -23,13 +23,13 @@ fraud_service = FraudService(graph_service)
 transaction_generator = TransactionGeneratorService(graph_service, fraud_service)
 
 # Configuration variables
-max_generation_rate = 200  # Default max rate, can be changed via API
+max_generation_rate = 200
 
 # Request queue and rate limiting
-request_queue = Queue(maxsize=1000)  # Buffer up to 1000 requests
+request_queue = Queue(maxsize=1000)
 processing_requests = 0
-MAX_CONCURRENT_PROCESSING = 50  # Limit concurrent processing
-last_requests = []  # Track request timestamps for rate limiting
+MAX_CONCURRENT_PROCESSING = 150
+last_requests = []
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

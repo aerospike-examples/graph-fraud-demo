@@ -3,7 +3,7 @@ const { Agent } = require("undici");
 const baseUrl = process.env.BACKEND_URL ?? "http://localhost:4000";
 
 const agent = new Agent({
-  connections: 4,
+  connections: 16,
   pipelining: 1,
   keepAliveTimeout: 10_000,
   keepAliveMaxTimeout: 30_000,
@@ -61,8 +61,8 @@ async function createTransaction() {
 let running = false;
 async function runAtRate(rate) {
   const period = 1000 / rate;
-  const jitterRange = period * 0.2; // Increase jitter to 20% to spread requests more
-  const minDelay = period * 0.5; // Minimum delay between requests
+  const jitterRange = period * 0.1;
+  const minDelay = period * 0.2;
 
   while (running) {
     const started = Date.now();

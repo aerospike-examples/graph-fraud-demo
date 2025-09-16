@@ -26,7 +26,7 @@ const startWorkers = async (rate, start) => {
   currentRate = rate;
 
   // Limit workers to prevent overwhelming backend - more conservative
-  const maxWorkersPerRate = Math.min(Math.ceil(rate / 25), 3); // Max 3 workers, 25 TPS each
+  const maxWorkersPerRate = Math.min(Math.ceil(rate / 3), 3); // Max 3 workers, 25 TPS each
   const ratePerWorker = Math.ceil(rate / maxWorkersPerRate);
 
   console.log(
@@ -37,9 +37,8 @@ const startWorkers = async (rate, start) => {
     workers.push(new Worker("./worker.js"));
     workers[i]?.on("message", listenToWorker);
 
-    // Stagger worker startup to prevent burst
     if (i > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 200 * i)); // 200ms delay between workers
+      await new Promise((resolve) => setTimeout(resolve, 50 * i)); // 50ms delay between workers
     }
 
     // Calculate rate for this worker
@@ -108,10 +107,11 @@ app.post("/generate/start", async (req, res) => {
       await startWorkers(rate, start);
       res.send({ status: "running" });
       return;
-    } else
+    } else {
       throw new Error(
         `Error reseting performance monitor: ${response.statusText}`
       );
+    }
   } catch (e) {
     console.error(e.message);
     res.send({ error: e.message });
@@ -140,5 +140,3 @@ app.get("/generate/status", async (_, res) => {
         errors
     })
 })
-
-server.listen(4001, () => console.log("Listening on port 4001"))
