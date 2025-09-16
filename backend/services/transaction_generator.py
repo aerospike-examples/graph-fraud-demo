@@ -53,7 +53,7 @@ class TransactionGeneratorService:
         self.task = None
         self.account_vertices = []
         self.start_time = None
-        self.gremlin_slots = asyncio.Semaphore(64)
+        self.gremlin_slots = asyncio.Semaphore(200)
 
         # High-risk jurisdictions for international transfers
         self.high_risk_jurisdictions = ['Dubai', 'Bahrain', 'Thailand', 'Cayman Islands', 'Panama']
@@ -201,7 +201,7 @@ class TransactionGeneratorService:
 
             # Create transaction
             txn_id = str(uuid.uuid4())
-            edge_id = (await self.graph_service.client.V(from_id)
+            edge_id = (self.graph_service.client.V(from_id)
                 .addE("TRANSACTS")
                 .to(__.V(to_id))
                 .property("txn_id", txn_id)
@@ -221,12 +221,12 @@ class TransactionGeneratorService:
                        
             # Run fraud detection
             try:
-                await self.fraud_service.run_fraud_detection(edge_id, txn_id)
+                self.fraud_service.run_fraud_detection(edge_id, txn_id)
                 logger.info(f"✅ {gen_type} transaction created: {txn_id} from {from_id} to {to_id} amount {amount}")
             except Exception as e:
                 raise Exception(f"Error running fraud detection: {e}")
             
-            return True
+            return {"result": True}
         
         except Exception as e:
             logger.error(f"❌ Error creating manual transaction: {e}")
@@ -236,10 +236,13 @@ class TransactionGeneratorService:
         """Generate a normal transaction between real users and accounts"""
         try:
             if self.gremlin_slots.locked() and self.gremlin_slots._value == 0:
-                raise HTTPException(status_code=429, detail="Busy", headers={"Retry-After": "1"})
+                logger.warning("Gremlin slots are locked. Cannot generate transaction.")
+                raise HTTPException(status_code=503, detail="Service temporarily unavailable - Gremlin slots at capacity", headers={"Retry-After": "1"})
             if len(self.account_vertices) < 1:
+                logger.warning("No accounts available. Refreshing account vertices.")
                 self.account_vertices = self.graph_service.client.V().has_label("account").id_().to_list()
             if len(self.account_vertices) < 1:
+                logger.error("No accounts available. Cannot generate transaction.")
                 raise Exception("No accounts available")
             
             # Get 2 random accounts from the graph database

@@ -13,8 +13,9 @@ from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import __, constant
 from gremlin_python.process.traversal import P, T, Order, containing, Scope
 
-# Get logger for graph service
-logger = logging.getLogger('fraud_detection.graph')
+# Get logger for graph service with centralized config
+from logging_config import get_logger
+logger = get_logger('fraud_detection.graph')
 
 class GraphService:
     def __init__(self, host: str = os.environ.get('GRAPH_HOST_ADDRESS') or 'localhost', port: int = 8182):

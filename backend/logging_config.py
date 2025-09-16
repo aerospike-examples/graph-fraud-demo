@@ -41,16 +41,15 @@ def setup_logging():
         maxBytes=50*1024*1024,
         backupCount=5
     )
-    all_logs_handler.setLevel(logging.INFO)
+    all_logs_handler.setLevel(logging.DEBUG)
     all_logs_handler.setFormatter(detailed_formatter)
 
-    # Rotating file handler for errors only (10MB max, 3 backups)
     error_logs_handler = RotatingFileHandler(
         f'{log_dir}/errors.log',
         maxBytes=10*1024*1024,
         backupCount=3
     )
-    error_logs_handler.setLevel(logging.ERROR)
+    error_logs_handler.setLevel(logging.DEBUG)
     error_logs_handler.setFormatter(detailed_formatter)
 
     # Console handler
@@ -63,30 +62,22 @@ def setup_logging():
     logger.addHandler(error_logs_handler)
     logger.addHandler(console_handler)
 
-    # Create specific loggers - all use the same rotating handlers
-    graph_logger = logging.getLogger('fraud_detection.graph')
-    graph_logger.setLevel(logging.ERROR)
-    graph_logger.addHandler(all_logs_handler)  # Use main rotating handler
-    graph_logger.addHandler(console_handler)
-    graph_logger.propagate = False
-
-    api_logger = logging.getLogger('fraud_detection.api')
-    api_logger.setLevel(logging.ERROR)
-    api_logger.addHandler(all_logs_handler)  # Use main rotating handler
-    api_logger.addHandler(console_handler)
-    api_logger.propagate = False
-
-    txn_logger = logging.getLogger('fraud_detection.transaction_generator')
-    txn_logger.setLevel(logging.ERROR)
-    txn_logger.addHandler(all_logs_handler)  # Use main rotating handler
-    txn_logger.addHandler(console_handler)
-    txn_logger.propagate = False
-
-    stats_logger = logging.getLogger('fraud_detection.stats')
-    stats_logger.setLevel(logging.INFO)
-    stats_logger.addHandler(all_logs_handler)  # Use main rotating handler
-    stats_logger.addHandler(console_handler)
-    stats_logger.propagate = False
+    # Create specific loggers - all use the same rotating handlers with detailed formatting
+    service_loggers = [
+        'fraud_detection.graph',
+        'fraud_detection.api', 
+        'fraud_detection.transaction_generator',
+        'fraud_detection.stats',
+        'fraud_detection.fraud_service',
+        'fraud_detection.performance'
+    ]
+    
+    for logger_name in service_loggers:
+        service_logger = logging.getLogger(logger_name)
+        service_logger.setLevel(logging.INFO)
+        service_logger.addHandler(all_logs_handler)  # Rotating handler with detailed formatter
+        service_logger.addHandler(console_handler)   # Console handler with simple formatter
+        service_logger.propagate = False  # Don't propagate to parent to avoid duplicate logs
     
     return logger
 

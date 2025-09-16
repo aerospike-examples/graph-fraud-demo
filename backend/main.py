@@ -2,8 +2,9 @@ from fastapi import FastAPI, HTTPException, Query, Path
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import Optional
-from datetime import datetime
 import urllib.parse
+from asyncio import Queue
+from datetime import datetime, timedelta
 
 from services.fraud_service import FraudService
 from services.graph_service import GraphService
@@ -22,7 +23,13 @@ fraud_service = FraudService(graph_service)
 transaction_generator = TransactionGeneratorService(graph_service, fraud_service)
 
 # Configuration variables
-max_generation_rate = 50  # Default max rate, can be changed via API
+max_generation_rate = 200  # Default max rate, can be changed via API
+
+# Request queue and rate limiting
+request_queue = Queue(maxsize=1000)  # Buffer up to 1000 requests
+processing_requests = 0
+MAX_CONCURRENT_PROCESSING = 50  # Limit concurrent processing
+last_requests = []  # Track request timestamps for rate limiting
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -244,16 +251,6 @@ def get_transactions(
         results = graph_service.search("txns", page, page_size, order_by, order, query)
         return results
     except Exception as e:
-        error_str = str(e).lower()
-        if any(keyword in error_str for keyword in ["timeout", "598", "econnreset", "socket hang up", "connection reset"]):
-            logger.warning(f"Graph service unavailable: {e}")
-            return {
-                "result": [],
-                "total": 0,
-                "page": page,
-                "page_size": page_size,
-                "total_pages": 0
-            }
         raise HTTPException(status_code=500, detail=f"Failed to get transactions: {str(e)}")
 
 
@@ -274,15 +271,6 @@ def get_transaction_stats():
         results = graph_service.get_transaction_stats()
         return results
     except Exception as e:
-        error_str = str(e).lower()
-        if any(keyword in error_str for keyword in ["timeout", "598", "econnreset", "socket hang up", "connection reset"]):
-            logger.warning(f"Graph service unavailable for stats: {e}")
-            return {
-                "total_txns": 0,
-                "total_blocked": 0,
-                "total_review": 0,
-                "total_clean": 0
-            }
         raise HTTPException(status_code=500, detail=f"Failed to get transaction stats: {str(e)}")
 
 
@@ -299,13 +287,6 @@ def get_flagged_transactions(
         error_str = str(e).lower()
         if any(keyword in error_str for keyword in ["timeout", "598", "econnreset", "socket hang up", "connection reset"]):
             logger.warning(f"Graph service unavailable for flagged transactions: {e}")
-            return {
-                "result": [],
-                "total": 0,
-                "page": page,
-                "page_size": page_size,
-                "total_pages": 0
-            }
         raise HTTPException(status_code=500, detail=f"Failed to get flagged transactions: {str(e)}")
 
 
@@ -329,14 +310,43 @@ def get_transaction_detail(transaction_id: str):
 
 
 @app.post("/transaction-generation/generate")
-def generate_random_transaction():
+async def generate_random_transaction():
+    global processing_requests, last_requests
+
+    # Rate limiting check - max 200 requests per second
+    now = datetime.now()
+    last_requests = [req_time for req_time in last_requests if now - req_time < timedelta(seconds=1)]
+    
+    if len(last_requests) >= 200:
+        logger.warning(f"API: Rate limit exceeded (200 req/sec), rejecting request")
+        raise HTTPException(status_code=429, detail="Rate limit exceeded - max 200 requests per second")
+    
+    # Concurrency limiting check
+    if processing_requests >= MAX_CONCURRENT_PROCESSING:
+        logger.warning(f"API: Too many concurrent requests ({processing_requests}/{MAX_CONCURRENT_PROCESSING}), rejecting")
+        raise HTTPException(status_code=503, detail=f"Service busy - {processing_requests} requests processing")
+    
+    # Queue is full check
+    if request_queue.full():
+        logger.warning(f"API: Request queue full ({request_queue.qsize()}/1000), rejecting")
+        raise HTTPException(status_code=503, detail="Service overloaded - request queue full")
+    
+    last_requests.append(now)
+    processing_requests += 1
+    
     try:
-        transaction_generator.generate_transaction()
-        return True
+        logger.info(f"API: Starting transaction generation (slot {processing_requests}/{MAX_CONCURRENT_PROCESSING})")
+        result = await transaction_generator.generate_transaction()
+        logger.info(f"API: Transaction generation completed successfully")
+        return {"success": True, "result": result}
     
     except Exception as e:
-        logger.error(f"❌ Failed to generate transaction: {e}")
+        logger.error(f"❌ API: Failed to generate transaction: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate transaction: {str(e)}")
+    
+    finally:
+        processing_requests -= 1
+        logger.info(f"🔄 API: Request completed, processing count: {processing_requests}")
 
 
 @app.post("/transaction-generation/start")
@@ -573,7 +583,7 @@ def get_performance_timeline(minutes: int = Query(5, ge=1, le=60, description="T
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
-        logger.error(f"❌ Failed to get performance timeline: {e}")
+        logger.error(f"❌ API: Failed to get performance timeline: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get performance timeline: {str(e)}")
 
 

@@ -12,9 +12,10 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 from collections import deque
 import statistics
+from logging_config import get_logger
 
-# Setup logging
-logger = logging.getLogger('performance_monitor')
+# Setup logging with centralized config
+logger = get_logger('fraud_detection.performance')
 
 class PerformanceMonitor:
     """Performance monitoring for fraud detection methods"""
@@ -63,7 +64,7 @@ class PerformanceMonitor:
                 self.rt1_success += 1
             else:
                 self.rt1_failure += 1
-    
+
     def record_rt2_performance(self, execution_time: float, success: bool = True,
                               query_complexity: str = "multi-hop network", cache_hit: bool = False):
         """Record RT2 performance metrics"""

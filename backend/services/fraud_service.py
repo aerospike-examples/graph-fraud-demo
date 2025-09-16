@@ -9,9 +9,9 @@ from gremlin_python.process.graph_traversal import __
 from services.graph_service import GraphService
 from services.performance_monitor import performance_monitor
 
-# Setup logging
-logger = logging.getLogger('fraud_detection.rt1')
-logger.setLevel(logging.ERROR)
+# Setup logging with centralized config
+from logging_config import get_logger
+logger = get_logger('fraud_detection.fraud_service')
 
 class FraudService:
     """Fraud Detection Service"""
@@ -114,11 +114,11 @@ class FraudService:
 
     def run_fraud_detection(self, edge_id: str, txn_id: str):
         """Run fraud detection on the transaction"""
-        
+
         if not self.graph_service.client:
             logger.warning("⚠️ Graph client not available for fraud detection")
             return
-        
+
         try:
             fraud_checks = {}
             # Run RT1 fraud detection (flagged accounts)
