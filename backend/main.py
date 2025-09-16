@@ -313,13 +313,17 @@ def get_transaction_detail(transaction_id: str):
 async def generate_random_transaction():
     global processing_requests, last_requests
 
-    # Rate limiting check - max 200 requests per second
     now = datetime.now()
-    last_requests = [req_time for req_time in last_requests if now - req_time < timedelta(seconds=1)]
+    cutoff_time = now - timedelta(seconds=1)
     
-    if len(last_requests) >= 200:
-        logger.warning(f"API: Rate limit exceeded (200 req/sec), rejecting request")
-        raise HTTPException(status_code=429, detail="Rate limit exceeded - max 200 requests per second")
+    if len(last_requests) > 250:  # Clean up when list gets large
+        last_requests = [req_time for req_time in last_requests if req_time >= cutoff_time]
+    
+    if len(last_requests) >= 180:  # Pre-filter check
+        recent_count = sum(1 for req_time in last_requests if req_time >= cutoff_time)
+        if recent_count >= 200:
+            logger.warning(f"API: Rate limit exceeded ({recent_count}/200 req/sec), rejecting request")
+            raise HTTPException(status_code=429, detail="Rate limit exceeded - max 200 requests per second")
     
     # Concurrency limiting check
     if processing_requests >= MAX_CONCURRENT_PROCESSING:
@@ -335,9 +339,11 @@ async def generate_random_transaction():
     processing_requests += 1
     
     try:
-        logger.info(f"API: Starting transaction generation (slot {processing_requests}/{MAX_CONCURRENT_PROCESSING})")
+        # Reduced logging for performance - only log every 50th transaction
+        if processing_requests % 50 == 1:
+            logger.info(f"API: Processing transaction batch (slot {processing_requests}/{MAX_CONCURRENT_PROCESSING})")
+        
         result = await transaction_generator.generate_transaction()
-        logger.info(f"API: Transaction generation completed successfully")
         return {"success": True, "result": result}
     
     except Exception as e:
@@ -346,7 +352,6 @@ async def generate_random_transaction():
     
     finally:
         processing_requests -= 1
-        logger.info(f"🔄 API: Request completed, processing count: {processing_requests}")
 
 
 @app.post("/transaction-generation/start")

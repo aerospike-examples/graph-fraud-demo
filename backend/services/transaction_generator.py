@@ -238,8 +238,8 @@ class TransactionGeneratorService:
             if self.gremlin_slots.locked() and self.gremlin_slots._value == 0:
                 logger.warning("Gremlin slots are locked. Cannot generate transaction.")
                 raise HTTPException(status_code=503, detail="Service temporarily unavailable - Gremlin slots at capacity", headers={"Retry-After": "1"})
-            if len(self.account_vertices) < 1:
-                logger.warning("No accounts available. Refreshing account vertices.")
+            if len(self.account_vertices) < 10:  # Refresh when running low, not empty
+                logger.warning(f"Account vertices running low ({len(self.account_vertices)}). Refreshing.")
                 self.account_vertices = self.graph_service.client.V().has_label("account").id_().to_list()
             if len(self.account_vertices) < 1:
                 logger.error("No accounts available. Cannot generate transaction.")

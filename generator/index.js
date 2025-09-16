@@ -61,10 +61,8 @@ const stopWorkers = async () => {
     running = false;
     total = 0;
     errors = 0;
-    return;
   } catch (e) {
     console.error(`Error stopping workers: {e}`);
-    return;
   }
 };
 
@@ -106,11 +104,6 @@ app.post("/generate/start", async (req, res) => {
     if (response.ok) {
       await startWorkers(rate, start);
       res.send({ status: "running" });
-      return;
-    } else {
-      throw new Error(
-        `Error reseting performance monitor: ${response.statusText}`
-      );
     }
   } catch (e) {
     console.error(e.message);
