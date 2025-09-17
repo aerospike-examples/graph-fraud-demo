@@ -3,8 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import Optional
 import urllib.parse
-from asyncio import Queue
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from services.fraud_service import FraudService
 from services.graph_service import GraphService
@@ -306,8 +305,8 @@ def get_transaction_detail(transaction_id: str):
 @app.post("/transaction-generation/generate")
 async def generate_random_transaction():
     try:
-        result = transaction_generator.generate_transaction()
-        return {"success": True, "result": result}
+        result = await transaction_generator.generate_transaction()
+        return {"result": result}
     
     except Exception as e:
         logger.error(f"❌ API: Failed to generate transaction: {e}")

@@ -16,12 +16,8 @@ let currentRate = 0
 let running = false
 let total = 0
 let errors = 0
+let rateLimit = 0
 let startTime = null
-
-let total_attempts = 0;
-let total_success = 0;
-let total_rate_limited = 0;
-let total_rejected = 0;
 
 const startWorkers = async (rate, start) => {
   startTime = start;
@@ -30,30 +26,20 @@ const startWorkers = async (rate, start) => {
   errors = 0;
   currentRate = rate;
 
-  // Limit workers to prevent overwhelming backend - more conservative
-  const maxWorkersPerRate = Math.min(Math.ceil(rate / 3), 3); // Max 3 workers, 25 TPS each
-  const ratePerWorker = Math.ceil(rate / maxWorkersPerRate);
+  const numWorkers = Math.ceil(rate / 100)
+  const remainder = rate % 100
 
   console.log(
-    `Starting ${maxWorkersPerRate} workers at ${ratePerWorker} TPS each for total ${rate} TPS`
+      `Starting ${numWorkers} workers for total ${rate} TPS`
   );
 
-  for (let i = 0; i < maxWorkersPerRate; i++) {
-    workers.push(new Worker("./worker.js"));
-    workers[i]?.on("message", listenToWorker);
-
-    if (i > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 50 * i)); // 50ms delay between workers
+  for(let i = 0; i < numWorkers; i++) {
+    workers.push(new Worker('./worker.js'))
+    workers[i]?.on("message", listenToWorker)
+    if(remainder && i === numWorkers - 1) {
+      workers[i].postMessage({ start: true, rate: remainder })
     }
-
-    // Calculate rate for this worker
-    const workerRate =
-      i === maxWorkersPerRate - 1
-        ? rate - ratePerWorker * (maxWorkersPerRate - 1) // Last worker gets remainder
-        : ratePerWorker;
-
-    console.log(`Starting worker ${i + 1} with rate ${workerRate} TPS`);
-    workers[i].postMessage({ start: true, rate: workerRate });
+    else workers[i].postMessage({ start: true, rate: 100 })
   }
 };
 
@@ -64,8 +50,6 @@ const stopWorkers = async () => {
       workers.shift();
     }
     running = false;
-    total = 0;
-    errors = 0;
   } catch (e) {
     console.error(`Error stopping workers: {e}`);
   }
@@ -74,20 +58,15 @@ const stopWorkers = async () => {
 const listenToWorker = async (data) => {
   const { status, error } = data;
   if (status === "created") {
-    total_attempts++;
-    total_success++;
+    total++;
+  }else if (status === "rate-limit"){
+    rateLimit++;
+  }else if (status === "error"){
+    errors++;
+    console.log(`ERROR: ${error}`)
   }
-  if (status === "rate_limited") {
-    total_attempts++;
-    total_rate_limited++;
-  }
-  if (status === "rejected") {
-    total_attempts++;
-    total_rejected++;
-  }
-  if (total_attempts % 25 === 0) {
-    const success_rate = (total_success / total_attempts * 100).toFixed(1);
-    console.log(`Attempts: ${total_attempts}, Success: ${total_success} (${success_rate}%), Rate Limited: ${total_rate_limited}, Rejected: ${total_rejected}`);
+  if ((total + errors) % 50 === 0) {
+    console.log(`Success: ${total}, Rate Limit: ${rateLimit}, Errors: ${errors}`);
   }
 };
 

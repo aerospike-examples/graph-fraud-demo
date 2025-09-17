@@ -1,18 +1,13 @@
 import asyncio
 import random
 import pickle
-import math
-import socket
-import time
 from datetime import datetime
 from typing import List, Dict, Any
 from enum import Enum
 import json
 import uuid
-import psutil
 from fastapi import HTTPException
 from gremlin_python.process.graph_traversal import __
-from concurrent.futures import ThreadPoolExecutor
 
 # Import local modules
 from services.fraud_service import FraudService
@@ -239,9 +234,11 @@ class TransactionGeneratorService:
                 logger.warning("Gremlin slots are locked. Cannot generate transaction.")
                 raise HTTPException(status_code=503, detail="Service temporarily unavailable - Gremlin slots at capacity", headers={"Retry-After": "1"})
             if len(self.account_vertices) < 1:
-                logger.error("No accounts available. Cannot generate transaction.")
-                raise Exception("No accounts available")
-            
+                self.account_vertices = self.graph_service.client.V().has_label("account").id_().to_list()
+                if len(self.account_vertices) < 1:
+                    logger.error("No accounts available. Cannot generate transaction.")
+                    raise Exception("No accounts available")
+
             # Get 2 random accounts from the graph database
             sender_account_id, receiver_account_id = random.sample(self.account_vertices, 2)
             
