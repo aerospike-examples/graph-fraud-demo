@@ -1,5 +1,12 @@
 const { parentPort } = require('worker_threads');
 const baseUrl = process.env.BACKEND_URL ?? "http://localhost:4000"
+const { Agent, setGlobalDispatcher } = require('undici');
+setGlobalDispatcher(new Agent({
+    connections: 80,
+    pipelining: 1,
+    keepAliveTimeout: 500,
+    keepAliveMaxTimeout: 500,
+}));
 
 const createTransaction = async () => {
     try {

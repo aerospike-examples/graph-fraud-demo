@@ -106,7 +106,7 @@ class TransactionGeneratorService:
 
             self.max_generation_rate = new_rate
             
-            logger.info(f"📊 Max generation rate updated from {old_rate} to {new_rate} transactions/second")
+            logger.info(f"Max generation rate updated from {old_rate} to {new_rate} transactions/second")
             return True
         
         except Exception as e:
@@ -156,8 +156,8 @@ class TransactionGeneratorService:
         #         pass
         # self.task = None
         
-        logger.info("🛑 Transaction generation stopped")
-        logger.info(f"📊 Generated {self.transaction_counter} transactions")
+        logger.info("Transaction generation stopped")
+        logger.info(f"Generated {self.transaction_counter} transactions")
         
         stats_logger.info(f"STOP: Generation stopped. Total: {self.transaction_counter} transactions")
         self._log_statistics()
@@ -172,7 +172,7 @@ class TransactionGeneratorService:
                 await asyncio.sleep(.0005)
         
             except Exception as e:
-                logger.error(f"❌ Error in generation loop: {e}")
+                logger.error(f"Error in generation loop: {e}")
                 await asyncio.sleep(1)
 
 
@@ -213,20 +213,20 @@ class TransactionGeneratorService:
                 .next())
             
             self.transaction_counter += 1
-            logger.info(f"✅ Transaction {txn_id} stored in graph database with both sender and receiver edges")
+            logger.info(f"Transaction {txn_id} stored in graph database with both sender and receiver edges")
                        
             # Run fraud detection
             try:
                 self.fraud_service.run_fraud_detection(edge_id, txn_id)
-                logger.info(f"✅ {gen_type} transaction created: {txn_id} from {from_id} to {to_id} amount {amount}")
+                logger.info(f"{gen_type} transaction created: {txn_id} from {from_id} to {to_id} amount {amount}")
             except Exception as e:
                 raise Exception(f"Error running fraud detection: {e}")
             
             return True
         
         except Exception as e:
-            logger.error(f"❌ Error creating manual transaction: {e}")
-            return {"success": False, "error": f"❌ Error creating manual transaction: {e}"}
+            logger.error(f"Error creating manual transaction: {e}")
+            return {"success": False, "error": f"Error creating manual transaction: {e}"}
 
     def generate_transaction(self) -> Dict[str, Any]:
         """Generate a normal transaction between real users and accounts"""

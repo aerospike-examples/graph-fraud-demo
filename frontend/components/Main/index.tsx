@@ -1,8 +1,8 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Activity, Shield } from 'lucide-react'
+import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card'
+import {Badge} from '@/components/ui/badge'
+import {Activity, Shield} from 'lucide-react'
 import Stat from '@/components/Stat'
-import { Skeleton } from '../ui/skeleton'
+import {Skeleton} from '../ui/skeleton'
 
 interface DashboardStats {
 	users: number
@@ -17,9 +17,9 @@ const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api"
 
 export default async function Main({ loading }: { loading?: boolean }) {
     const loadStats = async () => {
-        const response = await fetch(`${API_BASE_URL}/dashboard/stats`, { cache: 'no-store' })
-	    const stats = await response.json();
-        return stats
+        const response = await fetch(`${API_BASE_URL}/dashboard/stats`, { cache: 'no-store' }) ?? {}
+        console.log(response)
+        return response.ok ? await response.json() : {}
     }
     
     const stats: DashboardStats | null = loading ? null : await loadStats()

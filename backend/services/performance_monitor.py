@@ -7,6 +7,7 @@ methods and provides real-time metrics for the frontend dashboard.
 """
 
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 from collections import deque
@@ -20,7 +21,12 @@ class PerformanceMonitor:
     
     def __init__(self, max_history: int = 1000000):
         self.max_history = max_history
-        
+        #self._lock = threading.Lock()
+
+        self._rt1_lock = threading.Lock()
+        self._rt2_lock = threading.Lock()
+        self._rt3_lock = threading.Lock()
+
         # Performance data storage
         self.rt1_metrics = deque(maxlen=max_history)
         self.rt2_metrics = deque(maxlen=max_history)
@@ -52,14 +58,14 @@ class PerformanceMonitor:
             'cache_hit': cache_hit,
             'method': 'RT1'
         }
-        
-        self.rt1_metrics.append(metric)
-        self.rt1_counter += 1
-        
-        if success:
-            self.rt1_success += 1
-        else:
-            self.rt1_failure += 1
+        with self._rt1_lock:
+            self.rt1_metrics.append(metric)
+            self.rt1_counter += 1
+
+            if success:
+                self.rt1_success += 1
+            else:
+                self.rt1_failure += 1
     
     def record_rt2_performance(self, execution_time: float, success: bool = True,
                               query_complexity: str = "multi-hop network", cache_hit: bool = False):
@@ -72,14 +78,15 @@ class PerformanceMonitor:
             'cache_hit': cache_hit,
             'method': 'RT2'
         }
-        
-        self.rt2_metrics.append(metric)
-        self.rt2_counter += 1
-        
-        if success:
-            self.rt2_success += 1
-        else:
-            self.rt2_failure += 1
+
+        with self._rt2_lock:
+            self.rt2_metrics.append(metric)
+            self.rt2_counter += 1
+
+            if success:
+                self.rt2_success += 1
+            else:
+                self.rt2_failure += 1
     
     def record_rt3_performance(self, execution_time: float, success: bool = True,
                               query_complexity: str = "multi-hop network", cache_hit: bool = False):
@@ -92,14 +99,14 @@ class PerformanceMonitor:
             'cache_hit': cache_hit,
             'method': 'RT3'
         }
-        
-        self.rt3_metrics.append(metric)
-        self.rt3_counter += 1
-        
-        if success:
-            self.rt3_success += 1
-        else:
-            self.rt3_failure += 1
+        with self._rt3_lock:
+            self.rt3_metrics.append(metric)
+            self.rt3_counter += 1
+
+            if success:
+                self.rt3_success += 1
+            else:
+                self.rt3_failure += 1
     
     def get_rt1_stats(self, time_window_minutes: int = 5) -> Dict[str, Any]:
         """Get RT1 performance statistics"""
@@ -196,22 +203,23 @@ class PerformanceMonitor:
     
     def reset_metrics(self):
         """Reset all performance metrics"""
-        self.rt1_metrics.clear()
-        self.rt2_metrics.clear()
-        self.rt3_metrics.clear()
+        with self._rt1_lock and self._rt2_lock and self._rt3_lock:
+            self.rt1_metrics.clear()
+            self.rt2_metrics.clear()
+            self.rt3_metrics.clear()
+
+            self.rt1_counter = 0
+            self.rt2_counter = 0
+            self.rt3_counter = 0
+
+            self.rt1_success = 0
+            self.rt1_failure = 0
+            self.rt2_success = 0
+            self.rt2_failure = 0
+            self.rt3_success = 0
+            self.rt3_failure = 0
         
-        self.rt1_counter = 0
-        self.rt2_counter = 0
-        self.rt3_counter = 0
-        
-        self.rt1_success = 0
-        self.rt1_failure = 0
-        self.rt2_success = 0
-        self.rt2_failure = 0
-        self.rt3_success = 0
-        self.rt3_failure = 0
-        
-        logger.info("🔄 Performance metrics reset")
+        logger.info("Performance metrics reset")
 
 # Global performance monitor instance
 performance_monitor = PerformanceMonitor()

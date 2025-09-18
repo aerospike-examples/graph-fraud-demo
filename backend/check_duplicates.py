@@ -19,15 +19,15 @@ def check_duplicate_transactions():
     g = traversal().withRemote(connection)
     
     try:
-        print("🔍 Checking for duplicate transactions...")
+        print("Checking for duplicate transactions...")
         
         # Get all transaction vertices
         all_transactions = g.V().has_label('transaction').to_list()
-        print(f"📊 Total transaction vertices: {len(all_transactions)}")
+        print(f"Total transaction vertices: {len(all_transactions)}")
         
         # Get all transaction IDs
         transaction_ids = []
-        print("🔄 Collecting transaction IDs...")
+        print("Collecting transaction IDs...")
         
         for i, tx in enumerate(all_transactions):
             if i % 10 == 0:
@@ -41,23 +41,23 @@ def check_duplicate_transactions():
                 print(f"   Error getting properties for transaction {i}: {e}")
                 transaction_ids.append('error')
         
-        print(f"📋 Total transaction IDs collected: {len(transaction_ids)}")
+        print(f"Total transaction IDs collected: {len(transaction_ids)}")
         
         # Check for duplicates
         unique_ids = set(transaction_ids)
-        print(f"🔗 Unique transaction IDs: {len(unique_ids)}")
+        print(f"Unique transaction IDs: {len(unique_ids)}")
         
         if len(transaction_ids) != len(unique_ids):
-            print("🚨 DUPLICATES FOUND!")
+            print("DUPLICATES FOUND!")
             # Find which IDs are duplicated
             id_counts = Counter(transaction_ids)
             duplicates = {tx_id: count for tx_id, count in id_counts.items() if count > 1}
-            print(f"📄 Duplicate transaction IDs:")
+            print(f"Duplicate transaction IDs:")
             for tx_id, count in duplicates.items():
                 print(f"   {tx_id}: appears {count} times")
             
             # Show some examples of the duplicate properties
-            print("\n🔍 Examining first few duplicates:")
+            print("\nExamining first few duplicates:")
             for tx_id, count in list(duplicates.items())[:3]:
                 print(f"\n   Transaction ID: {tx_id} (appears {count} times)")
                 matching_vertices = [tx for i, tx in enumerate(all_transactions) 
@@ -70,10 +70,10 @@ def check_duplicate_transactions():
                     except Exception as e:
                         print(f"     Copy {j+1}: Error getting properties - {e}")
         else:
-            print("✅ No duplicates found - all transaction IDs are unique")
+            print("No duplicates found - all transaction IDs are unique")
             
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
     finally:
         connection.close()
 

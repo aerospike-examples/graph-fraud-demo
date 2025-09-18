@@ -22,23 +22,23 @@ async def debug_data_loading():
     graph_service = GraphService()
     
     # Connect to the graph
-    print("🔗 Connecting to Aerospike Graph...")
+    print("Connecting to Aerospike Graph...")
     await graph_service.connect()
     
     if graph_service.client:
-        print("✅ Connected to Aerospike Graph")
+        print("Connected to Aerospike Graph")
         
         # Test data loading
-        print("🌱 Testing data loading...")
+        print("Testing data loading...")
         result = await graph_service.seed_sample_data()
         
-        print(f"📊 Data loading result: {result}")
+        print(f"Data loading result: {result}")
         
         # Close connection
         await graph_service.close()
-        print("🔌 Disconnected from Aerospike Graph")
+        print("Disconnected from Aerospike Graph")
     else:
-        print("❌ Failed to connect to Aerospike Graph")
+        print("Failed to connect to Aerospike Graph")
 
 if __name__ == "__main__":
     # Run the debug function

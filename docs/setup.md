@@ -133,6 +133,54 @@ The application includes sample data in `data/users.json`. To load this data:
    ./run_app.sh --load-sample
    ```
 
+### Local Testing Setup
+
+1. **Start Docker Compose**
+   ```bash
+   docker compose up -d
+   ```
+
+2. **Stop the frontend, backend, and generator containers**
+   Do this manually through docker desktop, or via
+   ```bash
+   docker stop <container-name>
+   ```
+
+3. **Start the frontend locally**
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+4. **Start the backend locally**
+   On a separate terminal run
+   ```bash
+   cd backend
+   uvicorn main:app --host 0.0.0.0 --root-path /api --port 4000 --loop asyncio --reload
+   ```
+5. **Start the generator locally**
+   On another seperate terminal run
+   ```bash
+   cd generator
+   node index.js
+   ```
+
+### Cloud Testing Setup
+Different VMs (using systemd services):
+#### graph-demo-client -- Backend and Frontend
+demo-backend.service
+demo-frontend.service
+
+#### graph-demo-generator -- Generator
+demo-generator.service
+
+#### graph-demo-aerospike-node-[1,3] -- Aerospike Server Nodes
+aerospike.service
+aerospike-prometheus-exporter.service
+
+#### graph-demo-aerospike-graph -- AGS and Zipkin
+Aerospike Graph Service: *asgraph* (DOCKER, aerospike/aerospike-graph-service:latest)
+Zipkin: *zipkin* (DOCKER, openzipkin/zipkin:latest)
+
 ### Sample Data Structure
 The sample data includes:
 - **Users**: 100+ sample users with realistic profiles

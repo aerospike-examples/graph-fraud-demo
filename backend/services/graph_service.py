@@ -33,7 +33,7 @@ class GraphService:
         """Synchronous connection to Aerospike Graph (to be called outside async context)"""
         try:
             url = f'ws://{self.host}:{self.port}/gremlin'
-            logger.info(f"🔄 Connecting to Aerospike Graph: {url}")
+            logger.info(f" Connecting to Aerospike Graph: {url}")
             
             # Use the same approach as the working sample
             self.connection = DriverRemoteConnection(url, "g", transport_factory=lambda:AiohttpTransport(call_from_event_loop=True))
@@ -44,11 +44,11 @@ class GraphService:
             if test_result != 0:
                 raise Exception("Failed to connect to graph instance")
             
-            logger.info("✅ Connected to Aerospike Graph Service")
+            logger.info(" Connected to Aerospike Graph Service")
             return True
                 
         except Exception as e:
-            logger.error(f"❌ Could not connect to Aerospike Graph: {e}")
+            logger.error(f" Could not connect to Aerospike Graph: {e}")
             logger.error("Graph database connection is required. Please ensure Aerospike Graph is running on port 8182")
             self.client = None
             self.connection = None
@@ -59,9 +59,9 @@ class GraphService:
         if self.connection:
             try:
                 self.connection.close()
-                logger.info("✅ Disconnected from Aerospike Graph")
+                logger.info(" Disconnected from Aerospike Graph")
             except Exception as e:
-                logger.warning(f"⚠️  Error closing connection: {e}")
+                logger.warning(f"  Error closing connection: {e}")
 
 
     # ----------------------------------------------------------------------------------------------------------
@@ -535,7 +535,7 @@ class GraphService:
                     account_vertex = accounts[0]
                     self.client.V(account_vertex).property("fraud_flag", False).property("unflagTimestamp", datetime.now().isoformat()).iterate()
                     
-                    logger.info(f"✅ Account {account_id} unflagged")
+                    logger.info(f" Account {account_id} unflagged")
                     return True
                     
                 except Exception as e:
@@ -1079,3 +1079,79 @@ class GraphService:
                 "error": str(e),
                 "message": "Error occurred while checking bulk load status"
             }
+
+    def inspect_indexes(self) -> Dict[str, Any]:
+        """Inspect existing indexes in the graph"""
+        try:
+            if self.client:
+                # Get index cardinality information
+                cardinality_info = self.client.call("aerospike.graph.admin.index.cardinality").next()
+
+                # Get index list
+                try:
+                    index_list = self.client.call("aerospike.graph.admin.index.list").next()
+                except Exception as e:
+                    index_list = f"Error getting index list: {e}"
+
+                logger.info(f"📊 Index cardinality: {cardinality_info}")
+                logger.info(f"📋 Index list: {index_list}")
+                return {
+                    "cardinality": cardinality_info,
+                    "index_list": index_list,
+                    "status": "success"
+                }
+            else:
+                raise Exception("Graph client not available")
+
+        except Exception as e:
+            logger.error(f"❌ Error inspecting indexes: {e}")
+            return {"error": str(e), "status": "error"}
+
+    def create_transaction_indexes(self, minimal: bool = False) -> Dict[str, Any]:
+        """Create optimized indexes for transaction queries"""
+        try:
+            if not self.client:
+                raise Exception("Graph client not available")
+
+            results = []
+
+            try:
+                result1 = (self.client
+                           .call("aerospike.graph.admin.index.create")
+                           .with_("name", "transacts_timestamp_desc")
+                           .with_("elementType", "edge")
+                           .with_("label", "TRANSACTS")
+                           .with_("properties", ["timestamp"])
+                           .with_("order", "desc")
+                           .next())
+                results.append({"index": "transacts_timestamp_desc", "status": "created", "result": result1})
+                logger.info("Created CRITICAL index: transacts_timestamp_desc")
+            except Exception as e:
+                results.append({"index": "transacts_timestamp_desc", "status": "error", "error": str(e)})
+                logger.warning(f"CRITICAL index transacts_timestamp_desc: {e}")
+
+            if not minimal:
+                try:
+                    result2 = (self.client
+                               .call("aerospike.graph.admin.index.create")
+                               .with_("name", "transacts_fraud_status")
+                               .with_("elementType", "edge")
+                               .with_("label", "TRANSACTS")
+                               .with_("properties", ["fraud_status"])
+                               .next())
+                    results.append({"index": "transacts_fraud_status", "status": "created", "result": result2})
+                    logger.info("Created index: transacts_fraud_status")
+                except Exception as e:
+                    results.append({"index": "transacts_fraud_status", "status": "error", "error": str(e)})
+                    logger.warning(f"Index transacts_fraud_status: {e}")
+
+            return {
+                "status": "completed",
+                "results": results,
+                "message": f"Created {len([r for r in results if r['status'] == 'created'])} indexes successfully",
+                "mode": "minimal" if minimal else "full"
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating transaction indexes: {e}")
+            return {"error": str(e), "status": "error"}

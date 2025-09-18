@@ -1,11 +1,20 @@
 import logging
+from logging.handlers import RotatingFileHandler
 import os
+
+log_dir = "logs"
+
+def make_rotating_logger(name: str, backups : int = 2):
+    return RotatingFileHandler(
+        f'{log_dir}/{name}.log',
+        maxBytes=50*1024*1024,
+        backupCount=backups
+    )
 
 def setup_logging():
     """Setup logging configuration for the backend"""
     
     # Create logs directory if it doesn't exist
-    log_dir = "logs"
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     
@@ -35,32 +44,32 @@ def setup_logging():
     )
 
     # File handler for all logs
-    all_logs_handler = logging.FileHandler(f'{log_dir}/all.log')
+    all_logs_handler = make_rotating_logger("all", 3)
     all_logs_handler.setLevel(logging.DEBUG)
     all_logs_handler.setFormatter(detailed_formatter)
     
     # File handler for errors only
-    error_logs_handler = logging.FileHandler(f'{log_dir}/errors.log')
+    error_logs_handler = make_rotating_logger("errors")
     error_logs_handler.setLevel(logging.ERROR)
     error_logs_handler.setFormatter(detailed_formatter)
     
     # File handler for Aerospike Graph specific logs
-    graph_logs_handler = logging.FileHandler(f'{log_dir}/graph.log')
+    graph_logs_handler = make_rotating_logger("graph")
     graph_logs_handler.setLevel(logging.DEBUG)
     graph_logs_handler.setFormatter(detailed_formatter)
 
     # Separate file handler for fraud transactions
-    fraud_handler = logging.FileHandler(f'{log_dir}/fraud_transactions.log')
+    fraud_handler = make_rotating_logger("fraud_transactions")
     fraud_handler.setLevel(logging.ERROR)
     fraud_handler.setFormatter(fraud_formatter)
     
     # Separate file handler for normal transactions
-    normal_handler = logging.FileHandler(f'{log_dir}/normal_transactions.log')
+    normal_handler = make_rotating_logger("normal_transactions")
     normal_handler.setLevel(logging.ERROR)
     normal_handler.setFormatter(normal_formatter)
     
     # Separate file handler for transaction stats
-    stats_handler = logging.FileHandler('logs/statistics.log')
+    stats_handler = make_rotating_logger("statistics")
     stats_handler.setLevel(logging.ERROR)
     stats_handler.setFormatter(stats_formatter)
 

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 from datetime import datetime
 import urllib.parse
-
+from fastapi import Response
 from services.fraud_service import FraudService
 from services.graph_service import GraphService
 from services.transaction_generator import TransactionGeneratorService
@@ -275,10 +275,10 @@ def get_transaction_detail(transaction_id: str):
 def generate_random_transaction():
     try:
         transaction_generator.generate_transaction()
-        return True
+        return Response(status_code=204)
     
     except Exception as e:
-        logger.error(f"❌ Failed to generate transaction: {e}")
+        logger.error(f"Failed to generate transaction: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate transaction: {str(e)}")
 
 
@@ -300,7 +300,7 @@ def start_transaction_generation(
         
         success = transaction_generator.start_generation(rate, start)
         if success:
-            logger.info(f"🎯 Transaction generation started at {rate} transactions/second")
+            logger.info(f"Transaction generation started at {rate} transactions/second")
             return {
                 "message": f"Transaction generation started at {rate} transactions/second",
                 "status": "started",
@@ -310,7 +310,7 @@ def start_transaction_generation(
         else:
             raise HTTPException(status_code=400, detail="Transaction generation is already running")
     except Exception as e:
-        logger.error(f"❌ Failed to start transaction generation: {e}")
+        logger.error(f"Failed to start transaction generation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start transaction generation: {str(e)}")
 
 
@@ -320,7 +320,7 @@ def stop_transaction_generation():
     try:
         success = transaction_generator.stop_generation()
         if success:
-            logger.info("🛑 Transaction generation stopped")
+            logger.info("Transaction generation stopped")
             return {
                 "message": "Transaction generation stopped",
                 "status": "stopped"
@@ -328,7 +328,7 @@ def stop_transaction_generation():
         else:
             raise HTTPException(status_code=400, detail="Transaction generation is not running")
     except Exception as e:
-        logger.error(f"❌ Failed to stop transaction generation: {e}")
+        logger.error(f"Failed to stop transaction generation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stop transaction generation: {str(e)}")
 
 
@@ -351,18 +351,18 @@ def create_manual_transaction(
         )
         
         if result:
-            logger.info(f"✅ Transaction created")
+            logger.info(f"Transaction created")
             return {
                 "message": "Transaction created successfully",
             }
         else:
-            logger.error("❌ Failed to create manual transaction")
+            logger.error("Failed to create manual transaction")
             raise HTTPException(status_code=400, detail="Failed to create transaction")
             
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to create manual transaction: {e}")
+        logger.error(f"Failed to create manual transaction: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create manual transaction: {str(e)}")
 
 
@@ -395,7 +395,7 @@ def set_max_generation_rate(
             }
         
     except Exception as e:
-        logger.error(f"❌ Failed to update max generation rate: {e}")
+        logger.error(f"Failed to update max generation rate: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update max generation rate: {str(e)}")
 
 
@@ -406,7 +406,7 @@ async def get_transaction_generation_status():
         status = transaction_generator.get_status()
         return status
     except Exception as e:
-        logger.error(f"❌ Failed to get transaction generation status: {e}")
+        logger.error(f"Failed to get transaction generation status: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
 
 
@@ -422,7 +422,7 @@ def get_all_accounts():
         accounts = graph_service.get_all_accounts()
         return { "accounts": accounts }
     except Exception as e:
-        logger.error(f"❌ Failed to get accounts: {e}")
+        logger.error(f"Failed to get accounts: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get accounts: {str(e)}")
 
 
@@ -436,7 +436,7 @@ async def get_flagged_accounts():
             "count": len(flagged_accounts)
         }
     except Exception as e:
-        logger.error(f"❌ Failed to get flagged accounts: {e}")
+        logger.error(f"Failed to get flagged accounts: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get flagged accounts: {str(e)}")
     
 
@@ -457,7 +457,7 @@ async def flag_account(account_id: str, reason: str = "Manual flag for testing")
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to flag account {account_id}: {e}")
+        logger.error(f"Failed to flag account {account_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to flag account: {str(e)}")
 
 
@@ -477,7 +477,7 @@ async def unflag_account(account_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to unflag account {account_id}: {e}")
+        logger.error(f"Failed to unflag account {account_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to unflag account: {str(e)}")
 
 
@@ -497,7 +497,7 @@ def get_performance_stats(time_window: int = Query(5, ge=1, le=60, description="
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
-        logger.error(f"❌ Failed to get performance stats: {e}")
+        logger.error(f"Failed to get performance stats: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get performance stats: {str(e)}")
 
 
@@ -512,7 +512,7 @@ def get_performance_timeline(minutes: int = Query(5, ge=1, le=60, description="T
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
-        logger.error(f"❌ Failed to get performance timeline: {e}")
+        logger.error(f"Failed to get performance timeline: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get performance timeline: {str(e)}")
 
 
@@ -526,7 +526,7 @@ def reset_performance_metrics():
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
-        logger.error(f"❌ Failed to reset performance metrics: {e}")
+        logger.error(f"Failed to reset performance metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to reset performance metrics: {str(e)}")
 
 
@@ -573,3 +573,22 @@ def get_bulk_load_status():
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get bulk load status: {str(e)}")
+
+@app.get("/admin/indexes")
+def get_index_info():
+    """Get information about existing indexes"""
+    try:
+        result = graph_service.inspect_indexes()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get index info: {str(e)}")
+
+
+@app.post("/admin/indexes/create-transaction-indexes")
+def create_transaction_indexes():
+    """Create optimized indexes for transaction queries"""
+    try:
+        result = graph_service.create_transaction_indexes()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create transaction indexes: {str(e)}")
