@@ -121,8 +121,7 @@ class PerformanceMonitor:
         cutoff_time = datetime.now() - timedelta(minutes=time_window_minutes)
         
         # Filter metrics within time window
-        with self._lock:
-            recent_metrics = [m for m in metrics if m['timestamp'] >= cutoff_time]
+        recent_metrics = [m for m in metrics if m['timestamp'] >= cutoff_time]
 
         if not recent_metrics:
             return {
@@ -166,18 +165,19 @@ class PerformanceMonitor:
     
     def get_all_stats(self, time_window_minutes: int = 5) -> Dict[str, Any]:
         """Get performance statistics for all methods"""
-        with self._lock:
-            return {
-                'rt1': self.get_rt1_stats(time_window_minutes),
-                'rt2': self.get_rt2_stats(time_window_minutes),
-                'rt3': self.get_rt3_stats(time_window_minutes),
-                'timestamp': datetime.now().isoformat()
-            }
+        # Don't acquire lock here - let individual methods handle their own locking
+        return {
+            'rt1': self.get_rt1_stats(time_window_minutes),
+            'rt2': self.get_rt2_stats(time_window_minutes),
+            'rt3': self.get_rt3_stats(time_window_minutes),
+            'timestamp': datetime.now().isoformat()
+        }
     
     def get_recent_timeline_data(self, minutes: int = 5) -> Dict[str, List[Dict[str, Any]]]:
         """Get timeline data for charts"""
         cutoff_time = datetime.now() - timedelta(minutes=minutes)
 
+        # Use a single lock acquisition to get all timeline data atomically
         with self._lock:
             rt1_timeline = [
                 {'timestamp': m['timestamp'].isoformat(), 'execution_time': m['execution_time'], 'method': 'RT1'}
