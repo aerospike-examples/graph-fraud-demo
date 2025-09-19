@@ -21,11 +21,7 @@ class PerformanceMonitor:
     
     def __init__(self, max_history: int = 1000000):
         self.max_history = max_history
-        #self._lock = threading.Lock()
-
-        self._rt1_lock = threading.Lock()
-        self._rt2_lock = threading.Lock()
-        self._rt3_lock = threading.Lock()
+        self._lock = threading.Lock()
 
         # Performance data storage
         self.rt1_metrics = deque(maxlen=max_history)
@@ -58,7 +54,7 @@ class PerformanceMonitor:
             'cache_hit': cache_hit,
             'method': 'RT1'
         }
-        with self._rt1_lock:
+        with self._lock:
             self.rt1_metrics.append(metric)
             self.rt1_counter += 1
 
@@ -79,7 +75,7 @@ class PerformanceMonitor:
             'method': 'RT2'
         }
 
-        with self._rt2_lock:
+        with self._lock:
             self.rt2_metrics.append(metric)
             self.rt2_counter += 1
 
@@ -99,7 +95,7 @@ class PerformanceMonitor:
             'cache_hit': cache_hit,
             'method': 'RT3'
         }
-        with self._rt3_lock:
+        with self._lock:
             self.rt3_metrics.append(metric)
             self.rt3_counter += 1
 
@@ -203,7 +199,7 @@ class PerformanceMonitor:
     
     def reset_metrics(self):
         """Reset all performance metrics"""
-        with self._rt1_lock and self._rt2_lock and self._rt3_lock:
+        with self._lock:
             self.rt1_metrics.clear()
             self.rt2_metrics.clear()
             self.rt3_metrics.clear()
