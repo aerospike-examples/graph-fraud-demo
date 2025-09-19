@@ -56,7 +56,7 @@ class PerformanceMonitor:
         }
         with self._lock:
             self.rt1_metrics.append(metric)
-            self.rt1_counter += 1qq
+            self.rt1_counter += 1
 
             if success:
                 self.rt1_success += 1
