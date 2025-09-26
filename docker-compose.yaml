@@ -63,30 +63,6 @@ services:
       - asgraph_net
     ports:
       - "4000:4000"
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend.Dockerfile
-    container_name: "asgraph-frontend"
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - asgraph_net
-    ports:
-      - "8080:8080"
-  generator:
-    build:
-      context: .
-      dockerfile: generator.Dockerfile
-    container_name: "asgraph-generator"
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - asgraph_net
-    ports:
-      - "4001:4001"
 networks:
   asgraph_net:
     name: asgraph_net

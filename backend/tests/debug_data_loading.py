@@ -16,7 +16,7 @@ from services.graph_service import GraphService
 
 async def debug_data_loading():
     """Debug the data loading process"""
-    print("🐛 Starting data loading debug session...")
+    print("Starting data loading debug session...")
     
     # Initialize the graph service
     graph_service = GraphService()

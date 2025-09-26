@@ -1,17 +1,15 @@
-import asyncio
 import logging
 import time
 import json
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from typing import Dict, Any
 from gremlin_python.process.graph_traversal import __
 
 from services.graph_service import GraphService
 from services.performance_monitor import performance_monitor
 
-# Setup logging
-logger = logging.getLogger('fraud_detection.rt1')
-logger.setLevel(logging.ERROR)
+logger = logging.getLogger('fraud_detection.fraud')
 
 class FraudService:
     """Fraud Detection Service"""
@@ -21,7 +19,8 @@ class FraudService:
         self.rt1_enabled = True
         self.rt2_enabled = True
         self.rt3_enabled = True
-    
+        self.executor = ThreadPoolExecutor(max_workers=256, thread_name_prefix="txn_fraud_worker")
+        self._cache_ttl = timedelta(seconds=30)
     
     # ----------------------------------------------------------------------------------------------------------
     # Control fraud check states
@@ -113,62 +112,55 @@ class FraudService:
 
 
     def run_fraud_detection(self, edge_id: str, txn_id: str):
-        """Run fraud detection on the transaction"""
+        """Queue the sequential fraud detection and return future"""
         
         if not self.graph_service.client:
             logger.warning("Graph client not available for fraud detection")
-            return
-        
-        try:
-            fraud_checks = {}
-            # Run RT1 fraud detection (flagged accounts)
-            if self.rt1_enabled:
-                rt1_fraud, rt1_reason, rt1_result = self.run_rt1_fraud_detection(edge_id, txn_id)
-                if rt1_fraud:
-                    fraud_checks["rt1"] = rt1_result
-                    logger.warning(f"RT1 FRAUD ALERT: {rt1_reason}")
-        
-        except Exception as e:
-            raise Exception(f"Error in RT1 fraud detection for transaction {txn_id}: {e}")
-        
-        try:
-            # Run RT2 fraud detection (flagged devices)
-            if self.rt2_enabled:
-                rt2_fraud, rt2_reason, rt2_result = self.run_rt2_fraud_detection(edge_id, txn_id)
-                if rt2_fraud:
-                    fraud_checks["rt2"] = rt2_result
-                    logger.warning(f"RT2 FRAUD ALERT: {rt2_reason}")
-        
-        except Exception as e:
-            raise Exception(f"Error in RT2 fraud detection for transaction {txn_id}: {e}")
+            return None
 
-        try:
-            # Run RT3 fraud detection (account velocity) for now
-            if self.rt3_enabled:
-                rt3_fraud, rt3_reason, rt3_result = self.run_rt3_fraud_detection(edge_id, txn_id)
-                if rt3_fraud: 
-                    fraud_checks["rt3"] = rt3_result
-                    logger.warning(f"RT3 FRAUD ALERT: {rt3_reason}")
-        
-        except Exception as e:
-            raise Exception(f"Error in RT3 fraud detection for transaction {txn_id}: {e}")    
-        
-        if not fraud_checks == {}:
-            self._store_fraud_results(edge_id, fraud_checks)
-                
+        return self.executor.submit(self.run_fraud_detection_background, edge_id, txn_id)
 
-    # ----------------------------------------------------------------------------------------------------------
-    # Fraud check functions
-    # ----------------------------------------------------------------------------------------------------------
+
+    def run_fraud_detection_background(self, edge_id: str, txn_id: str):
+        """Run all 3 fraud detections sequentially"""
+        fraud_checks = {}
+        if self.rt1_enabled:
+            try:
+                rt_fraud, rt_reason, rt_result = self.run_rt1_fraud_detection(edge_id, txn_id)
+                if rt_fraud:
+                    fraud_checks['rt1'] = rt_result
+                    logger.warning(f"RT1 FRAUD ALERT: {rt_reason}")
+            except Exception as e:
+                logger.error(f"Error in RT1 fraud detection for transaction {txn_id}: {e}")
+
+        if self.rt2_enabled:
+            try:
+                rt_fraud, rt_reason, rt_result = self.run_rt2_fraud_detection(edge_id, txn_id)
+                if rt_fraud:
+                    fraud_checks['rt2'] = rt_result
+                    logger.warning(f"RT2 FRAUD ALERT: {rt_reason}")
+            except Exception as e:
+                logger.error(f"Error in RT2 fraud detection for transaction {txn_id}: {e}")
+
+        if self.rt3_enabled:
+            try:
+                rt_fraud, rt_reason, rt_result = self.run_rt3_fraud_detection(edge_id, txn_id)
+                if rt_fraud:
+                    fraud_checks['rt3'] = rt_result
+                    logger.warning(f"RT3 FRAUD ALERT: {rt_reason}")
+            except Exception as e:
+                logger.error(f"Error in RT3 fraud detection for transaction {txn_id}: {e}")
+
+        # Store results if any fraud detected
+        if fraud_checks:
+            try:
+                self._store_fraud_results(edge_id, fraud_checks)
+            except Exception as e:
+                logger.error(f"Error storing fraud results for transaction {txn_id}: {e}")
 
 
     def run_rt1_fraud_detection(self, edge_id, txn_id) -> tuple[bool, str, Dict[str, Any]]:
-        """
-        RT1 Fraud Detection Service - Flagged Account Detection
-
-        Check if transaction involves flagged accounts (RT1)
-        1. RT1 checks if the sender or receiver (accounts)of a transaction is flagged as fraudulent.
-        """
+        """RT1 Fraud Detection: Check if transaction involves flagged accounts"""
         start_time = time.time()
         try:
             connections = (self.graph_service.client.E(edge_id)

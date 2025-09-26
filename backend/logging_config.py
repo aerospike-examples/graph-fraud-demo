@@ -108,6 +108,20 @@ def setup_logging():
     stats_logger.addHandler(stats_handler)
     stats_logger.addHandler(console_handler)
     
+    # Add fraud service logger
+    fraud_logger = logging.getLogger('fraud_detection.fraud')
+    fraud_logger.setLevel(logging.ERROR)
+    fraud_logger.addHandler(all_logs_handler)
+    fraud_logger.addHandler(console_handler)
+    fraud_logger.propagate = False
+    
+    # Add performance monitor logger
+    perf_logger = logging.getLogger('fraud_detection.performance')
+    perf_logger.setLevel(logging.ERROR)
+    perf_logger.addHandler(all_logs_handler)
+    perf_logger.addHandler(console_handler)
+    perf_logger.propagate = False
+    
     return logger
 
 def get_logger(name='fraud_detection'):

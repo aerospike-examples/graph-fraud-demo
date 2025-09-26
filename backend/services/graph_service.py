@@ -8,6 +8,7 @@ from typing import List, Dict, Any
 
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.driver.aiohttp.transport import AiohttpTransport
+from gremlin_python.driver.client import Client
 from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import __, constant
 from gremlin_python.process.traversal import P, T, Order, containing, Scope
@@ -35,8 +36,9 @@ class GraphService:
             url = f'ws://{self.host}:{self.port}/gremlin'
             logger.info(f" Connecting to Aerospike Graph: {url}")
             
-            # Use the same approach as the working sample
-            self.connection = DriverRemoteConnection(url, "g", transport_factory=lambda:AiohttpTransport(call_from_event_loop=True))
+            # We size up the gremlin pool here to help with IO related issues
+            self.connection = DriverRemoteConnection(url, "g", transport_factory=lambda:AiohttpTransport(call_from_event_loop=False),
+                                                     pool_size=100, max_workers=100, timeout=10, read_timeout=5)
             self.client = traversal().with_remote(self.connection)
             
             # Test connection using the same method as the sample
@@ -147,7 +149,6 @@ class GraphService:
                     txns = edges.get('TRANSACTS', 0)
                     accounts = vertices.get('account', 0)
                     devices = vertices.get('device', 0)
-                    
                     logger.info(f"Dashboard stats from summary: users={users}, transactions={txns}, accounts={accounts}, devices={devices}")
                 else:
                     users = txns = accounts = devices = 0
@@ -160,17 +161,10 @@ class GraphService:
 
                 if txns > 0:
                     try:
-                        txn_stats = (self.client.E()
-                            .has_label('TRANSACTS').fold()
-                            .project('flagged','amount')
-                            .by(__.unfold()
-                                .has('fraud_score', P.gt(0))
-                                .count())
-                            .by(__.unfold()
-                                .values('amount')
-                                .sum_())
-                            .next())
-                        
+                        txn_stats = (self.client.E().hasLabel('TRANSACTS')
+                                  .group('m').by(__.constant('flagged')).by(__.has('fraud_score', P.gt(0)).count())
+                                  .group('m').by(__.constant('amount')).by(__.values('amount').sum_())
+                                  .cap('m').next())
                         flagged = txn_stats.get("flagged", 0)
                         amount = txn_stats.get("amount", 0)
                         fraud_rate = (flagged / txns * 100)
@@ -184,6 +178,8 @@ class GraphService:
                     "txns": txns,
                     "flagged": flagged,
                     "amount": amount,
+                    "devices": devices,
+                    "accounts": accounts,
                     "fraud_rate": fraud_rate,
                     "health": "connected"
                 }
@@ -337,6 +333,25 @@ class GraphService:
             logger.error(f"Error getting user summary: {e}")
             return None
 
+    def seed_sample_data(self):
+        self.client.V().drop().iterate()
+        vertices_path = "/data/graph_csv/vertices"
+        edges_path = "/data/graph_csv/edges"
+
+        logger.info("Bulk load Starting")
+        (self.client.with_("evaluationTimeout", 20000)
+                   .call("aerospike.graphloader.admin.bulk-load.load")
+                   .with_("aerospike.graphloader.vertices", vertices_path)
+                   .with_("aerospike.graphloader.edges", edges_path)
+                   .with_("incremental_load", False).next())
+        logger.info("Bulk load status:")
+        while True:
+            status = self.client.call("aerospike.graphloader.admin.bulk-load.status").next()
+            logger.info(status)
+            if status.get("complete", True):
+                logger.info("Bulk load data seeding completed!")
+                break
+            time.sleep(5)
 
     def get_user_devices(self, user_id: str):
         """Get all devices for a specific user"""
@@ -455,7 +470,7 @@ class GraphService:
                 
                 edges = 1
                 while edges > 0:
-                    edges = self.client.E().has_label("TRANSACTS").count()
+                    edges = self.client.E().has_label("TRANSACTS").count().next()
                     time.sleep(.5)
                 
                 return True
@@ -504,7 +519,7 @@ class GraphService:
                     account_vertex = accounts[0]
                     self.client.V(account_vertex).property("fraud_flag", True).property("flagReason", reason).property("flagTimestamp", datetime.now().isoformat()).iterate()
                     
-                    logger.info(f"🚩 Account {account_id} flagged as fraudulent: {reason}")
+                    logger.info(f"Account {account_id} flagged as fraudulent: {reason}")
                     return True
                     
                 except Exception as e:
@@ -734,7 +749,7 @@ class GraphService:
                     # Create TRANSFERS_TO edge
                     self.client.add_e("TRANSFERS_TO").from_(from_vertex).to(to_vertex).property("amount", amount).property("timestamp", datetime.now().isoformat()).property("status", "completed").property("method", "test_transfer").iterate()
                     
-                    logger.info(f"💸 Created TRANSFERS_TO edge: {from_account_id} → {to_account_id} (${amount})")
+                    logger.info(f"Created TRANSFERS_TO edge: {from_account_id} -> {to_account_id} (${amount})")
                     return True
                     
                 except Exception as e:
@@ -1093,8 +1108,8 @@ class GraphService:
                 except Exception as e:
                     index_list = f"Error getting index list: {e}"
 
-                logger.info(f"📊 Index cardinality: {cardinality_info}")
-                logger.info(f"📋 Index list: {index_list}")
+                logger.info(f"Index cardinality: {cardinality_info}")
+                logger.info(f"Index list: {index_list}")
                 return {
                     "cardinality": cardinality_info,
                     "index_list": index_list,
@@ -1104,11 +1119,10 @@ class GraphService:
                 raise Exception("Graph client not available")
 
         except Exception as e:
-            logger.error(f"❌ Error inspecting indexes: {e}")
+            logger.error(f"Error inspecting indexes: {e}")
             return {"error": str(e), "status": "error"}
 
-    def create_transaction_indexes(self, minimal: bool = False) -> Dict[str, Any]:
-        """Create optimized indexes for transaction queries"""
+    def create_fraud_detection_indexes(self):
         try:
             if not self.client:
                 raise Exception("Graph client not available")
@@ -1118,40 +1132,44 @@ class GraphService:
             try:
                 result1 = (self.client
                            .call("aerospike.graph.admin.index.create")
-                           .with_("name", "transacts_timestamp_desc")
-                           .with_("elementType", "edge")
-                           .with_("label", "TRANSACTS")
-                           .with_("properties", ["timestamp"])
-                           .with_("order", "desc")
+                           .with_("element_type", "vertex")
+                           .with_("property_key", "fraud_flag")
                            .next())
-                results.append({"index": "transacts_timestamp_desc", "status": "created", "result": result1})
-                logger.info("Created CRITICAL index: transacts_timestamp_desc")
+                results.append({"index": "fraud_flag", "status": "created", "result": result1})
+                logger.info("Created index: fraud_flag")
             except Exception as e:
-                results.append({"index": "transacts_timestamp_desc", "status": "error", "error": str(e)})
-                logger.warning(f"CRITICAL index transacts_timestamp_desc: {e}")
+                results.append({"index": "fraud_flag", "status": "error", "error": str(e)})
+                logger.warning(f"Index fraud_flag: {e}")
 
-            if not minimal:
-                try:
-                    result2 = (self.client
-                               .call("aerospike.graph.admin.index.create")
-                               .with_("name", "transacts_fraud_status")
-                               .with_("elementType", "edge")
-                               .with_("label", "TRANSACTS")
-                               .with_("properties", ["fraud_status"])
-                               .next())
-                    results.append({"index": "transacts_fraud_status", "status": "created", "result": result2})
-                    logger.info("Created index: transacts_fraud_status")
-                except Exception as e:
-                    results.append({"index": "transacts_fraud_status", "status": "error", "error": str(e)})
-                    logger.warning(f"Index transacts_fraud_status: {e}")
+            try:
+                result2 = (self.client
+                           .call("aerospike.graph.admin.index.create")
+                           .with_("element_type", "vertex")
+                           .with_("property_key", "~label")
+                           .next())
+                results.append({"index": "vertex_label", "status": "created", "result": result2})
+                logger.info("Created index: vertex_label")
+            except Exception as e:
+                results.append({"index": "vertex_label_account", "status": "error", "error": str(e)})
+
+            try:
+                result3 = (self.client
+                          .call("aerospike.graph.admin.index.create")
+                          .with_("element_type", "vertex")
+                          .with_("property_key", "account_id")
+                          .next())
+                results.append({"index": "account_id", "status": "created", "result": result3})
+                logger.info("Created index: account_id")
+            except Exception as e:
+                results.append({"index": "account_id", "status": "error", "error": str(e)})
 
             return {
                 "status": "completed",
                 "results": results,
-                "message": f"Created {len([r for r in results if r['status'] == 'created'])} indexes successfully",
-                "mode": "minimal" if minimal else "full"
+                "total_indexes": len(results),
+                "successful": len([r for r in results if r["status"] == "created"])
             }
 
         except Exception as e:
-            logger.error(f"Error creating transaction indexes: {e}")
+            logger.error(f"Error creating fraud detection indexes: {e}")
             return {"error": str(e), "status": "error"}
