@@ -1,7 +1,7 @@
 import logging
 import time
 import json
-from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 from datetime import datetime, timedelta
 from typing import Dict, Any
 from gremlin_python.process.graph_traversal import __
@@ -19,13 +19,7 @@ class FraudService:
         self.rt1_enabled = True
         self.rt2_enabled = True
         self.rt3_enabled = True
-        self.executor = ThreadPoolExecutor(max_workers=256, thread_name_prefix="txn_fraud_worker")
-        self._cache_ttl = timedelta(seconds=30)
-    
-    # ----------------------------------------------------------------------------------------------------------
-    # Control fraud check states
-    # ----------------------------------------------------------------------------------------------------------
-
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=128, thread_name_prefix="fraud_rt")
 
     def toggle_fraud_checks_state(self, check: str, enabled: bool):
         match check:
@@ -40,20 +34,13 @@ class FraudService:
                 return True
             case _:
                 return False
-    
 
     def get_fraud_checks_state(self):
         return {
-            "rt1" : self.rt1_enabled,
-            "rt2" : self.rt2_enabled,
-            "rt3" : self.rt3_enabled
+            "rt1": self.rt1_enabled,
+            "rt2": self.rt2_enabled,
+            "rt3": self.rt3_enabled
         }
-
-
-    # ----------------------------------------------------------------------------------------------------------
-    # Helper functions
-    # ----------------------------------------------------------------------------------------------------------
-
 
     def _create_flagged_connection(self, account_id, role, score):
         return {
@@ -61,7 +48,6 @@ class FraudService:
             "role": role,
             "fraud_score": score
         }
-    
 
     def _create_fraud_result(self, score, status, details):
         return {
@@ -71,6 +57,7 @@ class FraudService:
             "eval_timestamp": datetime.now().isoformat(),
             "details": details
         }
+
 
     def _store_fraud_results(self, edge_id: str, fraud_checks: Dict[str, Dict[str, Any]]):
         try:
@@ -93,7 +80,6 @@ class FraudService:
                     details.append(json.dumps(this_details))
                     status = "blocked" if this_status == "blocked" else status
             
-            # Create fraud check result in graph
             (self.graph_service.client.E(edge_id)
                 .property("is_fraud", True)
                 .property("fraud_score", fraud_score)
@@ -104,60 +90,38 @@ class FraudService:
             
         except Exception as e:
             raise Exception(f"Error storing fraud result: {e}")
-        
 
-    # ----------------------------------------------------------------------------------------------------------
-    # Run fraud checks
-    # ----------------------------------------------------------------------------------------------------------
-
+    def submit_fraud_detection_async(self, edge_id: str, txn_id: str):
+        """Submit fraud detection without blocking the caller"""
+        return self._executor.submit(self.run_fraud_detection, edge_id, txn_id)
 
     def run_fraud_detection(self, edge_id: str, txn_id: str):
-        """Queue the sequential fraud detection and return future"""
-        
+        """Run fraud detection on the transaction in parallel"""
+
         if not self.graph_service.client:
             logger.warning("Graph client not available for fraud detection")
-            return None
+            return
 
-        return self.executor.submit(self.run_fraud_detection_background, edge_id, txn_id)
-
-
-    def run_fraud_detection_background(self, edge_id: str, txn_id: str):
-        """Run all 3 fraud detections sequentially"""
         fraud_checks = {}
+
         if self.rt1_enabled:
-            try:
-                rt_fraud, rt_reason, rt_result = self.run_rt1_fraud_detection(edge_id, txn_id)
-                if rt_fraud:
-                    fraud_checks['rt1'] = rt_result
-                    logger.warning(f"RT1 FRAUD ALERT: {rt_reason}")
-            except Exception as e:
-                logger.error(f"Error in RT1 fraud detection for transaction {txn_id}: {e}")
-
+            rt_fraud, rt_reason, rt_result = self.run_rt1_fraud_detection(edge_id, txn_id)
+            if rt_fraud:
+                fraud_checks['rt1'] = rt_result
         if self.rt2_enabled:
-            try:
-                rt_fraud, rt_reason, rt_result = self.run_rt2_fraud_detection(edge_id, txn_id)
-                if rt_fraud:
-                    fraud_checks['rt2'] = rt_result
-                    logger.warning(f"RT2 FRAUD ALERT: {rt_reason}")
-            except Exception as e:
-                logger.error(f"Error in RT2 fraud detection for transaction {txn_id}: {e}")
-
+            rt_fraud, rt_reason, rt_result = self.run_rt2_fraud_detection(edge_id, txn_id)
+            if rt_fraud:
+                fraud_checks['rt2'] = rt_result
         if self.rt3_enabled:
-            try:
-                rt_fraud, rt_reason, rt_result = self.run_rt3_fraud_detection(edge_id, txn_id)
-                if rt_fraud:
-                    fraud_checks['rt3'] = rt_result
-                    logger.warning(f"RT3 FRAUD ALERT: {rt_reason}")
-            except Exception as e:
-                logger.error(f"Error in RT3 fraud detection for transaction {txn_id}: {e}")
-
-        # Store results if any fraud detected
+            rt_fraud, rt_reason, rt_result = self.run_rt3_fraud_detection(edge_id, txn_id)
+            if rt_fraud:
+                fraud_checks['rt3'] = rt_result
+        
         if fraud_checks:
             try:
                 self._store_fraud_results(edge_id, fraud_checks)
             except Exception as e:
                 logger.error(f"Error storing fraud results for transaction {txn_id}: {e}")
-
 
     def run_rt1_fraud_detection(self, edge_id, txn_id) -> tuple[bool, str, Dict[str, Any]]:
         """RT1 Fraud Detection: Check if transaction involves flagged accounts"""
@@ -188,7 +152,6 @@ class FraudService:
            
             total_connections = len(flagged_connections)
                 
-            # Simple scoring: direct fraud = 100, transaction partners = 75
             fraud_score = 100
             status = "blocked"
             reason = f"Connected to {total_connections} flagged account(s) - 'direct fraud'"
@@ -341,5 +304,4 @@ class FraudService:
             performance_monitor.record_rt3_performance(execution_time, success=False)
             
             logger.error(f"RT3: Error checking transaction {txn_id}: {e}")
-            logger.error(f"RT3 Error - Total execution time: {execution_time:.2f}ms before failure")
             return False, f"RT3 check failed: {str(e)}", None

@@ -466,24 +466,46 @@ class TransactionWorker:
     def _execute_transaction(self, task_data: Dict[str, Any]):
         scheduled_time = task_data['scheduled_time']
         start_time = time.time()
-
+        
+        queue_wait_ms = (start_time - scheduled_time) * 1000
+        
         try:
+            # Time the transaction generation (DB write)
+            db_start_time = time.time()
             result = self.transaction_generator.generate_transaction()
+            db_end_time = time.time()
+            db_latency_ms = (db_end_time - db_start_time) * 1000
             
             if result and result.get('success') and 'edge_id' in result and 'txn_id' in result:
-                self.fraud_service.run_fraud_detection(
+                fraud_start_time = time.time()
+                self.fraud_service.submit_fraud_detection_async(
                     result['edge_id'],
                     result['txn_id']
                 )
+                fraud_end_time = time.time()
+                fraud_latency_ms = (fraud_end_time - fraud_start_time) * 1000
 
                 end_time = time.time()
                 total_latency_ms = (end_time - scheduled_time) * 1000
                 execution_latency_ms = (end_time - start_time) * 1000
 
-                performance_monitor.record_transaction_completed(total_latency_ms, execution_latency_ms)
+                performance_monitor.record_transaction_completed_detailed(
+                    total_latency_ms, 
+                    execution_latency_ms,
+                    queue_wait_ms,
+                    db_latency_ms,
+                    fraud_latency_ms
+                )
                 
                 if total_latency_ms > 1000:
-                    logger.debug(f"HIGH LATENCY Transaction {result['txn_id']}: Total={total_latency_ms:.1f}ms")
+                    logger.info(f"HIGH LATENCY Transaction {result['txn_id']}: "
+                              f"Total={total_latency_ms:.1f}ms "
+                              f"(Queue={queue_wait_ms:.1f}ms, "
+                              f"DB={db_latency_ms:.1f}ms, "
+                              f"Fraud={fraud_latency_ms:.1f}ms)")
+                elif queue_wait_ms > 500:
+                    logger.info(f"HIGH QUEUE WAIT Transaction {result['txn_id']}: "
+                              f"Queue={queue_wait_ms:.1f}ms, Total={total_latency_ms:.1f}ms")
             else:
                 performance_monitor.record_transaction_failed()
                 logger.warning("Transaction creation failed")

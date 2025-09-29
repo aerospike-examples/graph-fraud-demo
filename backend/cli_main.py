@@ -292,6 +292,11 @@ Performance Metrics:
     Average:          {stats['avg_exec_latency_ms']:.1f}
     Minimum:          {stats['min_exec_latency_ms']:.1f}
     Maximum:          {stats['max_exec_latency_ms']:.1f}
+  
+  Latency Breakdown (ms):
+    Queue Wait:       {stats.get('avg_queue_wait_ms', 0):.1f} avg ({stats.get('min_queue_wait_ms', 0):.1f}-{stats.get('max_queue_wait_ms', 0):.1f})
+    DB Operations:    {stats.get('avg_db_latency_ms', 0):.1f} avg ({stats.get('min_db_latency_ms', 0):.1f}-{stats.get('max_db_latency_ms', 0):.1f})
+    Fraud Detection:  {stats.get('avg_fraud_latency_ms', 0):.1f} avg ({stats.get('min_fraud_latency_ms', 0):.1f}-{stats.get('max_fraud_latency_ms', 0):.1f})
         """)
 
         self._show_fraud_detection_performance(time_window)
@@ -355,9 +360,35 @@ Python Process:
   Memory Objects:      {len(gc.get_objects()):,}
         """)
 
-        print("Active Threads:")
-        for thread in threading.enumerate():
-            print(f"  - {thread.name}: {'ALIVE' if thread.is_alive() else 'DEAD'}")
+        active_threads = threading.enumerate()
+        thread_groups = {}
+        for thread in active_threads:
+            prefix = thread.name.split('-')[0] if '-' in thread.name else thread.name
+            thread_groups[prefix] = thread_groups.get(prefix, 0) + 1
+        
+        print("Thread Analysis:")
+        total_threads = len(active_threads)
+        cpu_count = psutil.cpu_count()
+        print(f"  Total Threads:       {total_threads}")
+        print(f"  CPU Cores:           {cpu_count}")
+        print(f"  Thread/Core Ratio:   {total_threads/cpu_count:.1f}:1")
+        
+        if total_threads > cpu_count * 4:
+            print(f"WARNING: High thread count may cause context switching overhead")
+        elif total_threads > cpu_count * 2:
+            print(f"CAUTION: Thread count is high relative to CPU cores")
+        else:
+            print(f"Thread count looks reasonable")
+            
+        print("\nThread Groups:")
+        for group, count in sorted(thread_groups.items()):
+            print(f"  {group:20} {count:3d} threads")
+            
+        print("\nActive Threads:")
+        for thread in active_threads:
+            status = 'ALIVE' if thread.is_alive() else 'DEAD'
+            daemon = 'DAEMON' if thread.daemon else 'MAIN'
+            print(f"  - {thread.name:30} {status:5} {daemon}")
 
         analysis = self.transaction_generator.get_bottleneck_analysis()
         pool_status = analysis['pool_status']
@@ -382,14 +413,14 @@ Scheduler Analysis:
         if stats['total_completed'] > 0:
             avg_total = stats['avg_latency_ms']
             avg_exec = stats['avg_exec_latency_ms']
-            queue_wait = avg_total - avg_exec
+            avg_queue_wait = stats.get('avg_queue_wait_ms', avg_total - avg_exec)
 
             print(f"""
 Latency Breakdown:
   Total Latency:       {avg_total:.1f}ms
   Execution Time:      {avg_exec:.1f}ms
-  Queue Wait Time:     {queue_wait:.1f}ms
-  Queue Wait %:        {(queue_wait/avg_total)*100:.1f}%
+  Queue Wait Time:     {avg_queue_wait:.1f}ms
+  Queue Wait %:        {(avg_queue_wait/avg_total)*100 if avg_total > 0 else 0:.1f}%
             """)
 
         try:
@@ -411,16 +442,51 @@ Latency Breakdown:
 
         avg_total = stats['avg_latency_ms']
         avg_exec = stats['avg_exec_latency_ms']
-        queue_wait = avg_total - avg_exec
+        avg_queue_wait = stats.get('avg_queue_wait_ms', 0)
+        avg_db_latency = stats.get('avg_db_latency_ms', 0)
+        avg_fraud_latency = stats.get('avg_fraud_latency_ms', 0)
         success_rate = stats['success_rate']
         queue_size = stats['queue_size']
 
+        # Analyze latency components
+        if avg_queue_wait > 0:
+            queue_wait_pct = (avg_queue_wait / avg_total) * 100
+            db_latency_pct = (avg_db_latency / avg_total) * 100
+            fraud_latency_pct = (avg_fraud_latency / avg_total) * 100
+            
+            print(f"LATENCY BREAKDOWN ANALYSIS:")
+            print(f"   Queue Wait:      {avg_queue_wait:.1f}ms ({queue_wait_pct:.1f}%)")
+            print(f"   DB Operations:   {avg_db_latency:.1f}ms ({db_latency_pct:.1f}%)")
+            print(f"   Fraud Detection: {avg_fraud_latency:.1f}ms ({fraud_latency_pct:.1f}%)")
+            print()
+
         # High queue wait time
-        if queue_wait > avg_exec:
-            print(f"HIGH QUEUE WAIT TIME ({queue_wait:.1f}ms)")
+        if avg_queue_wait > 100:
+            print(f"HIGH QUEUE WAIT TIME ({avg_queue_wait:.1f}ms)")
+            print("   - Workers can't keep up with scheduling rate")
             print("   - Increase worker pool size")
             print("   - Check if workers are blocked on I/O")
             print("   - Consider reducing target TPS")
+            print()
+
+        # High DB latency
+        if avg_db_latency > 200:
+            print(f"HIGH DATABASE LATENCY ({avg_db_latency:.1f}ms)")
+            print("   - Database operations are slow")
+            print("   - Check network latency to database")
+            print("   - Consider adding database indexes")
+            print("   - Review connection pool settings")
+            print("   - Check if DNS resolution is cached")
+            print()
+
+        # High fraud detection latency
+        if avg_fraud_latency > 150:
+            print(f"HIGH FRAUD DETECTION LATENCY ({avg_fraud_latency:.1f}ms)")
+            print("   - Fraud detection queries are slow")
+            print("   - Consider optimizing RT1/RT2/RT3 queries")
+            print("   - Check fraud detection caching")
+            print("   - Review fraud detection thread pool size")
+            print()
 
         # High execution time
         if avg_exec > 100:
@@ -461,7 +527,7 @@ Latency Breakdown:
             print("   - Check for memory leaks")
 
         # Good performance
-        if queue_wait < 20 and avg_exec < 50 and success_rate > 95 and queue_size < 10:
+        if avg_queue_wait < 20 and avg_exec < 50 and success_rate > 95 and queue_size < 10:
             print("PERFORMANCE LOOKS GOOD")
             print("   - All metrics within acceptable ranges")
             print("   - Consider increasing target TPS")
