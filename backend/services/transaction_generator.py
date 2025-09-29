@@ -94,6 +94,10 @@ class TransactionGeneratorService:
         """Initialize workers and wait for them to be ready"""
         logger.info("Initializing transaction workers...")
         
+        if len(self.account_vertices) < 1:
+            if not self.cache_account_ids():
+                logger.warning("Failed to cache account IDs - transaction generation may fail")
+        
         if self.transaction_worker is None:
             self.transaction_worker = TransactionWorker(self, self.fraud_service)
         if not self.transaction_worker.running:
@@ -104,6 +108,28 @@ class TransactionGeneratorService:
             
         logger.info("Workers initialized and ready")
 
+    def cache_account_ids(self):
+        """Cache account IDs to avoid repeated database queries"""
+        try:
+            logger.info("Caching account IDs from database...")
+            start_time = time.time()
+            
+            self.account_vertices = self.graph_service.client.V().has_label("account").id_().to_list()
+            
+            cache_time = (time.time() - start_time) * 1000
+            account_count = len(self.account_vertices)
+            
+            if account_count < 1:
+                logger.warning("No accounts found in database - transaction generation will fail")
+            else:
+                logger.info(f"Cached {account_count:,} account IDs in {cache_time:.1f}ms")
+                
+            return account_count > 0
+            
+        except Exception as e:
+            logger.error(f"Error caching account IDs: {e}")
+            self.account_vertices = []
+            return False
 
     # ----------------------------------------------------------------------------------------------------------
     # Transaction generation control
@@ -140,13 +166,11 @@ class TransactionGeneratorService:
             
         self.initialize_workers()
         
-        try:
-            self.account_vertices = self.graph_service.client.V().has_label("account").id_().to_list()
-            if len(self.account_vertices) < 1:
-                raise Exception("No accounts available")
-        except Exception as e:
-            logger.error(f"Unable to start transaction generator: {e}")
+        if len(self.account_vertices) < 1:
+            logger.error("No accounts available for transaction generation - ensure database is seeded")
             return False
+        
+        logger.info(f"Using {len(self.account_vertices):,} cached accounts for transaction generation")
 
         performance_monitor.reset_transaction_metrics()
         self.generated_transactions.clear()
@@ -207,7 +231,6 @@ class TransactionGeneratorService:
     def create_manual_transaction(self, from_id: str, to_id: str, amount: float, type: str = "transfer", gen_type: str = "MANUAL", force: bool = False) -> Dict[str, Any]:
         """Create a manual transaction between specified accounts"""
         try:
-            logger.info(f"Creating {gen_type.lower()} transaction from {from_id} to {to_id} amount {amount}")
 
             if not force:
                 try:
@@ -251,7 +274,6 @@ class TransactionGeneratorService:
                 .next())
             
             self.transaction_counter += 1
-            logger.info(f"{gen_type} transaction created: {txn_id} from {from_id} to {to_id} amount {amount}")
             
             return {
                 "success": True,
@@ -269,17 +291,13 @@ class TransactionGeneratorService:
     def generate_transaction(self) -> Dict[str, Any]:
         """Generate a normal transaction between real users and accounts"""
         try:
-            if len(self.account_vertices) < 1:
-                self.account_vertices = self.graph_service.client.V().has_label("account").id_().to_list()
-            if len(self.account_vertices) < 1:
-                raise Exception("No accounts available")
+            # Use cached account IDs (no database query needed!)
+            if len(self.account_vertices) < 2:
+                logger.error("Insufficient cached accounts for transaction generation")
+                raise Exception("Need at least 2 accounts for transaction generation")
             
-            # Get 2 random accounts from the graph database
+            # Get 2 random accounts from cached list
             sender_account_id, receiver_account_id = random.sample(self.account_vertices, 2)
-            
-            if not sender_account_id or not receiver_account_id:
-                logger.error("Could not get accounts from graph database. Cannot generate transaction without valid accounts.")
-                raise Exception("No valid accounts available in graph database for transaction generation")
             
             # Generate transaction data
             amount = random.uniform(100.0, 15000.0)

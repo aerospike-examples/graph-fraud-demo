@@ -8,7 +8,6 @@ from typing import List, Dict, Any
 
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.driver.aiohttp.transport import AiohttpTransport
-from gremlin_python.driver.client import Client
 from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import __, constant
 from gremlin_python.process.traversal import P, T, Order, containing, Scope
@@ -481,6 +480,18 @@ class GraphService:
         logger.error("No graph client available. Cannot drop all transactions without graph database connection.")
         return False
 
+    def drop_all_transactions_large(self):
+        if self.client:
+            try:
+                self.client.with_('evaluationTimeout', 0).V().drop().iterate()
+                self.bulk_load_csv_data()
+                return True
+
+            except Exception as e:
+                logger.error(f"An error occured while dropping all transactions: {e}")
+                return False
+        logger.error("No graph client available. Cannot drop all transactions without graph database connection.")
+        return False
 
     # ----------------------------------------------------------------------------------------------------------
     # Account functions

@@ -122,6 +122,8 @@ class FraudDetectionCLI:
             self._show_indexes()
         elif cmd == "seed":
             self.graph_service.seed_sample_data()
+            # Refresh account cache after seeding
+            self.transaction_generator.refresh_account_cache()
             print("Bulk Load Succeeded!")
         elif cmd == "stop":
             self._stop_generator()
@@ -614,7 +616,7 @@ Generator Status: {status}
         if confirm in ['yes', 'y']:
             print("Clearing transactions...")
             try:
-                success = self.graph_service.drop_all_transactions()
+                success = self.graph_service.drop_all_transactions_large()
                 if success:
                     print("Successfully cleared all transactions from the graph.")
                     logger.info("All transactions cleared from graph via CLI")
