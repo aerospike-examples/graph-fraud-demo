@@ -9,7 +9,8 @@ from gremlin_python.process.graph_traversal import __
 from services.graph_service import GraphService
 from services.performance_monitor import performance_monitor
 
-logger = logging.getLogger('fraud_detection.fraud')
+from logging_config import get_logger
+logger = get_logger('fraud_detection.fraud')
 
 class FraudService:
     """Fraud Detection Service"""
@@ -20,6 +21,16 @@ class FraudService:
         self.rt2_enabled = True
         self.rt3_enabled = True
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=128, thread_name_prefix="fraud_rt")
+
+    def shutdown(self):
+        """Shutdown the fraud service executor"""
+        try:
+            logger.info("Shutting down fraud service executor...")
+            self._executor.shutdown(wait=True, cancel_futures=True)
+            logger.info("Fraud service executor shutdown complete")
+        except Exception as e:
+            logger.warning(f"Error shutting down fraud executor: {e}")
+            self._executor.shutdown(wait=True)
 
     def toggle_fraud_checks_state(self, check: str, enabled: bool):
         match check:
@@ -97,6 +108,7 @@ class FraudService:
 
     def run_fraud_detection(self, edge_id: str, txn_id: str):
         """Run fraud detection on the transaction in parallel"""
+        fraud_start_time = time.time()
 
         if not self.graph_service.client:
             logger.warning("Graph client not available for fraud detection")
@@ -122,6 +134,12 @@ class FraudService:
                 self._store_fraud_results(edge_id, fraud_checks)
             except Exception as e:
                 logger.error(f"Error storing fraud results for transaction {txn_id}: {e}")
+
+        fraud_end_time = time.time()
+        fraud_latency_ms = (fraud_end_time - fraud_start_time) * 1000
+        
+        from services.performance_monitor import performance_monitor
+        performance_monitor.record_fraud_detection_latency(fraud_latency_ms, txn_id)
 
     def run_rt1_fraud_detection(self, edge_id, txn_id) -> tuple[bool, str, Dict[str, Any]]:
         """RT1 Fraud Detection: Check if transaction involves flagged accounts"""

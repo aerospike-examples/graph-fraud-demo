@@ -94,6 +94,7 @@ class TransactionGeneratorService:
         """Initialize workers and wait for them to be ready"""
         logger.info("Initializing transaction workers...")
         
+        # Cache account IDs if not already cached
         if len(self.account_vertices) < 1:
             if not self.cache_account_ids():
                 logger.warning("Failed to cache account IDs - transaction generation may fail")
@@ -131,6 +132,11 @@ class TransactionGeneratorService:
             self.account_vertices = []
             return False
 
+    def refresh_account_cache(self):
+        """Refresh the account cache (call after seeding database)"""
+        logger.info("Refreshing account cache...")
+        return self.cache_account_ids()
+
     # ----------------------------------------------------------------------------------------------------------
     # Transaction generation control
     # ----------------------------------------------------------------------------------------------------------
@@ -166,28 +172,34 @@ class TransactionGeneratorService:
             
         self.initialize_workers()
         
+        # Check if we have cached accounts (initialize_workers should have cached them)
         if len(self.account_vertices) < 1:
             logger.error("No accounts available for transaction generation - ensure database is seeded")
             return False
         
         logger.info(f"Using {len(self.account_vertices):,} cached accounts for transaction generation")
 
-        performance_monitor.reset_transaction_metrics()
-        self.generated_transactions.clear()
-        self.generation_rate = rate
-        self.is_running = True
-        self.transaction_counter = 0
-        self.start_time = start
-        
-        success = self.scheduler.start_generation(rate)
-        if not success:
+        try:
+            performance_monitor.reset_transaction_metrics()
+            self.generated_transactions.clear()
+            self.generation_rate = rate
+            self.is_running = True
+            self.transaction_counter = 0
+            self.start_time = start
+            
+            success = self.scheduler.start_generation(rate)
+            if not success:
+                self.is_running = False
+                return False
+            
+            logger.info(f"Starting transaction generation at {self.generation_rate} transactions/second")
+            stats_logger.info(f"START: Generation started at {self.generation_rate} txn/sec")
+
+            return True
+        except Exception as e:
+            logger.error(f"Error starting transaction generation: {e}")
             self.is_running = False
             return False
-        
-        logger.info(f"Starting transaction generation at {self.generation_rate} transactions/second")
-        stats_logger.info(f"START: Generation started at {self.generation_rate} txn/sec")
-
-        return True
 
     def stop_generation(self):
         """Stop transaction generation"""
@@ -231,6 +243,7 @@ class TransactionGeneratorService:
     def create_manual_transaction(self, from_id: str, to_id: str, amount: float, type: str = "transfer", gen_type: str = "MANUAL", force: bool = False) -> Dict[str, Any]:
         """Create a manual transaction between specified accounts"""
         try:
+            # Removed expensive logging for performance
 
             if not force:
                 try:
@@ -274,6 +287,7 @@ class TransactionGeneratorService:
                 .next())
             
             self.transaction_counter += 1
+            logger.info(f"{gen_type} transaction created: {txn_id} from {from_id} to {to_id} amount {amount}")
             
             return {
                 "success": True,
@@ -457,7 +471,7 @@ class TransactionWorker:
         self.fraud_service = fraud_service
         self.running = False
         self.executor = None
-        self._max_workers = 128
+        self._max_workers = 500  # Required for 600 TPS with 750ms execution time
 
 
     def start_workers(self):
@@ -468,11 +482,11 @@ class TransactionWorker:
     def stop_workers(self):
         self.running = False
         try:
-            self.executor.shutdown(wait=False, cancel_futures=True)
+            self.executor.shutdown(wait=True, cancel_futures=True)
             logger.info("Transaction workers stopped")
         except Exception as e:
             logger.warning(f"Error shutting down worker executor: {e}")
-            self.executor.shutdown(wait=False)
+            self.executor.shutdown(wait=True)
 
     def submit_transaction(self, task_data: Dict[str, Any]):
         if not self.running:
@@ -495,13 +509,10 @@ class TransactionWorker:
             db_latency_ms = (db_end_time - db_start_time) * 1000
             
             if result and result.get('success') and 'edge_id' in result and 'txn_id' in result:
-                fraud_start_time = time.time()
                 self.fraud_service.submit_fraud_detection_async(
                     result['edge_id'],
                     result['txn_id']
                 )
-                fraud_end_time = time.time()
-                fraud_latency_ms = (fraud_end_time - fraud_start_time) * 1000
 
                 end_time = time.time()
                 total_latency_ms = (end_time - scheduled_time) * 1000
@@ -511,16 +522,14 @@ class TransactionWorker:
                     total_latency_ms, 
                     execution_latency_ms,
                     queue_wait_ms,
-                    db_latency_ms,
-                    fraud_latency_ms
+                    db_latency_ms
                 )
                 
                 if total_latency_ms > 1000:
                     logger.info(f"HIGH LATENCY Transaction {result['txn_id']}: "
                               f"Total={total_latency_ms:.1f}ms "
                               f"(Queue={queue_wait_ms:.1f}ms, "
-                              f"DB={db_latency_ms:.1f}ms, "
-                              f"Fraud={fraud_latency_ms:.1f}ms)")
+                              f"DB={db_latency_ms:.1f}ms)")
                 elif queue_wait_ms > 500:
                     logger.info(f"HIGH QUEUE WAIT Transaction {result['txn_id']}: "
                               f"Queue={queue_wait_ms:.1f}ms, Total={total_latency_ms:.1f}ms")

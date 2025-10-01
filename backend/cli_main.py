@@ -7,10 +7,11 @@ from services.graph_service import GraphService
 from services.fraud_service import FraudService
 from services.transaction_generator import TransactionGeneratorService
 from services.performance_monitor import performance_monitor
-from logging_config import setup_logging
+from logging_config import setup_logging, get_logger, get_queue_stats, get_queue_contents, clear_queues, shutdown_logging
 
 def setup_cli_logging():
-    return setup_logging()
+    setup_logging()
+    return get_logger('fraud_detection.cli')
 
 logger = setup_cli_logging()
 
@@ -39,12 +40,31 @@ class FraudDetectionCLI:
         self.shutdown()
         sys.exit(0)
 
+    def _show_logging_stats(self):
+        """Show logging queue statistics"""
+    stats = get_queue_stats()
+    print("\nLogging Queue Status:")
+    for queue_name, queue_stats in stats.items():
+        utilization = (queue_stats['size'] / queue_stats['maxsize']) * 100
+        status = "FULL" if queue_stats['full'] else "OK"
+        print(f"  {queue_name:12} {queue_stats['size']:5,}/{queue_stats['maxsize']:5,} ({utilization:5.1f}%) [{status}]")
+
+    def _show_recent_logs(self, queue_name='transaction', count=10):
+        """Show recent log entries from a queue"""
+        contents = get_queue_contents(queue_name)
+        print(f"\nRecent {queue_name} logs ({len(contents)} total):")
+        for i, log_record in enumerate(contents[-count:]):
+            print(f"  {i+1}. {log_record.getMessage()}")
+
+
     def shutdown(self):
         logger.info("Starting graceful shutdown...")
         self.transaction_generator.stop_generation()
+        self.fraud_service.shutdown()
         self.graph_service.close()
-        time.sleep(2)
-        logger.info("Application shutdown complete")
+        shutdown_logging()
+        time.sleep(1)
+        print("Application shutdown complete")
 
     def run(self):
         print("\nFraud Detection CLI Ready!")
@@ -133,10 +153,19 @@ class FraudDetectionCLI:
             os.system('cls' if os.name == 'nt' else 'clear')
         elif cmd == "clear-txns":
             self._clear_transactions()
+            print("The System is now Bulkloading the Vertices back in")
         elif cmd == "clear-logs":
             self._clear_logs()
         elif cmd == "logs":
             self._show_log_info()
+        elif cmd == "log" and len(args) > 0:
+            if args[0] == "stats":
+                self._show_logging_stats()
+            elif args[0] == "recent":
+                queue_name = args[1] if len(args) > 1 else "transaction"
+                self._show_recent_logs(queue_name)
+            else:
+                print(f"Unknown log command: {args[0]}. Use 'log stats' or 'log recent'")
         elif cmd in ["quit", "exit"]:
             print("Exiting...")
             self.shutdown()
@@ -183,18 +212,57 @@ Examples:
 
     def _show_log_info(self):
         print("""
-Log Files Location: logs/
-  all.log             - All application logs
-  errors.log          - Error logs only
-  graph.log           - Graph database logs
-  fraud_transactions.log - Fraud transaction logs
-  normal_transactions.log - Normal transaction logs
-  statistics.log      - Statistics logs
+Logging System: Queue-based with file output
+  Files written to:   logs/ directory
+  - all.log           All application logs (50MB, 3 backups)
+  - transactions.log  High-volume transaction logs (100MB, 5 backups)
+  - stats.log         Performance statistics (10MB, 2 backups)
 
-To monitor logs in real-time:
-  tail -f logs/all.log
-  tail -f logs/errors.log
+Commands:
+  log stats           - Show queue statistics
+  log recent          - Show recent log entries
+  clear-logs          - Clear in-memory log queues
         """)
+
+    def _show_logging_stats(self):
+        """Show logging queue statistics"""
+        try:
+            stats = get_queue_stats()
+            print("\nLogging Queue Statistics:")
+            print("=" * 40)
+            for queue_name, queue_stats in stats.items():
+                utilization = (queue_stats['size'] / queue_stats['maxsize']) * 100 if queue_stats['maxsize'] > 0 else 0
+                status = "FULL" if queue_stats['full'] else "OK"
+                print(f"  {queue_name.title():12} {queue_stats['size']:5,}/{queue_stats['maxsize']:5,} ({utilization:5.1f}%) [{status}]")
+                
+            total_queued = sum(q['size'] for q in stats.values())
+            print(f"\nTotal Queued Messages: {total_queued:,}")
+            
+        except Exception as e:
+            print(f"Error getting logging stats: {e}")
+
+    def _show_recent_logs(self, queue_name='transaction', count=10):
+        """Show recent log entries from a queue"""
+        try:
+            contents = get_queue_contents(queue_name)
+            print(f"\nRecent {queue_name} logs ({len(contents)} total, showing last {count}):")
+            print("=" * 60)
+            
+            if not contents:
+                print("  No log entries found")
+                return
+                
+            for i, log_record in enumerate(contents[-count:]):
+                try:
+                    timestamp = log_record.created
+                    level = log_record.levelname
+                    message = log_record.getMessage()
+                    print(f"  {i+1:2d}. [{level:5}] {message[:80]}{'...' if len(message) > 80 else ''}")
+                except Exception as e:
+                    print(f"  {i+1:2d}. [ERROR] Could not format log record: {e}")
+                    
+        except Exception as e:
+            print(f"Error getting recent logs: {e}")
 
     def _show_indexes(self):
         try:
@@ -450,19 +518,18 @@ Latency Breakdown:
         success_rate = stats['success_rate']
         queue_size = stats['queue_size']
 
-        # Analyze latency components
         if avg_queue_wait > 0:
             queue_wait_pct = (avg_queue_wait / avg_total) * 100
             db_latency_pct = (avg_db_latency / avg_total) * 100
-            fraud_latency_pct = (avg_fraud_latency / avg_total) * 100
+            fraud_latency_pct = (avg_fraud_latency / avg_total) * 100 if avg_fraud_latency > 0 else 0
             
             print(f"LATENCY BREAKDOWN ANALYSIS:")
             print(f"   Queue Wait:      {avg_queue_wait:.1f}ms ({queue_wait_pct:.1f}%)")
             print(f"   DB Operations:   {avg_db_latency:.1f}ms ({db_latency_pct:.1f}%)")
-            print(f"   Fraud Detection: {avg_fraud_latency:.1f}ms ({fraud_latency_pct:.1f}%)")
+            if avg_fraud_latency > 0:
+                print(f"   Fraud Detection: {avg_fraud_latency:.1f}ms ({fraud_latency_pct:.1f}%)")
             print()
 
-        # High queue wait time
         if avg_queue_wait > 100:
             print(f"HIGH QUEUE WAIT TIME ({avg_queue_wait:.1f}ms)")
             print("   - Workers can't keep up with scheduling rate")
@@ -471,7 +538,6 @@ Latency Breakdown:
             print("   - Consider reducing target TPS")
             print()
 
-        # High DB latency
         if avg_db_latency > 200:
             print(f"HIGH DATABASE LATENCY ({avg_db_latency:.1f}ms)")
             print("   - Database operations are slow")
@@ -481,16 +547,14 @@ Latency Breakdown:
             print("   - Check if DNS resolution is cached")
             print()
 
-        # High fraud detection latency
         if avg_fraud_latency > 150:
             print(f"HIGH FRAUD DETECTION LATENCY ({avg_fraud_latency:.1f}ms)")
-            print("   - Fraud detection queries are slow")
-            print("   - Consider optimizing RT1/RT2/RT3 queries")
-            print("   - Check fraud detection caching")
-            print("   - Review fraud detection thread pool size")
+            print("   - RT1/RT2/RT3 queries are slow")
+            print("   - Consider optimizing fraud detection queries")
+            print("   - Check fraud detection thread pool size")
+            print("   - Review graph indexes for fraud queries")
             print()
 
-        # High execution time
         if avg_exec > 100:
             print(f"HIGH EXECUTION TIME ({avg_exec:.1f}ms)")
             print("   - Database queries are slow")
@@ -498,21 +562,18 @@ Latency Breakdown:
             print("   - Consider adding database indexes")
             print("   - Enable more caching")
 
-        # Low success rate
         if success_rate < 95:
             print(f"LOW SUCCESS RATE ({success_rate:.1f}%)")
             print("   - Workers are timing out or failing")
             print("   - Check database connectivity")
             print("   - Review error logs")
 
-        # Growing queue
         if queue_size > 100:
             print(f"LARGE QUEUE SIZE ({queue_size})")
             print("   - Workers can't keep up with scheduling")
             print("   - Increase worker pool size")
             print("   - Reduce target TPS")
 
-        # CPU bottleneck
         cpu_usage = psutil.cpu_percent()
         if cpu_usage > 80:
             print(f"HIGH CPU USAGE ({cpu_usage:.1f}%)")
@@ -520,7 +581,6 @@ Latency Breakdown:
             print("   - Reduce worker count")
             print("   - Optimize query complexity")
 
-        # Memory bottleneck
         memory_usage = psutil.virtual_memory().percent
         if memory_usage > 85:
             print(f"HIGH MEMORY USAGE ({memory_usage:.1f}%)")
@@ -630,47 +690,43 @@ Generator Status: {status}
             print("Transaction clearing cancelled.")
 
     def _clear_logs(self):
-        import glob
+        try:
+            stats = get_queue_stats()
+            if not stats:
+                print("No logging queues found.")
+                return
 
-        log_dir = "logs"
-        if not os.path.exists(log_dir):
-            print("No logs directory found.")
-            return
+            total_messages = sum(q['size'] for q in stats.values())
+            if total_messages == 0:
+                print("All logging queues are already empty.")
+                return
 
-        log_files = glob.glob(os.path.join(log_dir, "*.log"))
+            print(f"Warning: This will clear all messages from {len(stats)} logging queues:")
+            for queue_name, queue_stats in stats.items():
+                print(f"  - {queue_name.title()} Queue: {queue_stats['size']:,} messages")
 
-        if not log_files:
-            print("No log files found to clear.")
-            return
+            print(f"\nTotal messages to clear: {total_messages:,}")
+            confirm = input("\nAre you sure you want to clear all log queues? (yes/no): ").strip().lower()
 
-        print(f"Warning: This will clear the contents of {len(log_files)} log files:")
-        for log_file in log_files:
-            file_size = os.path.getsize(log_file) if os.path.exists(log_file) else 0
-            size_str = f"({file_size:,} bytes)" if file_size > 0 else "(empty)"
-            print(f"  - {os.path.basename(log_file)} {size_str}")
-
-        confirm = input("\nAre you sure you want to clear all log files? (yes/no): ").strip().lower()
-
-        if confirm in ['yes', 'y']:
-            print("Clearing log files...")
-            cleared_count = 0
-            failed_count = 0
-
-            for log_file in log_files:
-                try:
-                    with open(log_file, 'w') as f:
-                        pass
-                    cleared_count += 1
-                    print(f"  Cleared: {os.path.basename(log_file)}")
-                except Exception as e:
-                    failed_count += 1
-                    print(f"  Failed to clear {os.path.basename(log_file)}: {e}")
-
-            print(f"\nLog clearing complete: {cleared_count} cleared, {failed_count} failed")
-            if cleared_count > 0:
-                logger.info(f"Cleared {cleared_count} log files via CLI")
-        else:
-            print("Log clearing cancelled.")
+            if confirm in ['yes', 'y']:
+                print("Clearing log queues...")
+                clear_queues()
+                
+                new_stats = get_queue_stats()
+                remaining_messages = sum(q['size'] for q in new_stats.values())
+                cleared_messages = total_messages - remaining_messages
+                
+                print(f"Log clearing complete: {cleared_messages:,} messages cleared")
+                if remaining_messages > 0:
+                    print(f"Warning: {remaining_messages:,} messages remain (may have been added during clearing)")
+                
+                logger.info(f"Cleared {cleared_messages:,} log messages via CLI")
+            else:
+                print("Log clearing cancelled.")
+                
+        except Exception as e:
+            print(f"Error clearing logs: {e}")
+            logger.error(f"Error clearing logs via CLI: {e}")
 
 def main():
     try:

@@ -13,7 +13,8 @@ from gremlin_python.process.graph_traversal import __, constant
 from gremlin_python.process.traversal import P, T, Order, containing, Scope
 
 # Get logger for graph service
-logger = logging.getLogger('fraud_detection.graph')
+from logging_config import get_logger
+logger = get_logger('fraud_detection.graph')
 
 class GraphService:
     def __init__(self, host: str = os.environ.get('GRAPH_HOST_ADDRESS') or 'localhost', port: int = 8182):
@@ -905,7 +906,7 @@ class GraphService:
                 edges_path = "/data/graph_csv/edges"
             
             logger.info(f"Starting bulk load with vertices path: {vertices_path}, edges path: {edges_path}")
-            
+            print(f"Starting bulk load with vertices path: {vertices_path}, edges path: {edges_path}")
             bulk_load_result = {}
             try:
                 # Execute bulk load using Aerospike Graph loader

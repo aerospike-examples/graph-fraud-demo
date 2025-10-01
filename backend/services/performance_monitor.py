@@ -16,7 +16,8 @@ from collections import deque
 import statistics
 
 # Setup logging
-logger = logging.getLogger('fraud_detection.performance')
+from logging_config import get_logger
+logger = get_logger('fraud_detection.performance')
 
 class PerformanceMonitor:
     """Performance monitoring for fraud detection methods"""
@@ -169,10 +170,10 @@ class PerformanceMonitor:
         )
     
     def record_transaction_completed_detailed(self, total_latency_ms: float, execution_latency_ms: float, 
-                                            queue_wait_ms: float, db_latency_ms: float, fraud_latency_ms: float):
+                                            queue_wait_ms: float, db_latency_ms: float):
         self.background_executor.submit(
             self._record_transaction_completed_detailed_background,
-            total_latency_ms, execution_latency_ms, queue_wait_ms, db_latency_ms, fraud_latency_ms
+            total_latency_ms, execution_latency_ms, queue_wait_ms, db_latency_ms
         )
     
     def _record_transaction_completed_background(self, latency_ms: float, execution_latency_ms: float = None):
@@ -194,7 +195,7 @@ class PerformanceMonitor:
         self._update_current_tps()  # Now safe since single-threaded
     
     def _record_transaction_completed_detailed_background(self, total_latency_ms: float, execution_latency_ms: float,
-                                                        queue_wait_ms: float, db_latency_ms: float, fraud_latency_ms: float):
+                                                        queue_wait_ms: float, db_latency_ms: float):
         """Background processing for detailed transaction completion - no locks needed (single thread)"""
         metric = {
             'timestamp': datetime.now(),
@@ -202,7 +203,6 @@ class PerformanceMonitor:
             'execution_latency_ms': execution_latency_ms,
             'queue_wait_ms': queue_wait_ms,
             'db_latency_ms': db_latency_ms,
-            'fraud_latency_ms': fraud_latency_ms,
             'success': True,
             'method': 'TRANSACTION_GENERATION_DETAILED'
         }
@@ -213,7 +213,6 @@ class PerformanceMonitor:
         self.execution_latencies.append(execution_latency_ms)
         self.queue_wait_latencies.append(queue_wait_ms)
         self.db_latencies.append(db_latency_ms)
-        self.fraud_latencies.append(fraud_latency_ms)
         self.completion_times.append(time.time())
         self._update_current_tps()
 
@@ -224,6 +223,20 @@ class PerformanceMonitor:
     def _record_transaction_failed_background(self):
         """Background processing for transaction failure - no locks needed"""
         self.total_failed += 1
+
+    def record_fraud_detection_latency(self, fraud_latency_ms: float, txn_id: str = None):
+        """Record fraud detection latency - NON-BLOCKING"""
+        self.background_executor.submit(
+            self._record_fraud_detection_latency_background,
+            fraud_latency_ms, txn_id
+        )
+    
+    def _record_fraud_detection_latency_background(self, fraud_latency_ms: float, txn_id: str = None):
+        """Background processing for fraud detection latency - no locks needed"""
+        self.fraud_latencies.append(fraud_latency_ms)
+        
+        if fraud_latency_ms > 500:
+            logger.info(f"HIGH FRAUD LATENCY {txn_id or 'Unknown'}: {fraud_latency_ms:.1f}ms")
 
     def _update_current_tps(self):
         """Update current TPS based on recent completions"""
@@ -285,7 +298,6 @@ class PerformanceMonitor:
             # Calculate actual TPS based on completed transactions and elapsed time
             actual_tps = (self.total_completed / max(0.01, self.elapsed_time)) if self.elapsed_time > 0 else 0.0
 
-            # Calculate detailed latency statistics
             avg_queue_wait = statistics.mean(self.queue_wait_latencies) if self.queue_wait_latencies else 0.0
             min_queue_wait = min(self.queue_wait_latencies) if self.queue_wait_latencies else 0.0
             max_queue_wait = max(self.queue_wait_latencies) if self.queue_wait_latencies else 0.0
@@ -315,7 +327,6 @@ class PerformanceMonitor:
                 'min_exec_latency_ms': min_exec_latency,
                 'max_exec_latency_ms': max_exec_latency,
                 'success_rate': (self.total_completed / max(1, self.total_scheduled)) * 100,
-                # Detailed latency breakdown
                 'avg_queue_wait_ms': avg_queue_wait,
                 'min_queue_wait_ms': min_queue_wait,
                 'max_queue_wait_ms': max_queue_wait,
@@ -442,7 +453,6 @@ class PerformanceMonitor:
             self.rt3_success = 0
             self.rt3_failure = 0
             
-            # Reset transaction generation metrics
             self.transaction_metrics.clear()
             self.total_scheduled = 0
             self.total_completed = 0
@@ -450,6 +460,9 @@ class PerformanceMonitor:
             self.completion_times.clear()
             self.latencies.clear()
             self.execution_latencies.clear()
+            self.queue_wait_latencies.clear()
+            self.db_latencies.clear()
+            self.fraud_latencies.clear()
             self.start_time = None
             self.elapsed_time = 0.0
             self.current_tps = 0.0
