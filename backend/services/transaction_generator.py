@@ -326,7 +326,7 @@ class TransactionGeneratorService:
     def _validate_account_exists(self, account_id: str) -> bool:
         """Validate that an account exists in the graph database"""
         try:
-            if self.graph_service.client:
+            if self.graph_service.main_client:
                 accounts = self.graph_service.main_client.V(str(account_id)).to_list()
                 return len(accounts) > 0
             return False
