@@ -91,7 +91,7 @@ class FraudService:
                     details.append(json.dumps(this_details))
                     status = "blocked" if this_status == "blocked" else status
             
-            (self.graph_service.client.E(edge_id)
+            (self.graph_service.main_client.E(edge_id)
                 .property("is_fraud", True)
                 .property("fraud_score", fraud_score)
                 .property("fraud_status", status)
@@ -110,7 +110,7 @@ class FraudService:
         """Run fraud detection on the transaction in parallel"""
         fraud_start_time = time.time()
 
-        if not self.graph_service.client:
+        if not self.graph_service.fraud_client:
             logger.warning("Graph client not available for fraud detection")
             return
 
@@ -145,7 +145,7 @@ class FraudService:
         """RT1 Fraud Detection: Check if transaction involves flagged accounts"""
         start_time = time.time()
         try:
-            connections = (self.graph_service.client.E(edge_id)
+            connections = (self.graph_service.fraud_client.E(edge_id)
                 .project("sender", "receiver")
                 .by(__.outV().has("fraud_flag", True).id_())
                 .by(__.inV().has("fraud_flag", True).id_())
@@ -205,7 +205,7 @@ class FraudService:
         """
         start_time = time.time()
         try:
-            connections = (self.graph_service.client.E(edge_id)
+            connections = (self.graph_service.fraud_client.E(edge_id)
                 .project("sender", "receiver")
                 .by(__.outV()
                         .bothE("TRANSACTS").bothV()
@@ -273,7 +273,7 @@ class FraudService:
 
         start_time = time.time()
         try:
-            results = (self.graph_service.client.E(edge_id)
+            results = (self.graph_service.fraud_client.E(edge_id)
                 .project("sender", "receiver", "accounts", "devices")
                 .by(__.outV().in_("OWNS").id_())
                 .by(__.inV().in_("OWNS").id_())

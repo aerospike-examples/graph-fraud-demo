@@ -115,7 +115,7 @@ class TransactionGeneratorService:
             logger.info("Caching account IDs from database...")
             start_time = time.time()
             
-            self.account_vertices = self.graph_service.client.V().has_label("account").id_().to_list()
+            self.account_vertices = self.graph_service.main_client.V().has_label("account").id_().to_list()
             
             cache_time = (time.time() - start_time) * 1000
             account_count = len(self.account_vertices)
@@ -247,7 +247,7 @@ class TransactionGeneratorService:
 
             if not force:
                 try:
-                    account_check = (self.graph_service.client.V(from_id, to_id)
+                    account_check = (self.graph_service.main_client.V(from_id, to_id)
                         .project("from_exists", "to_exists")
                         .by(__.V(from_id).count())
                         .by(__.V(to_id).count())
@@ -271,7 +271,7 @@ class TransactionGeneratorService:
 
             # Create transaction
             txn_id = str(uuid.uuid4())
-            edge_id = (self.graph_service.client.V(from_id)
+            edge_id = (self.graph_service.main_client.V(from_id)
                 .addE("TRANSACTS")
                 .to(__.V(to_id))
                 .property("txn_id", txn_id)
@@ -327,7 +327,7 @@ class TransactionGeneratorService:
         """Validate that an account exists in the graph database"""
         try:
             if self.graph_service.client:
-                accounts = self.graph_service.client.V(str(account_id)).to_list()
+                accounts = self.graph_service.main_client.V(str(account_id)).to_list()
                 return len(accounts) > 0
             return False
         

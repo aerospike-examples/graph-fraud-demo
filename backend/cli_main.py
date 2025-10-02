@@ -494,7 +494,7 @@ Latency Breakdown:
             """)
 
         try:
-            if hasattr(self.graph_service, 'client') and self.graph_service.client:
+            if hasattr(self.graph_service, 'client') and self.graph_service.main_client and self.graph_service.fraud_client:
                 print("Database Connection:     ACTIVE")
             else:
                 print("Database Connection:     INACTIVE")

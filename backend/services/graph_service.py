@@ -20,8 +20,10 @@ class GraphService:
     def __init__(self, host: str = os.environ.get('GRAPH_HOST_ADDRESS') or 'localhost', port: int = 8182):
         self.host = host
         self.port = port
-        self.client = None
-        self.connection = None
+        self.main_client = None
+        self.fraud_client = None
+        self.main_connection = None
+        self.fraud_connection = None
         self.users_data = []
     
 
@@ -37,14 +39,20 @@ class GraphService:
             logger.info(f" Connecting to Aerospike Graph: {url}")
             
             # We size up the gremlin pool here to help with IO related issues
-            self.connection = DriverRemoteConnection(url, "g", transport_factory=lambda:AiohttpTransport(call_from_event_loop=False),
-                                                     pool_size=100, max_workers=100, timeout=10, read_timeout=5)
-            self.client = traversal().with_remote(self.connection)
+            self.main_connection = DriverRemoteConnection(url, "g", transport_factory=lambda:AiohttpTransport(call_from_event_loop=False),
+                                                     pool_size=128, max_workers=128, timeout=10, read_timeout=5)
+            self.fraud_connection = DriverRemoteConnection(url, "g", transport_factory=lambda:AiohttpTransport(call_from_event_loop=False),
+                                                     pool_size=128, max_workers=128, timeout=10, read_timeout=5)
+            self.main_client = traversal().with_remote(self.main_connection)
+            self.fraud_client = traversal().with_remote(self.fraud_connection)
             
             # Test connection using the same method as the sample
-            test_result = self.client.inject(0).next()
-            if test_result != 0:
-                raise Exception("Failed to connect to graph instance")
+            test_m_result = self.main_client.inject(0).next()
+            test_f_result = self.fraud_client.inject(0).next()
+            if test_m_result != 0:
+                raise Exception("Failed to connect to graph instance on Main Connection")
+            if test_f_result != 0:
+                raise Exception("Failed to connect to graph instance on Fraud Connection")
             
             logger.info(" Connected to Aerospike Graph Service")
             return True
@@ -52,15 +60,23 @@ class GraphService:
         except Exception as e:
             logger.error(f" Could not connect to Aerospike Graph: {e}")
             logger.error("Graph database connection is required. Please ensure Aerospike Graph is running on port 8182")
-            self.client = None
-            self.connection = None
+            self.fraud_client = None
+            self.main_client = None
+            self.main_connection = None
+            self.fraud_connection = None
             raise Exception(f"Failed to connect to Aerospike Graph: {e}")
 
     def close(self):
         """Synchronous close of graph connection"""
-        if self.connection:
+        if self.main_connection :
             try:
-                self.connection.close()
+                self.main_connection.close()
+                logger.info(" Disconnected from Aerospike Graph")
+            except Exception as e:
+                logger.warning(f"  Error closing connection: {e}")
+        if self.fraud_connection :
+            try:
+                self.fraud_connection.close()
                 logger.info(" Disconnected from Aerospike Graph")
             except Exception as e:
                 logger.warning(f"  Error closing connection: {e}")
@@ -72,19 +88,19 @@ class GraphService:
 
 
     def get_vertex(self, user_id: str):
-        return self.client.V(user_id).to_list()
+        return self.main_client.V(user_id).to_list()
     
     def get_out_edge(self, vertex, edge_label: str):
-        return self.client.V(vertex).out(edge_label).to_list()
+        return self.main_client.V(vertex).out(edge_label).to_list()
     
     def get_out_out_edge(self, vertex, edge_label1: str, edge_label2: str):
-        return self.client.V(vertex).out(edge_label1).out(edge_label2).to_list()
+        return self.main_client.V(vertex).out(edge_label1).out(edge_label2).to_list()
     
     def get_out_in_edge(self, vertex, edge_label1: str, edge_label2: str):
-        return self.client.V(vertex).out(edge_label1).in_(edge_label2).to_list()
+        return self.main_client.V(vertex).out(edge_label1).in_(edge_label2).to_list()
     
     def get_in_edge(self, vertex, edge_label: str):
-        return self.client.V(vertex).in_(edge_label).to_list()
+        return self.main_client.V(vertex).in_(edge_label).to_list()
     
     def get_property_value(self, vertex, key, default=None):
         """Helper function to get property value from vertex"""
@@ -108,12 +124,12 @@ class GraphService:
     def get_graph_summary(self) -> Dict[str, Any]:
         """Get graph summary using Aerospike Graph admin API - reusable method"""
         try:
-            if not self.client:
+            if not self.main_client:
                 logger.warning("No graph client available for summary")
                 return {}
                 
             logger.info("Getting graph summary using Aerospike Graph admin API")
-            summary_result = self.client.call("aerospike.graph.admin.metadata.summary").next()
+            summary_result = self.main_client.call("aerospike.graph.admin.metadata.summary").next()
             logger.debug(f"Raw graph summary result: {summary_result}")
             
             # Parse and structure the summary data
@@ -139,7 +155,7 @@ class GraphService:
     def get_dashboard_stats(self) -> Dict[str, Any]:
         """Get dashboard statistics using Aerospike Graph summary API"""
         try:
-            if self.client:
+            if self.main_client:
                 # Get graph summary using the reusable method
                 graph_summary = self.get_graph_summary()
                 if graph_summary:
@@ -161,7 +177,7 @@ class GraphService:
 
                 if txns > 0:
                     try:
-                        txn_stats = (self.client.E().hasLabel('TRANSACTS')
+                        txn_stats = (self.main_client.E().hasLabel('TRANSACTS')
                                   .group('m').by(__.constant('flagged')).by(__.has('fraud_score', P.gt(0)).count())
                                   .group('m').by(__.constant('amount')).by(__.values('amount').sum_())
                                   .cap('m').next())
@@ -207,11 +223,11 @@ class GraphService:
     def search(self, type: str, page: int, page_size: int | None, order_by: str, order: str, query: str | None) -> Dict[str, Any]:
         """Get paginated list of all users or transactions"""
         try:
-            if self.client:
+            if self.main_client:
                 start_idx = (page - 1) * page_size
                 end_idx = start_idx + page_size if page_size else -1
                 # Query real graph using run_in_executor to avoid event loop conflict
-                graph_query = self.client.V().has_label("user") if type == 'user' else self.client.E().has_label("TRANSACTS")
+                graph_query = self.main_client.V().has_label("user") if type == 'user' else self.main_client.E().has_label("TRANSACTS")
                 if query:
                     if type == 'user':
                         graph_query = graph_query.or_(
@@ -271,8 +287,8 @@ class GraphService:
     def get_user_stats(self) -> Dict[str, Any]:
         """Get user statistics"""
         try:
-            if self.client:
-                stats = self.client.V().has_label("user").values('risk_score').to_list()
+            if self.main_client:
+                stats = self.main_client.V().has_label("user").values('risk_score').to_list()
                 return {
                     'total_users': len(stats),
                     'total_low_risk': len(list(filter(lambda x: x < 25, stats))),
@@ -296,11 +312,11 @@ class GraphService:
     def get_user_summary(self, user_id: str) -> Dict[str, Any]:
         """Get user's profile, connected accounts, and transaction summary"""
         try:
-            if self.client:
+            if self.main_client:
                 logger.info(f"Getting user summary for user {user_id}")
                 # Get user vertex and properties
                 user_summary = (
-                    self.client.V(user_id)
+                    self.main_client.V(user_id)
                         .project("user", "accounts", "txns", "total_txns", "total_sent", "total_recd", "devices", "connected_users")
                         .by(__.elementMap())
                         .by(__.out("OWNS").elementMap().fold())
@@ -334,19 +350,19 @@ class GraphService:
             return None
 
     def seed_sample_data(self):
-        self.client.V().drop().iterate()
+        self.main_client.V().drop().iterate()
         vertices_path = "/data/graph_csv/vertices"
         edges_path = "/data/graph_csv/edges"
 
         logger.info("Bulk load Starting")
-        (self.client.with_("evaluationTimeout", 20000)
+        (self.main_client.with_("evaluationTimeout", 20000)
                    .call("aerospike.graphloader.admin.bulk-load.load")
                    .with_("aerospike.graphloader.vertices", vertices_path)
                    .with_("aerospike.graphloader.edges", edges_path)
                    .with_("incremental_load", False).next())
         logger.info("Bulk load status:")
         while True:
-            status = self.client.call("aerospike.graphloader.admin.bulk-load.status").next()
+            status = self.main_client.call("aerospike.graphloader.admin.bulk-load.status").next()
             logger.info(status)
             if status.get("complete", True):
                 logger.info("Bulk load data seeding completed!")
@@ -398,8 +414,8 @@ class GraphService:
     def get_transaction_stats(self) -> Dict[str, Any]:
         """Get transaction stats"""
         try:
-            if self.client:
-                stats = (self.client.E()
+            if self.main_client:
+                stats = (self.main_client.E()
                     .has_label("TRANSACTS")
                     .fold()
                     .project("total", "blocked", "review")
@@ -434,8 +450,8 @@ class GraphService:
     def get_transaction_summary(self, txn_edge_id: str) -> Optional[Dict[str, Any]]:
         """Get detailed transaction information"""
         try:
-            if self.client:
-                txn_detail = (self.client.E(txn_edge_id)
+            if self.main_client:
+                txn_detail = (self.main_client.E(txn_edge_id)
                     .project("txn", "src", "dest")
                     .by(__.elementMap())
                     .by(__.outV()
@@ -464,13 +480,13 @@ class GraphService:
 
 
     def drop_all_transactions(self):
-        if self.client:
+        if self.main_client:
             try:
-                self.client.with_('evaluationTimeout', 0).E().has_label("TRANSACTS").drop().iterate()
+                self.main_client.with_('evaluationTimeout', 0).E().has_label("TRANSACTS").drop().iterate()
                 
                 edges = 1
                 while edges > 0:
-                    edges = self.client.E().has_label("TRANSACTS").count().next()
+                    edges = self.main_client.E().has_label("TRANSACTS").count().next()
                     time.sleep(.5)
                 
                 return True
@@ -482,9 +498,9 @@ class GraphService:
         return False
 
     def drop_all_transactions_large(self):
-        if self.client:
+        if self.main_client:
             try:
-                self.client.with_('evaluationTimeout', 0).V().drop().iterate()
+                self.main_client.with_('evaluationTimeout', 0).V().drop().iterate()
                 self.bulk_load_csv_data()
                 return True
 
@@ -502,8 +518,8 @@ class GraphService:
     def get_all_accounts(self) -> List[Dict[str, Any]]:
         """Get all accounts with their associated user information"""
         try:
-            if self.client:
-                accounts = self.client.V().has_label("account").project("account_id", "account_type").by(T.id).by("type").to_list()
+            if self.main_client:
+                accounts = self.main_client.V().has_label("account").project("account_id", "account_type").by(T.id).by("type").to_list()
                 logger.info(f"Found {len(accounts)} account vertices")
                 return accounts
             else:
@@ -516,7 +532,7 @@ class GraphService:
     async def flag_account(self, account_id: str, reason: str) -> bool:
         """Flag an account as fraudulent"""
         try:
-            if not self.client:
+            if not self.main_client:
                 raise Exception("Graph client not available")
             
             loop = asyncio.get_event_loop()
@@ -524,12 +540,12 @@ class GraphService:
             def flag_account_sync():
                 try:
                     # Find and update account
-                    accounts = self.client.V().has_label("account").has("account_id", account_id).to_list()
+                    accounts = self.main_client.V().has_label("account").has("account_id", account_id).to_list()
                     if not accounts:
                         return False
                     
                     account_vertex = accounts[0]
-                    self.client.V(account_vertex).property("fraud_flag", True).property("flagReason", reason).property("flagTimestamp", datetime.now().isoformat()).iterate()
+                    self.main_client.V(account_vertex).property("fraud_flag", True).property("flagReason", reason).property("flagTimestamp", datetime.now().isoformat()).iterate()
                     
                     logger.info(f"Account {account_id} flagged as fraudulent: {reason}")
                     return True
@@ -547,7 +563,7 @@ class GraphService:
     async def unflag_account(self, account_id: str) -> bool:
         """Remove fraud flag from an account"""
         try:
-            if not self.client:
+            if not self.main_client:
                 raise Exception("Graph client not available")
             
             loop = asyncio.get_event_loop()
@@ -555,12 +571,12 @@ class GraphService:
             def unflag_account_sync():
                 try:
                     # Find and update account
-                    accounts = self.client.V().has_label("account").has("account_id", account_id).to_list()
+                    accounts = self.main_client.V().has_label("account").has("account_id", account_id).to_list()
                     if not accounts:
                         return False
                     
                     account_vertex = accounts[0]
-                    self.client.V(account_vertex).property("fraud_flag", False).property("unflagTimestamp", datetime.now().isoformat()).iterate()
+                    self.main_client.V(account_vertex).property("fraud_flag", False).property("unflagTimestamp", datetime.now().isoformat()).iterate()
                     
                     logger.info(f" Account {account_id} unflagged")
                     return True
@@ -578,7 +594,7 @@ class GraphService:
     async def get_flagged_accounts(self) -> List[Dict[str, Any]]:
         """Get list of all flagged accounts"""
         try:
-            if not self.client:
+            if not self.main_client:
                 raise Exception("Graph client not available")
             
             loop = asyncio.get_event_loop()
@@ -586,11 +602,11 @@ class GraphService:
             def get_flagged_sync():
                 try:
                     flagged_accounts = []
-                    accounts = self.client.V().has_label("account").has("fraud_flag", True).to_list()
+                    accounts = self.main_client.V().has_label("account").has("fraud_flag", True).to_list()
                     
                     for account_vertex in accounts:
                         account_props = {}
-                        props = self.client.V(account_vertex).value_map().next()
+                        props = self.main_client.V(account_vertex).value_map().next()
                         for key, value in props.items():
                             if isinstance(value, list) and len(value) > 0:
                                 account_props[key] = value[0]
@@ -621,7 +637,7 @@ class GraphService:
     async def get_flagged_transactions_paginated(self, page: int, page_size: int) -> Dict[str, Any]:
         """Get paginated list of transactions that have been flagged by fraud detection"""
         try:
-            if not self.client:
+            if not self.main_client:
                 raise Exception("Graph client not available")
             
             loop = asyncio.get_event_loop()
@@ -629,7 +645,7 @@ class GraphService:
             def get_flagged_transactions_sync():
                 try:
                     # Get all transactions that have fraud_status property (indicating fraud detection was performed)
-                    flagged_transaction_vertices = self.client.V().has_label("transaction").has("fraud_status").to_list()
+                    flagged_transaction_vertices = self.main_client.V().has_label("transaction").has("fraud_status").to_list()
                     
                     # Paginate
                     start_idx = (page - 1) * page_size
@@ -640,7 +656,7 @@ class GraphService:
                     for transaction_vertex in paginated_transactions:
                         # Get transaction properties
                         transaction_props = {}
-                        props = self.client.V(transaction_vertex).value_map().next()
+                        props = self.main_client.V(transaction_vertex).value_map().next()
                         for key, value in props.items():
                             if isinstance(value, list) and len(value) > 0:
                                 transaction_props[key] = value[0]
@@ -650,10 +666,10 @@ class GraphService:
                         # Get sender account
                         sender_id = 'Unknown'
                         try:
-                            sender_account_vertices = self.client.V(transaction_vertex).in_("TRANSFERS_TO").to_list()
+                            sender_account_vertices = self.main_client.V(transaction_vertex).in_("TRANSFERS_TO").to_list()
                             if sender_account_vertices:
                                 sender_account_props = {}
-                                sender_acc_prop_map = self.client.V(sender_account_vertices[0]).value_map().next()
+                                sender_acc_prop_map = self.main_client.V(sender_account_vertices[0]).value_map().next()
                                 for key, value in sender_acc_prop_map.items():
                                     if isinstance(value, list) and len(value) > 0:
                                         sender_account_props[key] = value[0]
@@ -666,10 +682,10 @@ class GraphService:
                         # Get receiver account
                         receiver_id = 'Unknown'
                         try:
-                            receiver_account_vertices = self.client.V(transaction_vertex).out("TRANSFERS_FROM").to_list()
+                            receiver_account_vertices = self.main_client.V(transaction_vertex).out("TRANSFERS_FROM").to_list()
                             if receiver_account_vertices:
                                 receiver_account_props = {}
-                                receiver_acc_prop_map = self.client.V(receiver_account_vertices[0]).value_map().next()
+                                receiver_acc_prop_map = self.main_client.V(receiver_account_vertices[0]).value_map().next()
                                 for key, value in receiver_acc_prop_map.items():
                                     if isinstance(value, list) and len(value) > 0:
                                         receiver_account_props[key] = value[0]
@@ -741,7 +757,7 @@ class GraphService:
     async def create_transfer_relationship(self, from_account_id: str, to_account_id: str, amount: float) -> bool:
         """Create a TRANSFERS_TO edge between accounts"""
         try:
-            if not self.client:
+            if not self.main_client:
                 raise Exception("Graph client not available")
             
             loop = asyncio.get_event_loop()
@@ -749,8 +765,8 @@ class GraphService:
             def create_relationship_sync():
                 try:
                     # Find both accounts
-                    from_accounts = self.client.V().has_label("account").has("account_id", from_account_id).to_list()
-                    to_accounts = self.client.V().has_label("account").has("account_id", to_account_id).to_list()
+                    from_accounts = self.main_client.V().has_label("account").has("account_id", from_account_id).to_list()
+                    to_accounts = self.main_client.V().has_label("account").has("account_id", to_account_id).to_list()
                     
                     if not from_accounts or not to_accounts:
                         return False
@@ -759,7 +775,7 @@ class GraphService:
                     to_vertex = to_accounts[0]
                     
                     # Create TRANSFERS_TO edge
-                    self.client.add_e("TRANSFERS_TO").from_(from_vertex).to(to_vertex).property("amount", amount).property("timestamp", datetime.now().isoformat()).property("status", "completed").property("method", "test_transfer").iterate()
+                    self.main_client.add_e("TRANSFERS_TO").from_(from_vertex).to(to_vertex).property("amount", amount).property("timestamp", datetime.now().isoformat()).property("status", "completed").property("method", "test_transfer").iterate()
                     
                     logger.info(f"Created TRANSFERS_TO edge: {from_account_id} -> {to_account_id} (${amount})")
                     return True
@@ -777,7 +793,7 @@ class GraphService:
     async def get_fraud_check_results_paginated(self, page: int, page_size: int) -> Dict[str, Any]:
         """Get paginated list of fraud check results"""
         try:
-            if not self.client:
+            if not self.main_client:
                 raise Exception("Graph client not available")
             
             loop = asyncio.get_event_loop()
@@ -785,7 +801,7 @@ class GraphService:
             def get_results_sync():
                 try:
                     # Get all transactions that have fraud properties (fraud detection was performed)
-                    all_results = self.client.V().has_label("transaction").has("fraud_status").to_list()
+                    all_results = self.main_client.V().has_label("transaction").has("fraud_status").to_list()
                     
                     # Paginate
                     start_idx = (page - 1) * page_size
@@ -841,7 +857,7 @@ class GraphService:
     async def get_transaction_fraud_results(self, transaction_id: str) -> List[Dict[str, Any]]:
         """Get fraud check results for a specific transaction"""
         try:
-            if not self.client:
+            if not self.main_client:
                 raise Exception("Graph client not available")
             
             loop = asyncio.get_event_loop()
@@ -851,7 +867,7 @@ class GraphService:
                     results_data = []
                     
                     # Get transaction vertex directly  
-                    transaction_vertices = self.client.V(transaction_id).to_list()
+                    transaction_vertices = self.main_client.V(transaction_id).to_list()
                     if not transaction_vertices:
                         logger.warning(f"Transaction {transaction_id} not found")
                         return []
@@ -896,7 +912,7 @@ class GraphService:
     def bulk_load_csv_data(self, vertices_path: str = None, edges_path: str = None) -> Dict[str, Any]:
         """Bulk load data from CSV files using Aerospike Graph bulk loader"""
         try:
-            if not self.client:
+            if not self.main_client:
                 raise Exception("Graph client not available. Cannot bulk load data without graph database connection.")
             
             # Default paths if not provided
@@ -911,7 +927,7 @@ class GraphService:
             try:
                 # Execute bulk load using Aerospike Graph loader
                 logger.info("Starting bulk load operation...")
-                bulk_load_result["result"] = (self.client
+                bulk_load_result["result"] = (self.main_client
                             .with_("evaluationTimeout", 2000000)
                             .call("aerospike.graphloader.admin.bulk-load.load")
                             .with_("aerospike.graphloader.vertices", vertices_path)
@@ -962,7 +978,7 @@ class GraphService:
         try:
             # Use Aerospike Graph Summary API for efficient statistics
             logger.info("Retrieving graph summary using Aerospike Graph Summary API...")
-            summary_result = self.client.call("aerospike.graph.admin.metadata.summary").next()
+            summary_result = self.main_client.call("aerospike.graph.admin.metadata.summary").next()
             
             # Parse the summary result which comes as a formatted string
             summary_lines = str(summary_result).split('\n')
@@ -1060,12 +1076,12 @@ class GraphService:
     def get_bulk_load_status(self) -> Dict[str, Any]:
         """Get the status of the current bulk load operation using Aerospike Graph Status API"""
         try:
-            if not self.client:
+            if not self.main_client:
                 raise Exception("Graph client not available. Cannot check bulk load status without graph database connection.")
             logger.info("Checking bulk load status using Aerospike Graph Status API...")
 
             # Use Aerospike Graph Status API to check bulk load progress
-            status_result = self.client.call("aerospike.graphloader.admin.bulk-load.status").next()
+            status_result = self.main_client.call("aerospike.graphloader.admin.bulk-load.status").next()
             
             # Parse the status result
             status_info = {
@@ -1110,13 +1126,13 @@ class GraphService:
     def inspect_indexes(self) -> Dict[str, Any]:
         """Inspect existing indexes in the graph"""
         try:
-            if self.client:
+            if self.main_client:
                 # Get index cardinality information
-                cardinality_info = self.client.call("aerospike.graph.admin.index.cardinality").next()
+                cardinality_info = self.main_client.call("aerospike.graph.admin.index.cardinality").next()
 
                 # Get index list
                 try:
-                    index_list = self.client.call("aerospike.graph.admin.index.list").next()
+                    index_list = self.main_client.call("aerospike.graph.admin.index.list").next()
                 except Exception as e:
                     index_list = f"Error getting index list: {e}"
 
@@ -1136,13 +1152,13 @@ class GraphService:
 
     def create_fraud_detection_indexes(self):
         try:
-            if not self.client:
+            if not self.main_client:
                 raise Exception("Graph client not available")
 
             results = []
 
             try:
-                result1 = (self.client
+                result1 = (self.main_client
                            .call("aerospike.graph.admin.index.create")
                            .with_("element_type", "vertex")
                            .with_("property_key", "fraud_flag")
@@ -1154,7 +1170,7 @@ class GraphService:
                 logger.warning(f"Index fraud_flag: {e}")
 
             try:
-                result2 = (self.client
+                result2 = (self.main_client
                            .call("aerospike.graph.admin.index.create")
                            .with_("element_type", "vertex")
                            .with_("property_key", "~label")
@@ -1165,7 +1181,7 @@ class GraphService:
                 results.append({"index": "vertex_label_account", "status": "error", "error": str(e)})
 
             try:
-                result3 = (self.client
+                result3 = (self.main_client
                           .call("aerospike.graph.admin.index.create")
                           .with_("element_type", "vertex")
                           .with_("property_key", "account_id")
