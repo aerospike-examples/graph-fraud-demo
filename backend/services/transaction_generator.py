@@ -471,7 +471,7 @@ class TransactionWorker:
         self.fraud_service = fraud_service
         self.running = False
         self.executor = None
-        self._max_workers = 500  # Required for 600 TPS with 750ms execution time
+        self._max_workers = 64  # Required for 600 TPS with 750ms execution time
 
 
     def start_workers(self):

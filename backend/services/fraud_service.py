@@ -20,7 +20,7 @@ class FraudService:
         self.rt1_enabled = True
         self.rt2_enabled = True
         self.rt3_enabled = True
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=128, thread_name_prefix="fraud_rt")
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=64, thread_name_prefix="fraud_rt")
 
     def shutdown(self):
         """Shutdown the fraud service executor"""

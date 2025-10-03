@@ -17,7 +17,7 @@ from logging_config import get_logger
 logger = get_logger('fraud_detection.graph')
 
 class GraphService:
-    def __init__(self, host: str = os.environ.get('GRAPH_HOST_ADDRESS') or 'localhost', port: int = 8182):
+    def __init__(self, host: str = os.environ.get('GRAPH_HOST_ADDRESS') or '127.0.0.1', port: int = 8182):
         self.host = host
         self.port = port
         self.main_client = None
