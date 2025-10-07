@@ -39,7 +39,7 @@ public class TransactionScheduler {
         if (running) {
             return false;
         }
-
+        performanceMonitor.resetMetrics();
         running = true;
 
         int schedulersNeeded = Math.max(1, tps / SCHEDULER_TPS_CAPACITY);

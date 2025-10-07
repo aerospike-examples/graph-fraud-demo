@@ -1,9 +1,6 @@
 package com.example.fraud.graph;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Random;
 import java.util.UUID;
 import org.apache.tinkerpop.gremlin.driver.Cluster;
 import org.apache.tinkerpop.gremlin.driver.remote.DriverRemoteConnection;
@@ -23,16 +20,16 @@ import static org.apache.tinkerpop.gremlin.process.traversal.AnonymousTraversalS
 public class GraphService {
 
     private static final Logger logger = LoggerFactory.getLogger(GraphService.class);
-    private final String host;
+    private final String[] hosts;
     private final int port;
     private Cluster fraudCluster;
     private Cluster mainCluster;
     private GraphTraversalSource fraudG;
     private GraphTraversalSource mainG;
 
-    public GraphService(String host, int port, int fraudConnectionPoolWorkers, int fraudMaxInProcessPerConnection,
+    public GraphService(String[] hosts, int port, int fraudConnectionPoolWorkers, int fraudMaxInProcessPerConnection,
                         int mainConnectionPoolWorkers, int mainMaxInProcessPerConnection) {
-        this.host = host;
+        this.hosts = hosts;
         this.port = port;
         connect(fraudConnectionPoolWorkers, fraudMaxInProcessPerConnection,
                 mainConnectionPoolWorkers, mainMaxInProcessPerConnection);
@@ -41,18 +38,17 @@ public class GraphService {
     private void connect(int fraudConnectionPoolWorkers, int fraudMaxInProcessPerConnection,
                          int mainConnectionPoolWorkers, int mainMaxInProcessPerConnection) {
         try {
-            String url = String.format("ws://%s:%d/gremlin", host, port);
-            logger.info("Connecting to Aerospike Graph: {}", url);
+            logger.info("Connecting to Aerospike Graph: {}", (Object) hosts);
 
             mainCluster = Cluster.build()
-                    .addContactPoints(host)
+                    .addContactPoints(hosts)
                     .port(port)
                     .maxConnectionPoolSize(mainConnectionPoolWorkers)
                     .maxInProcessPerConnection(mainMaxInProcessPerConnection)
                     .create();
 
             fraudCluster = Cluster.build()
-                    .addContactPoints(host)
+                    .addContactPoints(hosts)
                     .port(port)
                     .maxConnectionPoolSize(fraudConnectionPoolWorkers)
                     .maxInProcessPerConnection(fraudMaxInProcessPerConnection)
@@ -392,9 +388,30 @@ public class GraphService {
     }
 
     public void dropTransactions() throws InterruptedException {
-        mainG.E().hasLabel("TRANSACTS").drop().iterate();
-        while (mainG.E().hasLabel("TRANSACTS").count().next() > 0) {
-            Thread.sleep(500);
+        try {
+            while (true) {
+                long remaining = 0;
+                try {
+                    remaining = mainG.with("evaluationTimeout", 20000)
+                            .E().hasLabel("TRANSACTS").count().next();
+                } catch (Exception e) {
+                    logger.warn("dropTransactions count failed (retrying): {}", e.getMessage());
+                    remaining = 1;
+                }
+                if (remaining <= 0) break;
+
+                try {
+                    mainG.with("evaluationTimeout", 20000)
+                            .E().hasLabel("TRANSACTS")
+                            .drop().iterate();
+                } catch (Exception e) {
+                    logger.warn("dropTransactions chunk failed (retrying): {}", e.getMessage());
+                }
+                Thread.sleep(250);
+            }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw ie;
         }
     }
 

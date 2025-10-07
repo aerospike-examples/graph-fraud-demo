@@ -50,7 +50,7 @@ public class GeneratorService {
         this.graphService = graphService;
         this.fraudService = fraudService;
         this.performanceMonitor = performanceMonitor;
-        this.warmupService = new WarmupService(graphService);
+        this.warmupService = new WarmupService(graphService, this, fraudService);
         this.transactionWorker = new TransactionWorker(this, fraudService, performanceMonitor,
                 transactionWorkerPoolSize, transactionWorkerMaxPoolSize);
         this.transactionScheduler = new TransactionScheduler(transactionWorker, performanceMonitor);
@@ -121,7 +121,7 @@ public class GeneratorService {
             if (!WARM && WARMUP_ENABLED) {
                 logger.debug("Warmup Started");
                 statsLogger.debug("START: Warmup starteqd");
-                WARM = warmupService.runWithCleanup(accountVertices);
+                WARM = warmupService.runWithCleanup();
                 if (WARM) {
                     logger.debug("Generator is now warmed up!");
                 } else {

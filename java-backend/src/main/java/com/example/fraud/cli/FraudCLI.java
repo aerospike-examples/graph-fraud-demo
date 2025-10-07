@@ -10,20 +10,15 @@ import org.springframework.stereotype.Component;
 
 
 import java.io.Console;
-import java.text.DecimalFormat;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Scanner;
-import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class FraudCLI implements CommandLineRunner {
 
-    private static final String HOST = "127.0.0.1";
+    private static final String[]  HOSTS = {"127.0.0.1"};
     private static final int PORT = 8182;
     private static final int TRANSACTION_WORKER_POOL_SIZE = 128;
     private static final int TRANSACTION_WORKER_MAX_POOL_SIZE = 128;
@@ -79,7 +74,7 @@ public class FraudCLI implements CommandLineRunner {
         Locale.setDefault(Locale.US);
         System.out.println("Initializing Fraud Detection CLI (Java)...");
         performanceMonitor = new PerformanceMonitor();
-        graphService = new GraphService(HOST, PORT, FRAUD_CONNECTION_POOL_WORKERS,
+        graphService = new GraphService(HOSTS, PORT, FRAUD_CONNECTION_POOL_WORKERS,
                 FRAUD_CONNECTION_MAX_IN_PROCESS_PER_CONNECTION,
                 MAIN_CONNECTION_POOL_WORKERS, MAIN_CONNECTION_MAX_IN_PROCESS_PER_CONNECTION);
         fraudService = new FraudService(graphService, performanceMonitor,
