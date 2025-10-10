@@ -4,7 +4,10 @@ import com.example.fraud.fraud.FraudService;
 import com.example.fraud.generator.GeneratorService;
 import com.example.fraud.graph.GraphService;
 import com.example.fraud.monitor.PerformanceMonitor;
+import com.example.fraud.rules.Rule;
 import com.example.fraud.util.Util;
+import java.util.HashMap;
+import java.util.List;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +31,8 @@ public class FraudCLI implements CommandLineRunner {
     private static final int FRAUD_CONNECTION_MAX_IN_PROCESS_PER_CONNECTION = 64;
     private static final int MAIN_CONNECTION_POOL_WORKERS = 64;
     private static final int MAIN_CONNECTION_MAX_IN_PROCESS_PER_CONNECTION = 64;
+
+    private final Map<String, Rule> enabledRules = new HashMap<String, Rule>();;
 
     private static final AtomicBoolean generatorRunning = new AtomicBoolean(false);
     GraphService graphService;
@@ -72,13 +77,13 @@ public class FraudCLI implements CommandLineRunner {
 
     public void run(String... args) {
         Locale.setDefault(Locale.US);
+
         System.out.println("Initializing Fraud Detection CLI (Java)...");
         performanceMonitor = new PerformanceMonitor();
         graphService = new GraphService(HOSTS, PORT, FRAUD_CONNECTION_POOL_WORKERS,
-                FRAUD_CONNECTION_MAX_IN_PROCESS_PER_CONNECTION,
-                MAIN_CONNECTION_POOL_WORKERS, MAIN_CONNECTION_MAX_IN_PROCESS_PER_CONNECTION);
+                MAIN_CONNECTION_POOL_WORKERS);
         fraudService = new FraudService(graphService, performanceMonitor,
-                FRAUD_POOL_SIZE, FRAUD_MAX_POOL_SIZE);
+                enabledRules, FRAUD_POOL_SIZE, FRAUD_MAX_POOL_SIZE);
         generatorService = new GeneratorService(graphService, fraudService, performanceMonitor,
                 TRANSACTION_WORKER_POOL_SIZE, TRANSACTION_WORKER_MAX_POOL_SIZE);
 

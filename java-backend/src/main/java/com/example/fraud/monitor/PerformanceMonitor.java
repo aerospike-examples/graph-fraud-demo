@@ -22,7 +22,6 @@ public class PerformanceMonitor {
         return t;
     });
 
-    // bounded histories
     private final int maxHistory;
     private final ConcurrentLinkedDeque<MethodMetric> rt1Metrics = new ConcurrentLinkedDeque<>();
     private final ConcurrentLinkedDeque<MethodMetric> rt2Metrics = new ConcurrentLinkedDeque<>();
@@ -33,12 +32,10 @@ public class PerformanceMonitor {
     private final AtomicInteger rt3Size = new AtomicInteger(0);
     private final AtomicInteger txnSize = new AtomicInteger(0);
 
-    // real-time counters
     private final LongAdder rt1Counter = new LongAdder();
     private final LongAdder rt2Counter = new LongAdder();
     private final LongAdder rt3Counter = new LongAdder();
 
-    // outcome counters
     private final LongAdder rt1Success = new LongAdder();
     private final LongAdder rt1Failure = new LongAdder();
     private final LongAdder rt2Success = new LongAdder();
@@ -46,7 +43,6 @@ public class PerformanceMonitor {
     private final LongAdder rt3Success = new LongAdder();
     private final LongAdder rt3Failure = new LongAdder();
 
-    // transaction generation counters/timelines
     private final LongAdder totalScheduled = new LongAdder();
     private final LongAdder totalCompleted = new LongAdder();
     private final LongAdder totalFailed = new LongAdder();
@@ -58,7 +54,6 @@ public class PerformanceMonitor {
     private final ConcurrentLinkedDeque<Double> fraudLatenciesMs = new ConcurrentLinkedDeque<>();
     private final ConcurrentLinkedDeque<Long> completionTimesEpochSec = new ConcurrentLinkedDeque<>();
 
-    // Track sizes for bounds checking
     private final AtomicInteger latenciesSize = new AtomicInteger(0);
     private final AtomicInteger execLatenciesSize = new AtomicInteger(0);
     private final AtomicInteger queueWaitSize = new AtomicInteger(0);
@@ -66,10 +61,9 @@ public class PerformanceMonitor {
     private final AtomicInteger fraudLatenciesSize = new AtomicInteger(0);
     private final AtomicInteger completionTimesSize = new AtomicInteger(0);
 
-    // read lock for snapshotting
     private final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.ReadLock readLock = rwl.readLock();
-    // generation state
+
     private volatile boolean isRunning = false;
     private volatile double targetTps = 0.0;
     private volatile double currentTps = 0.0;
@@ -85,10 +79,6 @@ public class PerformanceMonitor {
         this.maxHistory = maxHistory;
         log.info("Async Performance monitor initialized (maxHistory={})", maxHistory);
     }
-
-    /* ==========================
-       Recorders (NON-BLOCKING)
-       ========================== */
 
     private static String cacheStatus(String method) {
         return switch (method) {
@@ -183,36 +173,8 @@ public class PerformanceMonitor {
         });
     }
 
-
-    public void recordRt1Performance(double executionTimeMs) {
-        recordRt1Performance(executionTimeMs, true, "1-hop lookup", false);
-    }
-
-    public void recordRt2Performance(double executionTimeMs) {
-        recordRt2Performance(executionTimeMs, true, "multi-hop network", false);
-    }
-
-    public void recordRt3Performance(double executionTimeMs) {
-        recordRt3Performance(executionTimeMs, true, "multi-hop network", false);
-    }
-
-    /* ==========================
-       Snapshots for CLI/UI
-       ========================== */
-
     public void recordTransactionScheduled() {
         bg.submit(totalScheduled::increment);
-    }
-
-    public void recordTransactionCompleted(double totalLatencyMs, Double executionLatencyMs) {
-        bg.submit(() -> {
-            txnMetrics.add(TxnMetric.simple(now(), totalLatencyMs, executionLatencyMs, true));
-            totalCompleted.increment();
-            latenciesMs.add(totalLatencyMs);
-            if (executionLatencyMs != null) execLatenciesMs.add(executionLatencyMs);
-            completionTimesEpochSec.add(nowEpochSec());
-            updateCurrentTps();
-        });
     }
 
     public void recordTransactionCompletedDetailed(double totalLatencyMs, double executionLatencyMs,
@@ -226,7 +188,6 @@ public class PerformanceMonitor {
 
             totalCompleted.increment();
 
-            // Add to latency queues with bounds checking
             latenciesMs.offerLast(totalLatencyMs);
             if (latenciesSize.incrementAndGet() > 1000) {
                 latenciesMs.pollFirst();
@@ -290,10 +251,6 @@ public class PerformanceMonitor {
             readLock.unlock();
         }
     }
-
-    /* ==========================
-       Internal helpers
-       ========================== */
 
     public void resetTransactionMetrics() {
         readLock.lock();
@@ -529,7 +486,6 @@ public class PerformanceMonitor {
 
     private void updateCurrentTps() {
         long now = nowEpochSec();
-        // count completions in last second
         long recent = completionTimesEpochSec.stream().filter(t -> now - t <= 1).count();
         currentTps = (double) recent;
     }
@@ -545,10 +501,6 @@ public class PerformanceMonitor {
             Thread.currentThread().interrupt();
         }
     }
-
-    /* ==========================
-       Data Records
-       ========================== */
 
     private record MethodMetric(Instant timestamp,
                                 double executionTimeMs,

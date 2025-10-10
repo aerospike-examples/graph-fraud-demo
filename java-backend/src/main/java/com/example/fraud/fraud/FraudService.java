@@ -18,10 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class FraudService {
 
     private static final Logger log = LoggerFactory.getLogger("fraud_detection.fraud");
-
     private final GraphService graph;
     private final PerformanceMonitor perf;
-
     private final ExecutorService exec;
 
     private final AtomicBoolean rt1Enabled = new AtomicBoolean(true);
@@ -29,10 +27,15 @@ public class FraudService {
     private final AtomicBoolean rt3Enabled = new AtomicBoolean(true);
 
     public FraudService(GraphService graphService, PerformanceMonitor performanceMonitor,
-                        int fraudPoolSize, int fraudMaxPoolSize) {
+                        List<Rule> fraudRulesList, int fraudPoolSize, int fraudMaxPoolSize) {
         this.graph = graphService;
         this.perf = performanceMonitor;
-
+        this.fraudRulesList = fraudRulesList;
+        Map <String, Rule> fraudRulesMap = new HashMap<String,Rule>();
+        for (Rule r : fraudRulesList) {
+            fraudRulesMap.put(r.getName(), r);
+        }
+        this.fraudRulesMap = fraudRulesMap;
         this.exec = new ThreadPoolExecutor(
                 fraudPoolSize, fraudMaxPoolSize, 60L, TimeUnit.SECONDS,
                 new SynchronousQueue<>(),
@@ -51,7 +54,7 @@ public class FraudService {
     }
 
     private static FraudOutcome perfOkAndHit(PerformanceMonitor perf, long t0, int rt,
-                                             String reason, Map<String, Object> result) {
+                                             String reason, FraudResult result) {
         double ms = (System.nanoTime() - t0) / 1_000_000.0;
         switch (rt) {
             case 1 -> perf.recordRt1Performance(ms, true, "1-hop lookup", false);
@@ -76,16 +79,6 @@ public class FraudService {
         m.put("account_id", accountId);
         m.put("role", role);
         m.put("fraud_score", score);
-        return m;
-    }
-
-    private static Map<String, Object> fraudResult(int score, String status, Map<String, Object> details) {
-        Map<String, Object> m = new LinkedHashMap<>(6);
-        m.put("is_fraud", true);
-        m.put("fraud_score", score);
-        m.put("status", status);
-        m.put("eval_timestamp", Instant.now().toString());
-        m.put("details", details);
         return m;
     }
 
@@ -124,28 +117,19 @@ public class FraudService {
     }
 
     public boolean toggleFraudCheck(String check, boolean enabled) {
-        return switch (check.toLowerCase(Locale.ROOT)) {
-            case "rt1" -> {
-                rt1Enabled.set(enabled);
-                yield true;
-            }
-            case "rt2" -> {
-                rt2Enabled.set(enabled);
-                yield true;
-            }
-            case "rt3" -> {
-                rt3Enabled.set(enabled);
-                yield true;
-            }
-            default -> false;
-        };
+        fraudRulesMap.get(check);
+        if (fraudRulesMap != null) {
+
+        }
+        return false;
     }
 
     public Map<String, Boolean> getFraudChecksState() {
-        Map<String, Boolean> m = new LinkedHashMap<>(3);
-        m.put("rt1", rt1Enabled.get());
-        m.put("rt2", rt2Enabled.get());
-        m.put("rt3", rt3Enabled.get());
+        final Map<String, Boolean> m = new LinkedHashMap<>(fraudRulesMap.size());
+
+        for (final Map.Entry<String, Rule> pair : fraudRulesMap.entrySet()) {
+            m.put(pair.getKey(), pair.getValue().isEnabled());
+        }
         return m;
     }
 
@@ -192,48 +176,6 @@ public class FraudService {
     }
 
     private FraudOutcome runRt1(GraphTraversalSource g, String edgeId, String txnId) {
-        long t0 = System.nanoTime();
-        boolean ok = true;
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> connections = (Map<String, Object>) g.E(edgeId)
-                    .project("sender", "receiver")
-                    .by(__.outV().has("fraud_flag", true).id())
-                    .by(__.inV().has("fraud_flag", true).id())
-                    .next();
-
-            Object sender = connections.get("sender");
-            Object receiver = connections.get("receiver");
-
-            if (sender == null && receiver == null) {
-                return perfOkAndPass(perf, t0, 1);
-            }
-
-            List<Map<String, Object>> flagged = new ArrayList<>(2);
-            if (sender != null) flagged.add(flaggedConnection(String.valueOf(sender), "sender", 100));
-            if (receiver != null) flagged.add(flaggedConnection(String.valueOf(receiver), "receiver", 100));
-
-            int total = flagged.size();
-            int score = 100;
-            String reason = "Connected to " + total + " flagged account(s) - 'direct fraud'";
-            Map<String, Object> details = new LinkedHashMap<>();
-            details.put("flagged_connections", flagged);
-            details.put("detection_time", Instant.now().toString());
-            details.put("fraud_score", score);
-            details.put("reason", reason);
-            details.put("rule", "RT1_SingleLevelFlaggedAccountRule");
-
-            Map<String, Object> result = fraudResult(score, "blocked", details);
-            return perfOkAndHit(perf, t0, 1, reason, result);
-
-        } catch (Exception e) {
-            ok = false;
-            log.error("Error in RT1 fraud detection for txn {}: {}", txnId, e.toString());
-            return perfFail(perf, t0, 1, "Detection error: " + e.getMessage());
-        } finally {
-            if (ok) perf.recordRt1Performance((System.nanoTime() - t0) / 1_000_000.0, true, "1-hop lookup", false);
-            else perf.recordRt1Performance((System.nanoTime() - t0) / 1_000_000.0, false, "1-hop lookup", false);
-        }
     }
 
     private FraudOutcome runRt2(GraphTraversalSource g, String edgeId, String txnId) {
@@ -280,7 +222,7 @@ public class FraudService {
             details.put("reason", reason);
             details.put("rule", "RT2_MultiLevelFlaggedAccountRule");
 
-            Map<String, Object> result = fraudResult(score, status, details);
+            FraudResult result = new FraudResult(score, status, details);
             return perfOkAndHit(perf, t0, 2, reason, result);
 
         } catch (Exception e) {
@@ -328,7 +270,7 @@ public class FraudService {
             details.put("reason", reason);
             details.put("rule", "RT3_FlaggedDeviceConnection");
 
-            Map<String, Object> result = fraudResult(score, "review", details);
+            FraudResult result = new FraudResult(score, "review", details);
             return perfOkAndHit(perf, t0, 3, reason, result);
 
         } catch (Exception e) {
@@ -369,19 +311,6 @@ public class FraudService {
                 .property("eval_timestamp", Instant.now().toString())
                 .property("details", details)
                 .iterate();
-    }
-
-    private FraudSummary summarize(Map<String, Map<String, Object>> checks) {
-        return new FraudSummary(!checks.isEmpty(), checks);
-    }
-
-    private record FraudOutcome(boolean isFraud, String reason, Map<String, Object> result) {
-    }
-
-    public record FraudSummary(boolean anyFraud, Map<String, Map<String, Object>> checks) {
-        static FraudSummary empty() {
-            return new FraudSummary(false, Collections.emptyMap());
-        }
     }
 
     private static final class NamedFactory implements ThreadFactory {

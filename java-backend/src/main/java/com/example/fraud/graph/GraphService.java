@@ -27,16 +27,16 @@ public class GraphService {
     private GraphTraversalSource fraudG;
     private GraphTraversalSource mainG;
 
-    public GraphService(String[] hosts, int port, int fraudConnectionPoolWorkers, int fraudMaxInProcessPerConnection,
-                        int mainConnectionPoolWorkers, int mainMaxInProcessPerConnection) {
+    public GraphService(String[] hosts, int port, int fraudConnectionPoolWorkers,
+                        int mainConnectionPoolWorkers) {
         this.hosts = hosts;
         this.port = port;
-        connect(fraudConnectionPoolWorkers, fraudMaxInProcessPerConnection,
-                mainConnectionPoolWorkers, mainMaxInProcessPerConnection);
+        connect(fraudConnectionPoolWorkers,
+                mainConnectionPoolWorkers);
     }
 
-    private void connect(int fraudConnectionPoolWorkers, int fraudMaxInProcessPerConnection,
-                         int mainConnectionPoolWorkers, int mainMaxInProcessPerConnection) {
+    private void connect(int fraudConnectionPoolWorkers,
+                         int mainConnectionPoolWorkers) {
         try {
             logger.info("Connecting to Aerospike Graph: {}", (Object) hosts);
 
