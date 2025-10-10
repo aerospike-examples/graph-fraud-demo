@@ -1,6 +1,7 @@
 package com.example.fraud.generator;
 
 import com.example.fraud.fraud.FraudService;
+import com.example.fraud.fraud.TransactionInfo;
 import com.example.fraud.graph.GraphService;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 
@@ -35,7 +36,7 @@ public class WarmupService {
             long end = System.nanoTime() + (long) seconds * 1_000_000_000L;
             while (System.nanoTime() < end) {
                 try {
-                    Map<String, Object> result = generatorService.generateTransaction();
+                    TransactionInfo result = generatorService.generateTransaction();
                     if (result != null && Boolean.TRUE.equals(result.get("success"))) {
                         Object edge = result.get("edge_id");
                         Object txn = result.get("txn_id");

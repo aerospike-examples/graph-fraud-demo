@@ -226,7 +226,7 @@ public class PerformanceMonitor {
         bg.submit(totalFailed::increment);
     }
 
-    public void recordFraudDetectionLatency(double fraudLatencyMs, String txnId) {
+    public void recordFraudDetectionLatency(final double fraudLatencyMs, final Object txnId) {
         bg.submit(() -> {
             fraudLatenciesMs.add(fraudLatencyMs);
             if (fraudLatencyMs > 500.0) {

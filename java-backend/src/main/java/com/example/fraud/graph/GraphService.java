@@ -1,5 +1,6 @@
 package com.example.fraud.graph;
 
+import com.example.fraud.fraud.TransactionInfo;
 import java.time.Instant;
 import java.util.UUID;
 import org.apache.tinkerpop.gremlin.driver.Cluster;
@@ -44,14 +45,14 @@ public class GraphService {
                     .addContactPoints(hosts)
                     .port(port)
                     .maxConnectionPoolSize(mainConnectionPoolWorkers)
-                    .maxInProcessPerConnection(mainMaxInProcessPerConnection)
+                    .minConnectionPoolSize(mainConnectionPoolWorkers)
                     .create();
 
             fraudCluster = Cluster.build()
                     .addContactPoints(hosts)
                     .port(port)
                     .maxConnectionPoolSize(fraudConnectionPoolWorkers)
-                    .maxInProcessPerConnection(fraudMaxInProcessPerConnection)
+                    .minConnectionPoolSize(fraudConnectionPoolWorkers)
                     .create();
 
             mainG = traversal().withRemote(DriverRemoteConnection.using(mainCluster));
@@ -299,10 +300,10 @@ public class GraphService {
         }
     }
 
-    public Map<String, Object> createTransaction(String fromId, String toId,
-                                                 double amount, String type,
-                                                 String genType,
-                                                 String location) {
+    public TransactionInfo createTransaction(String fromId, String toId,
+                                             double amount, String type,
+                                             String genType,
+                                             String location) {
         try {
             if (mainG == null) {
                 throw new RuntimeException("Graph client not available");
@@ -331,23 +332,13 @@ public class GraphService {
                     .next();
             logger.debug("{} transaction created: {} from {} to {} amount {}",
                     genType, txnId, fromId, toId, amount);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("edge_id", edgeId.toString());
-            result.put("txn_id", txnId);
-            result.put("from_id", fromId);
-            result.put("to_id", toId);
-            result.put("amount", amount);
-
-            return result;
-
+            return new TransactionInfo(true, edgeId, txnId, fromId, toId, amount);
         } catch (Exception e) {
             logger.error("Error creating transaction: {}", e.getMessage());
             Map<String, Object> error = new HashMap<>();
             error.put("success", false);
             error.put("error", "Error creating transaction: " + e.getMessage());
-            return error;
+            return new TransactionInfo(false, null, null, null, null, -1);
         }
     }
 

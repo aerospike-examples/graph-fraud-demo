@@ -2,6 +2,7 @@ package com.example.fraud.fraud;
 
 import com.example.fraud.monitor.PerformanceMonitor;
 import com.example.fraud.graph.GraphService; // expose g instances: mainClient(), fraudClient()
+import com.example.fraud.rules.Rule;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
@@ -12,7 +13,6 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class FraudService {
@@ -21,10 +21,9 @@ public class FraudService {
     private final GraphService graph;
     private final PerformanceMonitor perf;
     private final ExecutorService exec;
+    private final List<Rule> fraudRulesList;
+    private final Map<String, Rule> fraudRulesMap;
 
-    private final AtomicBoolean rt1Enabled = new AtomicBoolean(true);
-    private final AtomicBoolean rt2Enabled = new AtomicBoolean(true);
-    private final AtomicBoolean rt3Enabled = new AtomicBoolean(true);
 
     public FraudService(GraphService graphService, PerformanceMonitor performanceMonitor,
                         List<Rule> fraudRulesList, int fraudPoolSize, int fraudMaxPoolSize) {
@@ -133,46 +132,31 @@ public class FraudService {
         return m;
     }
 
-    public Future<FraudSummary> submitFraudDetectionAsync(String edgeId, String txnId) {
-        return exec.submit(() -> runFraudDetection(edgeId, txnId));
+    public Future<FraudSummary> submitFraudDetectionAsync(final TransactionInfo txnInfo) {
+        return exec.submit(() -> runFraudDetection(txnInfo));
     }
 
-    public FraudSummary runFraudDetection(String edgeId, String txnId) {
-        long t0 = System.nanoTime();
+    public FraudSummary runFraudDetection(final TransactionInfo txnInfo) {
+        long startTime = System.nanoTime();
 
         final GraphTraversalSource fraudG = graph.getFraudClient();
         if (fraudG == null) {
             log.warn("Graph client not available for fraud detection");
-            return FraudSummary.empty();
+            return new FraudSummary(List.of()); // Empty.
         }
 
-        final Map<String, Map<String, Object>> passingChecks = new LinkedHashMap<>(3);
-
-        if (rt1Enabled.get()) {
-            FraudOutcome rt1 = runRt1(fraudG, edgeId, txnId);
-            if (rt1.isFraud()) passingChecks.put("rt1", rt1.result());
+        final List<FraudOutcome> fraudOutcomes = new ArrayList<>();
+        for (final Rule rule : fraudRulesList) {
+            if (!rule.isEnabled()) continue;
+            fraudOutcomes.add(rule.executeRule(txnInfo));
         }
-        if (rt2Enabled.get()) {
-            FraudOutcome rt2 = runRt2(fraudG, edgeId, txnId);
-            if (rt2.isFraud()) passingChecks.put("rt2", rt2.result());
-        }
-        if (rt3Enabled.get()) {
-            FraudOutcome rt3 = runRt3(fraudG, edgeId, txnId);
-            if (rt3.isFraud()) passingChecks.put("rt3", rt3.result());
-        }
+        final FraudSummary summary = new FraudSummary(fraudOutcomes);
+        storeFraudResults(graph.getMainClient(), summary);
 
-        if (!passingChecks.isEmpty()) {
-            try {
-                storeFraudResults(graph.getMainClient(), edgeId, passingChecks);
-            } catch (Exception e) {
-                log.error("Error storing fraud results for txn {}: {}", txnId, e.toString());
-            }
-        }
+        double fraudLatencyMs = (System.nanoTime() - startTime) / 1_000_000.0;
+        perf.recordFraudDetectionLatency(fraudLatencyMs, txnInfo.getTxnId());
 
-        double fraudLatencyMs = (System.nanoTime() - t0) / 1_000_000.0;
-        perf.recordFraudDetectionLatency(fraudLatencyMs, txnId);
-
-        return summarize(passingChecks);
+        return summary;
     }
 
     private FraudOutcome runRt1(GraphTraversalSource g, String edgeId, String txnId) {
@@ -284,8 +268,8 @@ public class FraudService {
     }
 
     private void storeFraudResults(GraphTraversalSource mainG,
-                                   String edgeId,
-                                   Map<String, Map<String, Object>> checks) {
+                                   FraudSummary fraudSummary) {
+        // TODO.
         int fraudScore = 0;
         String status = "review";
         List<String> details = new ArrayList<>(checks.size());

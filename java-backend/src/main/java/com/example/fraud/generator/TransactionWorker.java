@@ -1,6 +1,7 @@
 package com.example.fraud.generator;
 
 import com.example.fraud.fraud.FraudService;
+import com.example.fraud.fraud.TransactionInfo;
 import com.example.fraud.monitor.PerformanceMonitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,7 +93,7 @@ public class TransactionWorker {
 
         try {
             long dbStartTime = System.nanoTime();
-            Map<String, Object> result = generatorService.generateTransaction();
+            TransactionInfo result = generatorService.generateTransaction();
             long dbEndTime = System.nanoTime();
             double dbLatencyMs = (dbEndTime - dbStartTime) / 1_000_000.0;
 
@@ -112,10 +113,7 @@ public class TransactionWorker {
                         dbLatencyMs
                 );
 
-                fraudService.submitFraudDetectionAsync(
-                        (String) result.get("edge_id"),
-                        (String) result.get("txn_id")
-                );
+                fraudService.submitFraudDetectionAsync(result);
 
                 if (totalLatencyMs > 1000) {
                     logger.info("HIGH LATENCY Transaction {}: Total={}ms (Queue={}ms, DB={}ms)",

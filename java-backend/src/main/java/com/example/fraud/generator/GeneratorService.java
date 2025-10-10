@@ -1,6 +1,7 @@
 package com.example.fraud.generator;
 
 import com.example.fraud.fraud.FraudService;
+import com.example.fraud.fraud.TransactionInfo;
 import com.example.fraud.graph.GraphService;
 import com.example.fraud.monitor.PerformanceMonitor;
 import java.util.concurrent.ThreadLocalRandom;
@@ -171,7 +172,7 @@ public class GeneratorService {
         statsLogger.info("STOP: Generation stopped.");
     }
 
-    public Map<String, Object> generateTransaction() {
+    public TransactionInfo generateTransaction() {
         try {
             if (accountVertices.size() < 2) {
                 logger.error("Insufficient cached accounts for transaction generation");
@@ -189,7 +190,7 @@ public class GeneratorService {
             String transactionType = transactionTypes.get(rand.nextInt(transactionTypes.size()));
             String location = normalLocations.get(rand.nextInt(normalLocations.size()));
 
-            Map<String, Object> result = graphService.createTransaction(
+            final TransactionInfo result = graphService.createTransaction(
                     senderAccountId.toString(),
                     receiverAccountId.toString(),
                     amount,
