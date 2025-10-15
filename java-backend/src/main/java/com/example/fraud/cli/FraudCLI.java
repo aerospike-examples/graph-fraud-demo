@@ -1,44 +1,27 @@
 package com.example.fraud.cli;
 
-import com.example.fraud.fraud.FraudService;
-import com.example.fraud.generator.GeneratorService;
-import com.example.fraud.graph.GraphService;
-import com.example.fraud.monitor.PerformanceMonitor;
-import com.example.fraud.rules.Rule;
-import com.example.fraud.util.Util;
-import java.util.HashMap;
-import java.util.List;
+import com.example.fraud.util.FraudUtil;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
 
 import java.io.Console;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.springframework.web.client.RestClient;
 
 @Component
 public class FraudCLI implements CommandLineRunner {
 
-    private static final String[]  HOSTS = {"127.0.0.1"};
-    private static final int PORT = 8182;
-    private static final int TRANSACTION_WORKER_POOL_SIZE = 128;
-    private static final int TRANSACTION_WORKER_MAX_POOL_SIZE = 128;
-    private static final int FRAUD_POOL_SIZE = 128;
-    private static final int FRAUD_MAX_POOL_SIZE = 128;
-    private static final int FRAUD_CONNECTION_POOL_WORKERS = 64;
-    private static final int FRAUD_CONNECTION_MAX_IN_PROCESS_PER_CONNECTION = 64;
-    private static final int MAIN_CONNECTION_POOL_WORKERS = 64;
-    private static final int MAIN_CONNECTION_MAX_IN_PROCESS_PER_CONNECTION = 64;
-
-    private final Map<String, Rule> enabledRules = new HashMap<String, Rule>();;
-
     private static final AtomicBoolean generatorRunning = new AtomicBoolean(false);
-    GraphService graphService;
-    GeneratorService generatorService;
-    FraudService fraudService;
-    PerformanceMonitor performanceMonitor;
+    private final ServiceOrchestrator orchestrator;
+    private final RestClient http;
+
+    public FraudCLI(ServiceOrchestrator orchestrator, RestClient http) {
+        this.orchestrator = orchestrator;
+        this.http = http;
+    }
 
     private static void showHelp() {
         System.out.println("""
@@ -79,13 +62,6 @@ public class FraudCLI implements CommandLineRunner {
         Locale.setDefault(Locale.US);
 
         System.out.println("Initializing Fraud Detection CLI (Java)...");
-        performanceMonitor = new PerformanceMonitor();
-        graphService = new GraphService(HOSTS, PORT, FRAUD_CONNECTION_POOL_WORKERS,
-                MAIN_CONNECTION_POOL_WORKERS);
-        fraudService = new FraudService(graphService, performanceMonitor,
-                enabledRules, FRAUD_POOL_SIZE, FRAUD_MAX_POOL_SIZE);
-        generatorService = new GeneratorService(graphService, fraudService, performanceMonitor,
-                TRANSACTION_WORKER_POOL_SIZE, TRANSACTION_WORKER_MAX_POOL_SIZE);
 
         final Scanner scanner = new Scanner(System.in);
         while (true) {
@@ -116,14 +92,13 @@ public class FraudCLI implements CommandLineRunner {
     private void handleCommand(String commandLine) {
         final String[] parts = commandLine.split("\\s+");
         final String cmd = parts[0].toLowerCase();
-        final String[] args = parts.length > 1 ? Util.slice(parts, 1) : new String[0];
+        final String[] args = parts.length > 1 ? FraudUtil.slice(parts, 1) : new String[0];
 
         switch (cmd) {
             case "help" -> showHelp();
             case "stats" -> showStats();
             case "performance", "perf" -> showPerformance(parseWindow(args));
             case "fraud", "fraud-perf" -> showFraudPerformance(parseWindow(args));
-            case "users" -> showUsers();
             case "transactions", "txns" -> showTransactions();
             case "indexes" -> showIndexes();
             case "create-fraud-index" -> createFraudIndexes();
@@ -144,7 +119,14 @@ public class FraudCLI implements CommandLineRunner {
 
     private void stopGenerator() {
         generatorRunning.compareAndSet(true, false);
-        generatorService.stopGeneration();
+        BasicResponse resp = http.post().uri(uri -> uri.path("/generator/stop").build())
+                .retrieve().body(BasicResponse.class);
+        boolean ok = resp != null && resp.ok();
+        if (ok) {
+            System.out.println("Generator stopped!");
+        } else {
+            System.out.println("Error stopping generator: " + resp.message());
+        }
     }
 
     private void startGenerator(String[] args) {
@@ -158,8 +140,11 @@ public class FraudCLI implements CommandLineRunner {
         }
         generatorRunning.compareAndSet(false, true);
         int rate = Integer.parseInt(args[0]);
-        boolean success = generatorService.startGeneration(rate);
-        if (success) {
+
+        StartResponse resp = http.post().uri(uri -> uri.path("/generator/start")
+                .queryParam("rate", rate).build()).retrieve().body(StartResponse.class);
+        boolean ok = resp != null && "started".equalsIgnoreCase(resp.status());
+        if (ok) {
             System.out.println("Generator started.");
         } else {
             System.out.println("Generator failed to start.");
@@ -169,7 +154,16 @@ public class FraudCLI implements CommandLineRunner {
     private void showIndexes() {
         try {
             System.out.println("Database Indexes Information");
-            System.out.println(graphService.inspectIndexes());
+            ShowIndexResponse resp = http.post().uri(uri -> uri.path("/admin/indexes")
+                    .build()).retrieve().body(ShowIndexResponse.class);
+
+            boolean ok = resp != null && resp.status().equalsIgnoreCase("ok");
+            if (!ok) {
+                System.out.println("Unable to inspect indexes.");
+            } else {
+                System.out.println("Indexes information successfully retreived");
+            }
+            //System.out.println(graphService.inspectIndexes());
         } catch (Exception e) {
             System.out.println("Error getting index information: " + e.getMessage());
         }
@@ -177,22 +171,27 @@ public class FraudCLI implements CommandLineRunner {
 
     private void createFraudIndexes() {
         System.out.println("Creating fraud detection indexes...");
-        System.out.print(graphService.createFraudDetectionIndexes());
+        BasicResponse resp = http.post().uri(uri -> uri.path("/admin/indexes/create-transaction-indexes")
+                .build()).retrieve().body(BasicResponse.class);
+        boolean ok = resp != null && resp.ok();
+        if (!ok) {
+            System.out.println("Fraud indexes were unable to be created.");
+        } else {
+            System.out.print("Fraud indexes created successfully.");
+        }
+
     }
 
     private void showStats() {
         try {
-            Map<String, Object> stats = graphService.getDashboardStats();
-
-            long users = ((Number) stats.get("users")).longValue();
-            long txns = ((Number) stats.get("txns")).longValue();
-            long accounts = ((Number) stats.get("accounts")).longValue();
-            long devices = ((Number) stats.get("devices")).longValue();
-            long flagged = ((Number) stats.get("flagged")).longValue();
-            double amount = ((Number) stats.get("amount")).doubleValue();
-            double fraudRate = ((Number) stats.get("fraud_rate")).doubleValue();
-            String health = (String) stats.get("health");
-
+            BasicResponse resp = http.post().uri(uri -> uri.path("/performance/stats")
+                    .queryParam("time_window", 5).build()).retrieve().body(BasicResponse.class);
+            boolean ok = resp != null && resp.ok();
+            if (!ok) {
+                System.out.println("Unable to inspect statistics.");
+                return;
+            }
+            System.out.println(resp.message());
             System.out.printf("""
                     Database Statistics:
                       Users:              %,d
@@ -204,7 +203,7 @@ public class FraudCLI implements CommandLineRunner {
                       Fraud Rate:         %.1f%%
                       Health:             %s
                     
-                    """, users, txns, accounts, devices, flagged, amount, fraudRate, health);
+                    """, 0, 0, 0, 0, 0, 0, 0, "DONT KNOW");
         } catch (Exception e) {
             System.out.println("Error getting database stats: " + e.getMessage());
         }
@@ -212,22 +211,7 @@ public class FraudCLI implements CommandLineRunner {
 
     private void showPerformance(int windowMinutes) {
         try {
-            Map<String, Object> stats = performanceMonitor.getTransactionStats();
-
-            boolean isRunning = (Boolean) stats.get("is_running");
-            double targetTps = ((Number) stats.get("target_tps")).doubleValue();
-            double actualTps = ((Number) stats.get("actual_tps")).doubleValue();
-            double currentTps = ((Number) stats.get("current_tps")).doubleValue();
-            double elapsedTime = ((Number) stats.get("elapsed_time")).doubleValue();
-
-            long totalScheduled = ((Number) stats.get("total_scheduled")).longValue();
-            long totalCompleted = ((Number) stats.get("total_completed")).longValue();
-            long totalFailed = ((Number) stats.get("total_failed")).longValue();
-            int queueSize = ((Number) stats.get("queue_size")).intValue();
-
-            double avgLatency = ((Number) stats.get("avg_latency_ms")).doubleValue();
-            double maxLatency = ((Number) stats.get("max_latency_ms")).doubleValue();
-            double successRate = ((Number) stats.get("success_rate")).doubleValue();
+            //Map<String, Object> stats = performanceMonitor.getTransactionStats();
 
             System.out.printf("""
                             Performance Metrics (%d min window):
@@ -247,10 +231,10 @@ public class FraudCLI implements CommandLineRunner {
                               Max Latency:        %.1fms
                             
                             """, windowMinutes,
-                    isRunning ? "RUNNING" : "STOPPED",
-                    targetTps, currentTps, actualTps, elapsedTime,
-                    totalScheduled, totalCompleted, totalFailed, queueSize, successRate,
-                    avgLatency, maxLatency);
+                    "DONT KNOW",
+                    0, 0, 0, 0,
+                    0, 0, 0, 0, 0,
+                    0, 0);
             showFraudPerformance(1);
         } catch (Exception e) {
             System.out.println("Error getting performance stats: " + e.getMessage());
@@ -259,14 +243,15 @@ public class FraudCLI implements CommandLineRunner {
 
     private void showFraudPerformance(int windowMinutes) {
         try {
-            Map<String, Object> allStats = performanceMonitor.getAllStats(windowMinutes);
+            // TODO: Implement for dynamic amount of rules with new
+            //Map<String, Object> allStats = performanceMonitor.getAllStats(windowMinutes);
+            record ShowUserResponse(Long total_txns, Long total_blocked, Long total_review, Long total_clean) {}
+            ShowUserResponse stats = http.post().uri(uri -> uri.path("/generator/start")
+                    .build()).retrieve().body(ShowUserResponse.class);
+            if (stats == null) {
+                System.out.println("Error getting transaction stats");
+            }
 
-            @SuppressWarnings("unchecked")
-            Map<String, Object> rt1Stats = (Map<String, Object>) allStats.get("rt1");
-            @SuppressWarnings("unchecked")
-            Map<String, Object> rt2Stats = (Map<String, Object>) allStats.get("rt2");
-            @SuppressWarnings("unchecked")
-            Map<String, Object> rt3Stats = (Map<String, Object>) allStats.get("rt3");
 
             System.out.printf("""
                             Fraud Detection Performance (%d min window):
@@ -293,60 +278,22 @@ public class FraudCLI implements CommandLineRunner {
                                 Total Queries:     %d
                             
                             """, windowMinutes,
-                    ((Number) rt1Stats.get("avg_execution_time")).doubleValue(),
-                    ((Number) rt1Stats.get("max_execution_time")).doubleValue(),
-                    ((Number) rt1Stats.get("queries_per_second")).doubleValue(),
-                    ((Number) rt1Stats.get("success_rate")).doubleValue(),
-                    ((Number) rt1Stats.get("total_queries")).intValue(),
-
-                    ((Number) rt2Stats.get("avg_execution_time")).doubleValue(),
-                    ((Number) rt2Stats.get("max_execution_time")).doubleValue(),
-                    ((Number) rt2Stats.get("queries_per_second")).doubleValue(),
-                    ((Number) rt2Stats.get("success_rate")).doubleValue(),
-                    ((Number) rt2Stats.get("total_queries")).intValue(),
-
-                    ((Number) rt3Stats.get("avg_execution_time")).doubleValue(),
-                    ((Number) rt3Stats.get("max_execution_time")).doubleValue(),
-                    ((Number) rt3Stats.get("queries_per_second")).doubleValue(),
-                    ((Number) rt3Stats.get("success_rate")).doubleValue(),
-                    ((Number) rt3Stats.get("total_queries")).intValue());
+                    0,0,0,0,0,
+                    0,0,0,0,0,
+                    0,0,0,0,0);
 
         } catch (Exception e) {
             System.out.println("Error getting fraud performance stats: " + e.getMessage());
         }
     }
 
-    private void showUsers() {
-        try {
-            Map<String, Object> stats = graphService.getUserStats();
-
-            long totalUsers = ((Number) stats.get("total_users")).longValue();
-            long lowRisk = ((Number) stats.get("total_low_risk")).longValue();
-            long medRisk = ((Number) stats.get("total_med_risk")).longValue();
-            long highRisk = ((Number) stats.get("total_high_risk")).longValue();
-
-            System.out.printf("""
-                    User Statistics:
-                      Total Users:        %,d
-                      Low Risk:           %,d
-                      Medium Risk:        %,d
-                      High Risk:          %,d
-                    
-                    """, totalUsers, lowRisk, medRisk, highRisk);
-        } catch (Exception e) {
-            System.out.println("Error getting user stats: " + e.getMessage());
-        }
-    }
-
     private void showTransactions() {
         try {
-            Map<String, Object> stats = graphService.getTransactionStats();
-
-            long totalTxns = ((Number) stats.get("total_txns")).longValue();
-            long blocked = ((Number) stats.get("total_blocked")).longValue();
-            long review = ((Number) stats.get("total_review")).longValue();
-            long clean = ((Number) stats.get("total_clean")).longValue();
-
+            TransactionStatResponse stats = http.post().uri(uri -> uri.path("/transactions/stats")
+                    .build()).retrieve().body(TransactionStatResponse.class);
+            if (stats == null) {
+                System.out.println("Error getting transaction stats");
+            }
             System.out.printf("""
                     Transaction Statistics:
                       Total Transactions: %,d
@@ -354,7 +301,7 @@ public class FraudCLI implements CommandLineRunner {
                       Under Review:       %,d
                       Clean:              %,d
                     
-                    """, totalTxns, blocked, review, clean);
+                    """, stats.total_txns(), stats.total_blocked(), stats.total_review(), stats.total_clean());
         } catch (Exception e) {
             System.out.println("Error getting transaction stats: " + e.getMessage());
         }
@@ -363,7 +310,7 @@ public class FraudCLI implements CommandLineRunner {
     private void seed() {
         try {
             System.out.println("Seeding sample data (demo)...");
-            graphService.seedSampleData();
+            //graphService.seedSampleData();
         } catch (Exception e) {
             System.out.println("Seed failed: " + e.getMessage());
         }
@@ -372,12 +319,16 @@ public class FraudCLI implements CommandLineRunner {
     private void shutdown() {
         try {
             generatorRunning.set(false);
-            graphService.shutdown();
-            fraudService.shutdown();
-            generatorService.shutdown();
+            orchestrator.runShutdownFLow();
             System.out.println("Application shutdown complete");
         } catch (Exception e) {
             System.err.println("Shutdown error: " + e.getMessage());
         }
     }
+
+    record BasicResponse(String message, String status, Boolean ok) {};
+    record StartResponse(String message, String status, Integer rate, Integer max_rate) {}
+    record ShowIndexResponse(String message, String status) {};
+    record TransactionStatResponse(Long total_txns, Long total_blocked, Long total_review, Long total_clean) {}
+
 }

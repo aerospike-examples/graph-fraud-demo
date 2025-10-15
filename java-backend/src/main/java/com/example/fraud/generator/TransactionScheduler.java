@@ -1,6 +1,11 @@
 package com.example.fraud.generator;
 
+import com.example.fraud.model.TransactionType;
 import com.example.fraud.monitor.PerformanceMonitor;
+import com.example.fraud.util.FraudUtil;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.ThreadLocalRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,16 +28,16 @@ public class TransactionScheduler {
     private final List<Thread> schedulerWorkers = new ArrayList<>();
     private final AtomicInteger readyWorkersCount = new AtomicInteger(0);
     private final Lock readyWorkersLock = new ReentrantLock();
-    private final ThreadLocal<Map<String, Object>> taskDataCache =
-            ThreadLocal.withInitial(HashMap::new);
     private volatile boolean running = false;
     private volatile int targetTps = 0;
     private CountDownLatch workersReadyLatch;
     private CountDownLatch startTimingLatch;
+    private TransactionType[] transactionTypes;
 
     public TransactionScheduler(TransactionWorker transactionWorker, PerformanceMonitor performanceMonitor) {
         this.transactionWorker = transactionWorker;
         this.performanceMonitor = performanceMonitor;
+        transactionTypes = TransactionType.values();
     }
 
     public boolean startGeneration(int tps) {
@@ -112,9 +117,14 @@ public class TransactionScheduler {
     }
 
     private void generationLoop(int workerTps, int workerId, int totalWorkers) {
-        double interval = 1.0 / workerTps;
+        if (workerTps <= 0.0) {
+            throw new IllegalArgumentException("workerTps must be > 0");
+        }
+        final long nanosPerTxn = Math.max(1L, (long) Math.floor(1_000_000_000.0 / workerTps));
+        final Duration interval = Duration.ofNanos(nanosPerTxn);
 
-        logger.debug("Scheduler worker {} ready", workerId);
+        logger.debug("Scheduler worker {} ready (interval ~{}μs for {} TPS)",
+                workerId, nanosPerTxn / 1_000, workerTps);
 
         // Signal this worker is ready
         readyWorkersLock.lock();
@@ -141,27 +151,29 @@ public class TransactionScheduler {
         }
 
         logger.debug("Scheduler worker {} starting synchronized generation", workerId);
-        double nextTime = System.nanoTime() / 1_000_000_000.0;
 
-        long currentSecond = System.currentTimeMillis() / 1000;
+        Instant nextTime = Instant.now();
+        long currentSecond = nextTime.getEpochSecond();
         int transactionsThisSecond = 0;
-        int maxTransactionsPerSecond = (int) (workerTps * 1.5);
+
+        final int maxTransactionsPerSecond =
+                (int) Math.max(1, Math.ceil(workerTps * 1.5));
 
         while (running) {
+            final Instant now = Instant.now();
 
-            double currentTime = System.nanoTime() / 1_000_000_000.0;
-            long currentTimeSecond = System.currentTimeMillis() / 1000;
-
-            if (currentTimeSecond != currentSecond) {
-                currentSecond = currentTimeSecond;
+            final long epochSecond = now.getEpochSecond();
+            if (epochSecond != currentSecond) {
+                currentSecond = epochSecond;
                 transactionsThisSecond = 0;
             }
 
             if (transactionsThisSecond >= maxTransactionsPerSecond) {
-                double sleepUntilNextSecond = (currentSecond + 1) - (System.currentTimeMillis() / 1000.0);
-                if (sleepUntilNextSecond > 0) {
+                final Instant nextSecond = Instant.ofEpochSecond(currentSecond + 1);
+                Duration untilNext = Duration.between(now, nextSecond);
+                if (!untilNext.isNegative() && !untilNext.isZero()) {
                     try {
-                        Thread.sleep((long) Math.min(100, sleepUntilNextSecond * 1000));
+                        Thread.sleep(Math.min(100, untilNext.toMillis()));
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         break;
@@ -170,18 +182,17 @@ public class TransactionScheduler {
                 continue;
             }
 
-            if (currentTime >= nextTime) {
-                Map<String, Object> taskData = taskDataCache.get();
-                taskData.put("scheduled_time", currentTime);
-                taskData.put("amount", 100.0 + Math.random() * 14900.0);
-                taskData.put("type", getRandomTransactionType());
+            if (!now.isBefore(nextTime)) {
+                Instant scheduledTime = now;
+                double amount = 100.0 + ThreadLocalRandom.current().nextDouble(14900.0);
+                TransactionType type = FraudUtil.getRandomTransactionType();
+                TransactionTask task = new TransactionTask(scheduledTime, amount, type);
 
                 try {
-                    transactionWorker.submitTransaction(taskData);
-                    performanceMonitor.recordTransactionScheduled();
+                    transactionWorker.submitTransaction(task);
                     transactionsThisSecond++;
 
-                    if (transactionsThisSecond >= maxTransactionsPerSecond * 0.9) {
+                    if (transactionsThisSecond >= (int) (maxTransactionsPerSecond * 0.9)) {
                         logger.debug("Scheduler worker approaching rate limit: {}/{} TPS",
                                 transactionsThisSecond, maxTransactionsPerSecond);
                     }
@@ -189,37 +200,27 @@ public class TransactionScheduler {
                     logger.debug("Transaction submission failed (thread pool full): {}", e.getMessage());
                 }
 
-                nextTime += interval;
+                nextTime = nextTime.plus(interval);
             } else {
-                double sleepTime = Math.min(0.001, nextTime - currentTime);
-                try {
-                    Thread.sleep((long) (sleepTime * 1000));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
+                Duration sleep = Duration.between(now, nextTime);
+                if (sleep.compareTo(Duration.ofMillis(1)) > 0) {
+                    sleep = Duration.ofMillis(1);
+                }
+                long millis = Math.max(0L, sleep.toMillis());
+                if (millis > 0) {
+                    try {
+                        Thread.sleep(millis);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                 }
             }
         }
     }
 
-    private String getRandomTransactionType() {
-        String[] types = {"transfer", "payment", "deposit", "withdrawal"};
-        return types[new Random().nextInt(types.length)];
-    }
-
-    public Map<String, Object> getStatus() {
-        Map<String, Object> status = new HashMap<>();
-        status.put("running", running);
-        status.put("target_tps", targetTps);
-        status.put("scheduler_workers", schedulerWorkers.size());
-
-        List<String> workerNames = new ArrayList<>();
-        for (Thread worker : schedulerWorkers) {
-            workerNames.add(worker.getName());
-        }
-        status.put("worker_names", workerNames);
-
-        return status;
+    public int getTargetTps() {
+        return targetTps;
     }
 
     public void shutdown() {

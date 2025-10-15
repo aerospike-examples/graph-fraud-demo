@@ -3,6 +3,9 @@ package com.example.fraud.generator;
 import com.example.fraud.fraud.FraudService;
 import com.example.fraud.fraud.TransactionInfo;
 import com.example.fraud.monitor.PerformanceMonitor;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,14 +14,14 @@ import java.util.Map;
 import java.util.concurrent.*;
 
 public class TransactionWorker {
-
-    private static final Logger logger = LoggerFactory.getLogger(TransactionWorker.class);
-    private final int WORKER_POOL_SIZE;
-    private final int WORKER_MAX_POOL_SIZE;
-
     private final GeneratorService generatorService;
     private final FraudService fraudService;
     private final PerformanceMonitor performanceMonitor;
+    private static final Logger logger = LoggerFactory.getLogger(TransactionWorker.class);
+
+    private final int WORKER_POOL_SIZE;
+    private final int WORKER_MAX_POOL_SIZE;
+    private AtomicInteger totalTransactions;
 
     private volatile boolean running = false;
     private ExecutorService executor;
@@ -78,84 +81,34 @@ public class TransactionWorker {
         }
     }
 
-    public Future<?> submitTransaction(Map<String, Object> taskData) {
+    public void submitTransaction(TransactionTask taskData) {
         if (!running) {
             throw new RuntimeException("Workers not started");
         }
-        return executor.submit(() -> executeTransaction(taskData));
+        executor.submit(() -> executeTransaction(taskData));
+        totalTransactions.incrementAndGet();
     }
 
-    private void executeTransaction(Map<String, Object> taskData) {
-        double scheduledTime = (double) taskData.get("scheduled_time");
-        long startTime = System.nanoTime();
 
-        double queueWaitMs = (System.nanoTime() / 1_000_000.0) - (scheduledTime * 1000);
-
+    private void executeTransaction(TransactionTask taskData) {
         try {
-            long dbStartTime = System.nanoTime();
-            TransactionInfo result = generatorService.generateTransaction();
-            long dbEndTime = System.nanoTime();
-            double dbLatencyMs = (dbEndTime - dbStartTime) / 1_000_000.0;
+            TransactionInfo result = generatorService.generateTransaction(taskData);
 
             if (result != null &&
-                    Boolean.TRUE.equals(result.get("success")) &&
-                    result.containsKey("edge_id") &&
-                    result.containsKey("txn_id")) {
-
-                long endTime = System.nanoTime();
-                double totalLatencyMs = (endTime / 1_000_000.0) - (scheduledTime * 1000);
-                double executionLatencyMs = (endTime - startTime) / 1_000_000.0;
-
-                performanceMonitor.recordTransactionCompletedDetailed(
-                        totalLatencyMs,
-                        executionLatencyMs,
-                        queueWaitMs,
-                        dbLatencyMs
-                );
-
-                fraudService.submitFraudDetectionAsync(result);
-
-                if (totalLatencyMs > 1000) {
-                    logger.info("HIGH LATENCY Transaction {}: Total={}ms (Queue={}ms, DB={}ms)",
-                            result.get("txn_id"),
-                            Math.round(totalLatencyMs * 10) / 10.0,
-                            Math.round(queueWaitMs * 10) / 10.0,
-                            Math.round(dbLatencyMs * 10) / 10.0);
-                } else if (queueWaitMs > 500) {
-                    logger.info("HIGH QUEUE WAIT Transaction {}: Queue={}ms, Total={}ms",
-                            result.get("txn_id"),
-                            String.format("%.1f", queueWaitMs),
-                            String.format("%.1f", totalLatencyMs));
-                }
+                    result.success() &&
+                    result.edgeId() != null &&
+                    result.txnId() != null) {
+                fraudService.submitFraudDetection(result);
             } else {
-                performanceMonitor.recordTransactionFailed();
                 logger.warn("Transaction creation failed");
             }
 
         } catch (Exception e) {
-            performanceMonitor.recordTransactionFailed();
             logger.error("Transaction+Fraud execution error: {}", e.getMessage());
         }
     }
 
-
-    public Map<String, Object> getPoolStatus() {
-        Map<String, Object> status = new HashMap<>();
-
-        if (executor == null) {
-            status.put("pool_size", 0);
-            status.put("running", running);
-            status.put("active_threads", 0);
-            status.put("queue_size", 0);
-            return status;
-        }
-
-        ThreadPoolExecutor tpe = (ThreadPoolExecutor) executor;
-        status.put("pool_size", tpe.getMaximumPoolSize());
-        status.put("running", running);
-        status.put("active_threads", tpe.getActiveCount());
-        status.put("queue_size", tpe.getQueue().size());
-
-        return status;
+    public int getTotalTransactions() {
+        return totalTransactions.get();
     }
 }

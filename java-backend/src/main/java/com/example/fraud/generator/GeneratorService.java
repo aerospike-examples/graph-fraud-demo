@@ -1,59 +1,48 @@
 package com.example.fraud.generator;
 
+import com.example.fraud.config.TransactionGenerationProperties;
 import com.example.fraud.fraud.FraudService;
 import com.example.fraud.fraud.TransactionInfo;
 import com.example.fraud.graph.GraphService;
+import com.example.fraud.model.TransactionType;
 import com.example.fraud.monitor.PerformanceMonitor;
+import com.example.fraud.util.FraudUtil;
+import java.time.Instant;
 import java.util.concurrent.ThreadLocalRandom;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import org.springframework.stereotype.Service;
 
+@Service
 public class GeneratorService {
 
     private static final Logger logger = LoggerFactory.getLogger(GeneratorService.class);
     private static final Logger statsLogger = LoggerFactory.getLogger("fraud_detection.stats");
 
     private final GraphService graphService;
-    private final WarmupService warmupService;
     private final FraudService fraudService;
     private final PerformanceMonitor performanceMonitor;
-    private final boolean WARMUP_ENABLED = true;
-    private final List<String> normalLocations = Arrays.asList(
-            "New York, New York", "Los Angeles, California", "Chicago, Illinois", "Houston, Texas",
-            "Phoenix, Arizona", "Philadelphia, Pennsylvania", "San Antonio, Texas", "San Diego, California",
-            "Dallas, Texas", "San Jose, California", "Austin, Texas", "Jacksonville, Florida",
-            "Fort Worth, Texas", "Columbus, Ohio", "Charlotte, North Carolina", "San Francisco, California",
-            "Indianapolis, Indiana", "Seattle, Washington", "Denver, Colorado", "Washington, District of Columbia",
-            "Boston, Massachusetts", "El Paso, Texas", "Nashville, Tennessee", "Detroit, Michigan",
-            "Oklahoma City, Oklahoma", "Portland, Oregon", "Las Vegas, Nevada", "Memphis, Tennessee",
-            "Louisville, Kentucky", "Baltimore, Maryland", "Milwaukee, Wisconsin", "Albuquerque, New Mexico",
-            "Tucson, Arizona", "Fresno, California", "Sacramento, California", "Mesa, Arizona",
-            "Kansas City, Missouri", "Atlanta, Georgia", "Long Beach, California", "Colorado Springs, Colorado",
-            "Raleigh, North Carolina", "Miami, Florida", "Virginia Beach, Virginia", "Omaha, Nebraska",
-            "Oakland, California", "Minneapolis, Minnesota", "Tulsa, Oklahoma", "Arlington, Texas"
-    );
-    private final List<String> transactionTypes = Arrays.asList(
-            "purchase", "transfer", "withdrawal", "deposit", "payment"
-    );
+    private final TransactionGenerationProperties props;
+
     private volatile boolean isRunning = false;
     private List<Object> accountVertices = new ArrayList<>();
-    private TransactionWorker transactionWorker;
-    private TransactionScheduler transactionScheduler;
-    private boolean WARM = false;
+    private final TransactionWorker transactionWorker;
+    private final TransactionScheduler transactionScheduler;
 
     public GeneratorService(GraphService graphService,
                             FraudService fraudService,
                             PerformanceMonitor performanceMonitor,
-                            int transactionWorkerPoolSize, int transactionWorkerMaxPoolSize) {
+                            TransactionGenerationProperties transactionGenerationProperties) {
+        this.props = transactionGenerationProperties;
         this.graphService = graphService;
         this.fraudService = fraudService;
         this.performanceMonitor = performanceMonitor;
-        this.warmupService = new WarmupService(graphService, this, fraudService);
+
         this.transactionWorker = new TransactionWorker(this, fraudService, performanceMonitor,
-                transactionWorkerPoolSize, transactionWorkerMaxPoolSize);
+                props.getTransactionWorkerPoolSize(), props.getTransactionWorkerMaxPoolSize());
         this.transactionScheduler = new TransactionScheduler(transactionWorker, performanceMonitor);
     }
 
@@ -99,6 +88,9 @@ public class GeneratorService {
         }
     }
 
+    public int getMaxTransactionRate() {
+        return props.getMaxTransactionRate();
+    }
     public boolean startGeneration(int rate) {
         if (isRunning) {
             logger.warn("Transaction generation is already running");
@@ -115,47 +107,34 @@ public class GeneratorService {
         logger.debug("Using {} cached accounts for transaction generation", String.format("%,d", accountVertices.size()));
 
         try {
-            performanceMonitor.resetTransactionMetrics();
+            performanceMonitor.resetPerformanceSummary();
 
             isRunning = true;
 
-            if (!WARM && WARMUP_ENABLED) {
-                logger.debug("Warmup Started");
-                statsLogger.debug("START: Warmup starteqd");
-                WARM = warmupService.runWithCleanup();
-                if (WARM) {
-                    logger.debug("Generator is now warmed up!");
-                } else {
-                    logger.error("Warmup Failed");
-                    throw new RuntimeException("Error warming up generator");
-                }
-            }
-
             boolean success = transactionScheduler.startGeneration(rate);
             logger.info("Starting up generator at {} transactions/second", rate);
-            performanceMonitor.setGenerationState(true, rate, 0);
+            performanceMonitor.setGenerationState(true, rate, Instant.now());
 
             if (!success) {
-                performanceMonitor.setGenerationState(false, 0, 0);
+                performanceMonitor.setGenerationState(false, 0, null);
                 isRunning = false;
                 return false;
             }
-
 
             return true;
 
         } catch (Exception e) {
             logger.error("Error starting transaction generation: {}", e.getMessage());
             isRunning = false;
-            performanceMonitor.setGenerationState(false, 0, 0);
+            performanceMonitor.setGenerationState(false, 0, null);
             return false;
         }
     }
 
-    public void stopGeneration() {
+    public boolean stopGeneration() {
         if (!isRunning) {
             logger.warn("Transaction generation is not running");
-            return;
+            return false;
         }
 
         isRunning = false;
@@ -166,13 +145,21 @@ public class GeneratorService {
         if (transactionWorker != null) {
             transactionWorker.stopWorkers();
         }
-        performanceMonitor.setGenerationState(false, 0, 0);
+        performanceMonitor.setGenerationState(false, 0, null);
 
         logger.info("Transaction generation stopped");
         statsLogger.info("STOP: Generation stopped.");
+        return true;
     }
 
     public TransactionInfo generateTransaction() {
+        return generateTransaction(new TransactionTask(Instant.now(),
+        100.0 + ThreadLocalRandom.current().nextDouble(14900.0),
+        FraudUtil.getRandomTransactionType()));
+    }
+
+    public TransactionInfo generateTransaction(TransactionTask transactionTask) {
+        Instant start = Instant.now();
         try {
             if (accountVertices.size() < 2) {
                 logger.error("Insufficient cached accounts for transaction generation");
@@ -186,20 +173,17 @@ public class GeneratorService {
             Object senderAccountId = accountVertices.get(idx1);
             Object receiverAccountId = accountVertices.get(idx2);
 
-            double amount = 100.0 + rand.nextDouble() * 14900.0;
-            String transactionType = transactionTypes.get(rand.nextInt(transactionTypes.size()));
-            String location = normalLocations.get(rand.nextInt(normalLocations.size()));
+            String location = FraudUtil.getRandomLocation();
 
-            final TransactionInfo result = graphService.createTransaction(
+            return graphService.createTransaction(
                     senderAccountId.toString(),
                     receiverAccountId.toString(),
-                    amount,
-                    transactionType,
+                    transactionTask.amount(),
+                    transactionTask.transactionType(),
                     "AUTO",
-                    location
+                    location,
+                    start
             );
-
-            return result;
 
         } catch (Exception e) {
             logger.error("Error generating normal transaction: {}", e.getMessage());
@@ -207,6 +191,12 @@ public class GeneratorService {
         }
     }
 
+    public int getTotalTransactions() {
+        return transactionWorker.getTotalTransactions();
+    }
+    public GeneratorStatus getStatus() {
+        return performanceMonitor.getGeneratorStatus();
+    }
     public void shutdown() {
         try {
             if (isRunning) {

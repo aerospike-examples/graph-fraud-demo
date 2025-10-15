@@ -1,7 +1,6 @@
 package com.example.fraud.fraud;
 
-import java.time.Instant;
-import java.util.Map;
+import com.example.fraud.model.FraudCheckStatus;
 
 import lombok.Getter;
 
