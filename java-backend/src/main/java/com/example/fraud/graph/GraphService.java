@@ -76,6 +76,8 @@ public class GraphService {
                     .maxConnectionPoolSize(props.mainConnectionPoolSize())
                     .minConnectionPoolSize(props.mainConnectionPoolSize())
                     .create();
+            fraudCluster = builder.create();
+            logger.info("fraud cluster created");
 
             mainG = traversal().withRemote(DriverRemoteConnection.using(mainCluster));
             fraudG = traversal().withRemote(DriverRemoteConnection.using(fraudCluster));

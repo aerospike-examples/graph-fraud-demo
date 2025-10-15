@@ -83,7 +83,7 @@ public class FraudService {
             return new TransactionSummary(List.of(), txnInfo);
         }
 
-        final List<FraudOutcome> fraudOutcomes = new ArrayList<>();
+        final List<FraudResult> fraudOutcomes = new ArrayList<>();
         for (final Rule rule : fraudRulesList) {
             if (!rule.isEnabled()) continue;
             fraudOutcomes.add(rule.executeRule(txnInfo));

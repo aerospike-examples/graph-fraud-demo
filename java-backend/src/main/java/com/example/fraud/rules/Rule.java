@@ -1,7 +1,8 @@
 package com.example.fraud.rules;
 
-import com.example.fraud.fraud.FraudOutcome;
+import com.example.fraud.fraud.FraudResult;
 import com.example.fraud.fraud.TransactionInfo;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
@@ -18,5 +19,5 @@ public abstract class Rule {
     private final boolean runAsync;
     protected final GraphTraversalSource g;
 
-    public abstract FraudOutcome executeRule(final TransactionInfo info);
+    public abstract FraudResult executeRule(final TransactionInfo info);
 }

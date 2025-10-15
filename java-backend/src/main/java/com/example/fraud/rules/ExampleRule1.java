@@ -1,6 +1,9 @@
 package com.example.fraud.rules;
 
-import com.example.fraud.fraud.FraudOutcome;
+import com.example.fraud.fraud.FlaggedConnection;
+import com.example.fraud.fraud.FraudCheckDetails;
+import com.example.fraud.fraud.PerformanceInfo;
+import com.example.fraud.model.FraudCheckStatus;
 import com.example.fraud.fraud.FraudResult;
 import com.example.fraud.fraud.TransactionInfo;
 import java.time.Duration;
@@ -8,8 +11,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import lombok.experimental.SuperBuilder;
-import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
+import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
+import org.apache.tinkerpop.gremlin.structure.T;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
 
 @Component
 public class ExampleRule1 extends Rule {
@@ -25,16 +31,12 @@ public class ExampleRule1 extends Rule {
     }
 
     @Override
-    public FraudOutcome executeRule(final TransactionInfo info) {
+    public FraudResult executeRule(final TransactionInfo info) {
 
         final Instant t0 = Instant.now();
         try {
             @SuppressWarnings("unchecked")
-            final Map<String, Object> connections = g.E(info.getEdgeId())
-                    .project("sender", "receiver")
-                    .by(__.outV().has("fraud_flag", true).id())
-                    .by(__.inV().has("fraud_flag", true).id())
-                    .next();
+            final Map<Object, Boolean> idToFraudFlag = (Map) g.V(info.toId(), info.fromId()).elementMap(T.id.getAccessor(), "fraud_flag").next();
 
             final Boolean senderIsFraud = idToFraudFlag.get(info.fromId());
             final Boolean receiverIsFraud = idToFraudFlag.get(info.toId());
