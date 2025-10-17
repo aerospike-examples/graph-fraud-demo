@@ -38,23 +38,16 @@ public class TransactionWorker {
 
     public void startWorkers() {
         running = true;
-        executor = new ThreadPoolExecutor(
-                WORKER_POOL_SIZE,
-                WORKER_MAX_POOL_SIZE,
-                60L,
-                TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(),
-                new ThreadFactory() {
-                    private int counter = 0;
+        executor = Executors.newFixedThreadPool(WORKER_POOL_SIZE, new ThreadFactory() {
+            private int counter = 0;
 
-                    @Override
-                    public Thread newThread(Runnable r) {
-                        Thread t = new Thread(r);
-                        t.setName("txn_fraud_worker-" + counter++);
-                        return t;
-                    }
-                }
-        );
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r);
+                t.setName("txn_fraud_worker-" + counter++);
+                return t;
+            }
+        });
 
         logger.debug("Transaction workers ready ({} workers)", WORKER_POOL_SIZE);
     }
