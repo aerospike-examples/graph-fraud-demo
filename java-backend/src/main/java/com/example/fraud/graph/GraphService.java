@@ -815,7 +815,7 @@ public class GraphService {
                 .toList();
     }
 
-    public void seedSampleData() throws InterruptedException {
+    public void seedSampleData() {
         mainG.V().drop().iterate();
         String verticesPath = "/data/graph_csv/vertices";
         String edgesPath = "/data/graph_csv/edges";
@@ -837,7 +837,12 @@ public class GraphService {
                 logger.info("Bulk load data seeding completed!");
                 break;
             }
-            Thread.sleep(5000);
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                logger.warn("Bulk load wait interrupted", e.getMessage());
+            }
+
         }
     }
 

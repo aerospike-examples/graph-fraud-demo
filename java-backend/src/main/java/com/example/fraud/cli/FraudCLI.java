@@ -12,10 +12,10 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
-
 
 import java.io.Console;
 import java.util.Locale;
@@ -49,37 +49,21 @@ public class FraudCLI implements CommandLineRunner {
                   start <tps>          - Start generator at specified TPS
                   stop                 - Stop transaction generator
                   status               - Show generator status
+                  threads [opts]       - Show JVM thread status. Options:
+                                                        --stacks (include stack traces)
+                                                        --sort cpu|name|id
+                                                        --state RUNNABLE|BLOCKED|WAITING|TIMED_WAITING|NEW|TERMINATED
                   quit, exit           - Exit application
                 """);
     }
 
-    private static int parseWindow(String[] args) {
-        int w = 1;
-        if (args.length > 0) {
-            try {
-                w = Integer.parseInt(args[0]);
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        if (w != 1 && w != 5 && w != 10) {
-            System.out.println("Time window must be 1, 5, or 10. Using 1.");
-            w = 1;
-        }
-        return w;
-    }
-
     private static void printRowHeader() {
-        System.out.printf("%-58s %8s %12s %12s %10s %8s %8s %12s%n",
-                "Category", "QPS", "Success", "Failure", "Avg", "Min", "Max", "Elapsed");
-        System.out.printf("%-58s %8s %12s %12s %10s %8s %8s %12s%n",
-                repeat('-', 58), repeat('-', 8), repeat('-', 12), repeat('-', 12),
-                repeat('-', 10), repeat('-', 8), repeat('-', 8), repeat('-', 12));
+        System.out.printf("%-58s %8s %12s %12s %10s %8s %8s %12s%n", "Category", "QPS", "Success", "Failure", "Avg", "Min", "Max", "Elapsed");
+        System.out.printf("%-58s %8s %12s %12s %10s %8s %8s %12s%n", repeat('-', 58), repeat('-', 8), repeat('-', 12), repeat('-', 12), repeat('-', 10), repeat('-', 8), repeat('-', 8), repeat('-', 12));
     }
 
-    private static void printRow(String name, double qps, long succ, long fail, double avg, double min, double max,
-                                 long elapsedSec) {
-        System.out.printf("%-58.58s     %.2f %12d %12d       %.2f     %.2f      %.2f %12s%n",
-                name, qps, succ, fail, avg, min, max, human(elapsedSec));
+    private static void printRow(String name, double qps, long succ, long fail, double avg, double min, double max, long elapsedSec) {
+        System.out.printf("%-58.58s     %.2f %12d %12d       %.2f     %.2f      %.2f %12s%n", name, qps, succ, fail, avg, min, max, human(elapsedSec));
     }
 
     private static String repeat(char c, int n) {
@@ -155,6 +139,7 @@ public class FraudCLI implements CommandLineRunner {
                     seed();
                     System.out.println("Transactions cleared!");
                 }
+                case "threads" -> showThreads(args);
                 case "status" -> generatorStatus();
                 case "start" -> startGenerator(args);
                 case "stop" -> stopGenerator();
@@ -173,10 +158,7 @@ public class FraudCLI implements CommandLineRunner {
 
     private void generatorStatus() {
         try {
-            String json = http.get()
-                    .uri(uri -> uri.path("/generator/status").build())
-                    .retrieve()
-                    .body(String.class);
+            String json = http.get().uri(uri -> uri.path("/generator/status").build()).retrieve().body(String.class);
             System.out.println("Generator Status: \n" + json);
             generatorRunning.compareAndSet(true, false);
         } catch (Exception e) {
@@ -186,10 +168,7 @@ public class FraudCLI implements CommandLineRunner {
 
     private void seed() {
         try {
-            String json = http.post()
-                    .uri(uri -> uri.path("/bulk-load").build())
-                    .retrieve()
-                    .body(String.class);
+            http.post().uri(uri -> uri.path("/bulk-load").build()).retrieve().toBodilessEntity();
             System.out.println("Bulk load seeded!");
             generatorRunning.compareAndSet(true, false);
         } catch (Exception e) {
@@ -199,8 +178,7 @@ public class FraudCLI implements CommandLineRunner {
 
     private void stopGenerator() {
         try {
-            BasicResponse resp = http.post().uri(uri -> uri.path("/generator/stop").build())
-                    .retrieve().body(BasicResponse.class);
+            http.post().uri(uri -> uri.path("/generator/stop").build()).retrieve().toBodilessEntity();
             System.out.println("Generator stopped!");
             generatorRunning.compareAndSet(true, false);
         } catch (Exception e) {
@@ -217,26 +195,28 @@ public class FraudCLI implements CommandLineRunner {
                     \texample: start 200""");
             return;
         }
-        int rate = Integer.parseInt(args[0]);
+        try {
+            int rate = Integer.parseInt(args[0]);
+            StartResponse json = http.post().uri(uri -> uri.path("/generator/start").queryParam("rate", rate)
+                    .build()).retrieve().body(StartResponse.class);
 
-        StartResponse resp = http.post().uri(uri -> uri.path("/generator/start")
-                .queryParam("rate", rate).build()).retrieve().body(StartResponse.class);
-        boolean ok = resp != null && "started".equalsIgnoreCase(resp.status());
-        if (ok) {
-            System.out.println("Generator started.");
-            generatorRunning.compareAndSet(false, true);
-        } else {
-            System.out.println("Generator failed to start.");
+            if (json != null && Objects.equals(json.status, "started")) {
+                System.out.println("Generator started.");
+                generatorRunning.compareAndSet(false, true);
+            } else {
+                System.out.println("Generator failed to start.");
+            }
+        } catch (Exception e) {
+            System.out.println("Error starting generator: " + e.getMessage());
         }
+
+
     }
 
     private void showIndexes() {
         try {
             System.out.println("Database Indexes Information");
-            String json = http.get()
-                    .uri(uri -> uri.path("/admin/indexes").build())
-                    .retrieve()
-                    .body(String.class);
+            String json = http.get().uri(uri -> uri.path("/admin/indexes").build()).retrieve().body(String.class);
 
             JsonNode root = mapper.readTree(json);
 
@@ -255,10 +235,7 @@ public class FraudCLI implements CommandLineRunner {
     private void createFraudIndexes() {
         System.out.println("Creating fraud detection indexes...");
         try {
-            String json = http.get()
-                    .uri(uri -> uri.path("/admin/indexes/create-transaction-indexes")
-                            .build()).retrieve()
-                    .body(String.class);
+            String json = http.get().uri(uri -> uri.path("/admin/indexes/create-transaction-indexes").build()).retrieve().body(String.class);
             JsonNode root = mapper.readTree(json);
 
 
@@ -271,8 +248,7 @@ public class FraudCLI implements CommandLineRunner {
 
     private void showTransactions() {
         try {
-            TransactionStatResponse stats = http.get().uri(uri -> uri.path("/transactions/stats")
-                    .build()).retrieve().body(TransactionStatResponse.class);
+            TransactionStatResponse stats = http.get().uri(uri -> uri.path("/transactions/stats").build()).retrieve().body(TransactionStatResponse.class);
             if (stats == null) {
                 System.out.println("Error getting transaction stats");
             }
@@ -291,10 +267,7 @@ public class FraudCLI implements CommandLineRunner {
 
     private void showPerfStats() {
         try {
-            String json = http.get()
-                    .uri(uri -> uri.path("/performance/stats").queryParam("time_window", 5).build())
-                    .retrieve()
-                    .body(String.class);
+            String json = http.get().uri(uri -> uri.path("/performance/stats").queryParam("time_window", 5).build()).retrieve().body(String.class);
 
             JsonNode root = mapper.readTree(json);
             if (root == null || !root.has("performance_stats")) {
@@ -310,13 +283,13 @@ public class FraudCLI implements CommandLineRunner {
             JsonNode txn = p.path("transaction_stats");
 
             List<Map.Entry<String, JsonNode>> categories = new ArrayList<>();
-            p.fields().forEachRemaining(e -> {
+            for (Map.Entry<String, JsonNode> e : p.properties()) {
                 String k = e.getKey();
                 JsonNode v = e.getValue();
                 if (v.isObject() && !k.equals("transaction_stats") && !k.equals("timestamp") && !k.equals("is_running")) {
                     categories.add(Map.entry(k, v));
                 }
-            });
+            }
             categories.sort(Comparator.comparing(Map.Entry::getKey));
 
             System.out.println();
@@ -325,14 +298,7 @@ public class FraudCLI implements CommandLineRunner {
 
             System.out.println("Overall Transactions");
             printRowHeader();
-            printRow("TOTAL",
-                    txn.path("QPS").asDouble(),
-                    txn.path("total_success").asLong(),
-                    txn.path("total_failure").asLong(),
-                    txn.path("average").asDouble(),
-                    txn.path("min").asDouble(),
-                    txn.path("max").asDouble(),
-                    txn.path("elapsed_time_seconds").asLong());
+            printRow("TOTAL", txn.path("QPS").asDouble(), txn.path("total_success").asLong(), txn.path("total_failure").asLong(), txn.path("average").asDouble(), txn.path("min").asDouble(), txn.path("max").asDouble(), txn.path("elapsed_time_seconds").asLong());
 
             if (!categories.isEmpty()) {
                 System.out.println();
@@ -340,14 +306,7 @@ public class FraudCLI implements CommandLineRunner {
                 printRowHeader();
                 for (var entry : categories) {
                     JsonNode v = entry.getValue();
-                    printRow(entry.getKey(),
-                            v.path("QPS").asDouble(),
-                            v.path("total_success").asLong(),
-                            v.path("total_failure").asLong(),
-                            v.path("average").asDouble(),
-                            v.path("min").asDouble(),
-                            v.path("max").asDouble(),
-                            v.path("elapsed_time_seconds").asLong());
+                    printRow(entry.getKey(), v.path("QPS").asDouble(), v.path("total_success").asLong(), v.path("total_failure").asLong(), v.path("average").asDouble(), v.path("min").asDouble(), v.path("max").asDouble(), v.path("elapsed_time_seconds").asLong());
                 }
             }
             System.out.println();
@@ -367,6 +326,136 @@ public class FraudCLI implements CommandLineRunner {
         }
     }
 
+    private void showThreads(String[] args) {
+        boolean includeStacks = false;
+        java.lang.Thread.State filterState = null;
+        String sortKey = "cpu"; // cpu|name|id (default cpu)
+
+        for (String a : args) {
+            switch (a.toLowerCase(Locale.ROOT)) {
+                case "--stacks" -> includeStacks = true;
+                case "--sort=name" -> sortKey = "name";
+                case "--sort=id" -> sortKey = "id";
+                case "--sort=cpu" -> sortKey = "cpu";
+                default -> {
+                    if (a.startsWith("--state=")) {
+                        String s = a.substring("--state=".length());
+                        try {
+                            filterState = java.lang.Thread.State.valueOf(s);
+                        } catch (IllegalArgumentException ex) {
+                            System.out.println("Unknown state: " + s + ". Valid: NEW, RUNNABLE, BLOCKED, WAITING, TIMED_WAITING, TERMINATED");
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        var mx = java.lang.management.ManagementFactory.getThreadMXBean();
+        boolean cpuSupported = mx.isThreadCpuTimeSupported();
+        if (cpuSupported && !mx.isThreadCpuTimeEnabled()) {
+            try {
+                mx.setThreadCpuTimeEnabled(true);
+            } catch (SecurityException ignored) {
+            }
+        }
+
+        long[] ids = mx.getAllThreadIds();
+        // depth=Integer.MAX_VALUE captures full stack if includeStacks
+        java.lang.management.ThreadInfo[] infos = includeStacks
+                ? mx.getThreadInfo(ids, Integer.MAX_VALUE)
+                : mx.getThreadInfo(ids, 1);
+
+        record Row(long id, String name, Thread.State state, boolean daemon,
+                   long cpuMs, long userMs, long blocked, long waited) {
+        }
+
+        List<Row> rows = new ArrayList<>();
+        long daemonCount = 0, nonDaemonCount = 0;
+
+        // Build rows + collect daemon counts
+        Map<Long, Thread> live = Thread.getAllStackTraces().keySet().stream()
+                .collect(java.util.stream.Collectors.toMap(Thread::getId, t -> t));
+
+        for (java.lang.management.ThreadInfo ti : infos) {
+            if (ti == null) continue; // can be null if thread died between calls
+            Thread t = live.get(ti.getThreadId());
+            boolean daemon = t != null && t.isDaemon();
+            if (daemon) daemonCount++;
+            else nonDaemonCount++;
+
+            if (filterState != null && ti.getThreadState() != filterState) continue;
+
+            long cpuMs = (cpuSupported ? mx.getThreadCpuTime(ti.getThreadId()) : -1L);
+            long usrMs = (cpuSupported ? mx.getThreadUserTime(ti.getThreadId()) : -1L);
+            cpuMs = cpuMs < 0 ? -1 : cpuMs / 1_000_000L;
+            usrMs = usrMs < 0 ? -1 : usrMs / 1_000_000L;
+
+            rows.add(new Row(
+                    ti.getThreadId(),
+                    ti.getThreadName(),
+                    ti.getThreadState(),
+                    daemon,
+                    cpuMs,
+                    usrMs,
+                    ti.getBlockedCount(),
+                    ti.getWaitedCount()
+            ));
+        }
+
+        // Sort
+        Comparator<Row> cmp = switch (sortKey) {
+            case "name" -> Comparator.comparing(Row::name, String.CASE_INSENSITIVE_ORDER);
+            case "id" -> Comparator.comparingLong(Row::id);
+            default -> Comparator.<Row>comparingLong(r -> r.cpuMs < 0 ? Long.MIN_VALUE : r.cpuMs).reversed()
+                    .thenComparing(Row::name);
+        };
+        rows.sort(cmp);
+
+        // Print summary
+        System.out.printf("Threads: total=%d, daemon=%d, non-daemon=%d, cpuTimeSupported=%s%n",
+                rows.size(), daemonCount, nonDaemonCount, cpuSupported);
+
+        // Header
+        System.out.printf("%-6s %-40.40s %-14s %-6s %10s %10s %10s %10s%n",
+                "ID", "Name", "State", "Daemon", "CPU(ms)", "User(ms)", "Blocked", "Waited");
+        System.out.printf("%-6s %-40.40s %-14s %-6s %10s %10s %10s %10s%n",
+                repeat('-', 6), repeat('-', 40), repeat('-', 14), repeat('-', 6),
+                repeat('-', 10), repeat('-', 10), repeat('-', 10), repeat('-', 10));
+
+        for (Row r : rows) {
+            System.out.printf("%6d %-40.40s %-14s %-6s %10s %10s %10d %10d%n",
+                    r.id(), r.name(), r.state(), r.daemon() ? "yes" : "no",
+                    r.cpuMs() >= 0 ? Long.toString(r.cpuMs()) : "n/a",
+                    r.userMs() >= 0 ? Long.toString(r.userMs()) : "n/a",
+                    r.blocked(), r.waited());
+
+            if (includeStacks) {
+                java.lang.management.ThreadInfo ti = mx.getThreadInfo(r.id(), Integer.MAX_VALUE);
+                if (ti != null) {
+                    for (StackTraceElement ste : ti.getStackTrace()) {
+                        System.out.println("    at " + ste);
+                    }
+                    var loc = ti.getLockInfo();
+                    if (loc != null) {
+                        System.out.println("    on lock " + loc);
+                    }
+                    var owners = ti.getLockedMonitors();
+                    if (owners != null && owners.length > 0) {
+                        System.out.println("    locked monitors:");
+                        for (var m : owners) System.out.println("      * " + m);
+                    }
+                    var syncs = ti.getLockedSynchronizers();
+                    if (syncs != null && syncs.length > 0) {
+                        System.out.println("    locked synchronizers:");
+                        for (var s : syncs) System.out.println("      * " + s);
+                    }
+                    System.out.println();
+                }
+            }
+        }
+    }
+
     private JsonNode readJson(String s) {
         try {
             return mapper.readTree(s);
@@ -379,9 +468,6 @@ public class FraudCLI implements CommandLineRunner {
     }
 
     record StartResponse(String message, String status, Integer rate, Integer max_rate) {
-    }
-
-    record ShowIndexResponse(String message, String status) {
     }
 
     record TransactionStatResponse(Long total_txns, Long total_blocked, Long total_review, Long total_clean) {

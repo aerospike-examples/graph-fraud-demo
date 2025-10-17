@@ -6,6 +6,7 @@ import com.example.fraud.monitor.PerformanceMonitor;
 import com.example.fraud.graph.GraphService;
 import com.example.fraud.rules.Rule;
 import java.util.concurrent.atomic.AtomicInteger;
+import lombok.Getter;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,8 +23,8 @@ public class FraudService {
     private final GraphService graph;
     private final PerformanceMonitor perf;
     private final ExecutorService exec;
+    @Getter
     private final List<Rule> fraudRulesList;
-    private final List<Rule> asyncFraudRulesList;
     private final Map<String, Rule> fraudRulesMap;
     private final FraudProperties props;
 
@@ -31,28 +32,14 @@ public class FraudService {
                         List<Rule> fraudRulesList, FraudProperties props) {
         this.graph = graphService;
         this.perf = performanceMonitor;
-
-        List <Rule> syncFraudRules = new ArrayList<>();
-        List <Rule> asyncFraudRules = new ArrayList<>();
         Map <String, Rule> fraudRulesMap = new HashMap<String,Rule>();
         for (Rule r : fraudRulesList) {
-            if (r.isRunAsync()) {
-                asyncFraudRules.add(r);
-            } else {
-                syncFraudRules.add(r);
-            }
             fraudRulesMap.put(r.getName(), r);
         }
         this.props = props;
-        this.fraudRulesList = syncFraudRules;
-        this.asyncFraudRulesList = asyncFraudRules;
+        this.fraudRulesList = fraudRulesList;
         this.fraudRulesMap = fraudRulesMap;
-        this.exec = new ThreadPoolExecutor(
-                props.getFraudWorkerPoolSize(), props.getFraudWorkerMaxPoolSize(),
-                60L, TimeUnit.SECONDS,
-                new SynchronousQueue<>(),
-                new NamedFactory("fraud"),
-                new ThreadPoolExecutor.CallerRunsPolicy());
+        this.exec = Executors.newFixedThreadPool(props.getFraudWorkerPoolSize(), new NamedFactory("fraud"));
     }
 
     public void shutdown() {
@@ -82,43 +69,30 @@ public class FraudService {
     }
 
     public void submitFraudDetection(final TransactionInfo transactionInfo) {
-        exec.submit(() -> runAsyncFraudDetection(transactionInfo));
-        runFraudDetection(transactionInfo);
-    }
-
-    private void runAsyncFraudDetection(TransactionInfo transactionInfo) {
-        final GraphTraversalSource fraudG = graph.getFraudClient();
-        if (fraudG == null) {
-            log.warn("Graph client not available for fraud detection");
-        }
-
-        final List<FraudResult> fraudOutcomes = new ArrayList<>();
-        for (final Rule rule : asyncFraudRulesList) {
-            if (!rule.isEnabled()) continue;
-            fraudOutcomes.add(rule.executeRule(transactionInfo));
-        }
-        final TransactionSummary summary = new TransactionSummary(fraudOutcomes, transactionInfo);
-        storeFraudResults(graph.getMainClient(), transactionInfo.edgeId(), summary);
-        perf.recordAsyncRulesCompletedDetailed(summary);
-    }
-
-    public TransactionSummary runFraudDetection(final TransactionInfo txnInfo) {
-        final GraphTraversalSource fraudG = graph.getFraudClient();
-        if (fraudG == null) {
-            log.warn("Graph client not available for fraud detection");
-            return new TransactionSummary(List.of(), txnInfo);
-        }
-
-        final List<FraudResult> fraudOutcomes = new ArrayList<>();
+        final List<Future<FraudResult>> futures = new ArrayList<>();
         for (final Rule rule : fraudRulesList) {
-            if (!rule.isEnabled()) continue;
-            fraudOutcomes.add(rule.executeRule(txnInfo));
+            if (rule.isEnabled()) {
+                futures.add(exec.submit(() -> rule.executeRule(transactionInfo)));
+            }
         }
-        final TransactionSummary summary = new TransactionSummary(fraudOutcomes, txnInfo);
-        storeFraudResults(graph.getMainClient(), txnInfo.edgeId(), summary);
+        final List<FraudResult> results = new ArrayList<>();
+        for (final Future<FraudResult> future : futures) {
+            try {
+                results.add(future.get());
+            } catch (InterruptedException | ExecutionException e) {
+                futures.forEach(ff -> ff.cancel(true));
+                Thread.currentThread().interrupt();
+            } catch (CancellationException ce) {
+                log.debug("Fraud check cancelled (shutdown in progress)");
+                return;
+            } catch (final Exception e) {
+                log.error("Encountered exception while waiting for async rule to complete.", e);
+                throw new RuntimeException(e);
+            }
+        }
+        final TransactionSummary summary = new TransactionSummary(results, transactionInfo);
+        storeFraudResults(graph.getMainClient(), transactionInfo.edgeId(), summary);
         perf.recordTransactionCompletedDetailed(summary);
-
-        return summary;
     }
 
     private void storeFraudResults(GraphTraversalSource mainG, Object edgeId,

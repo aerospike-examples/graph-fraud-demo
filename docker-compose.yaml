@@ -12,7 +12,7 @@ services:
     ports:
       - "3000-3002:3000-3002"
   aerospike-graph-service:
-    image: aerospike/aerospike-graph-service:3.0.0
+    image: ghcr.io/citrusleaf/firefly:3.1.0-rc2
     container_name: asgraph-service
     depends_on:
       aerospike-db:

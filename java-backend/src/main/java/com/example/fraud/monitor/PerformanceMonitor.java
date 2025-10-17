@@ -45,14 +45,18 @@ public class PerformanceMonitor {
     }
 
     public void recordTransactionCompletedDetailed(final TransactionSummary summary) {
+        if (transactionsMade % 200 == 0) {
+            log.debug("Transaction completed ({})", summary);
+        }
         transactionsMade++;
         bg.submit(() -> performanceSummary.updatePerformance(summary));
     }
 
     public void recordAsyncRulesCompletedDetailed(final TransactionSummary summary) {
         if (transactionsMade % 200 == 0) {
-            log.info("Transaction completed ({})", summary);
+            log.debug("Transaction completed ({})", summary);
         }
+        transactionsMade++;
         bg.submit(() -> performanceSummary.updateAsyncPerformance(summary));
     }
 

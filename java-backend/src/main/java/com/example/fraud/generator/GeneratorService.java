@@ -191,6 +191,9 @@ public class GeneratorService {
         }
     }
 
+    public int getAccountCacheSize() {
+        return accountVertices.size();
+    }
     public int getTotalTransactions() {
         return transactionWorker.getTotalTransactions();
     }

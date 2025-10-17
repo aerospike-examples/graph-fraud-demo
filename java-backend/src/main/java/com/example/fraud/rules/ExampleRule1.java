@@ -23,9 +23,9 @@ import org.springframework.stereotype.Component;
 public class ExampleRule1 extends Rule {
     public ExampleRule1(GraphTraversalSource g,
                         @Value("${rules.example-rule-1.name:Transaction to Flagged Account}") String name,
-                        @Value("${rules.example-rule-1.description:Detects rapid repeat txns}") String description,
-                        @Value("#{'${rules.example-rule-1.key-indicators:velocity,burst}'.split(',')}") List<String> keyIndicators,
-                        @Value("${rules.example-rule-1.common-use-case:Card testing}") String commonUseCase,
+                        @Value("${rules.example-rule-1.description:Immediate threat detection via 1-hop lookup}") String description,
+                        @Value("#{'rules.example-rule-1.key-indicators:Transaction directed to known flagged account,1-hop graph lookup for immediate detection,Real-time risk assessment'.split(',')}") List<String> keyIndicators,
+                        @Value("${'rules.example-rule-1.common-use-case:Immediate threat detection, known fraudster connections}'") String commonUseCase,
                         @Value("${rules.example-rule-1.complexity:LOW}") String complexity,
                         @Value("${rules.example-rule-1.enabled:true}") boolean enabled,
                         @Value("${rules.example-rule-1.run-async:false}") boolean runAsync) {

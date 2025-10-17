@@ -1,6 +1,8 @@
 package com.example.fraud.api;
 
 import com.example.fraud.graph.GraphService;
+import com.example.fraud.model.TransactionType;
+import com.example.fraud.util.FraudUtil;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;
@@ -29,7 +31,9 @@ public class GraphController {
 
     // HEAD /health
     @RequestMapping(path = "/health", method = RequestMethod.HEAD)
-    public ResponseEntity<Void> dockerHealth() { return ResponseEntity.ok().build(); }
+    public ResponseEntity<Void> dockerHealth() {
+        return ResponseEntity.ok().build();
+    }
 
     // GET /health
     @GetMapping("/health")
@@ -40,7 +44,9 @@ public class GraphController {
 
     // GET /dashboard/stats
     @GetMapping("/dashboard/stats")
-    public Object dashboardStats() { return graph.getDashboardStats(); }
+    public Object dashboardStats() {
+        return graph.getDashboardStats();
+    }
 
     // ----- Users -----
 
@@ -58,7 +64,9 @@ public class GraphController {
 
     // GET /users/stats
     @GetMapping("/users/stats")
-    public Object getUsersStats() { return graph.getUserStats(); }
+    public Object getUsersStats() {
+        return graph.getUserStats();
+    }
 
     // GET /users/{user_id}
     @GetMapping("/users/{user_id}")
@@ -81,6 +89,24 @@ public class GraphController {
         return graph.search("txns", page, page_size, order_by, order, query);
     }
 
+    // POST /transactions/manual
+    @PostMapping("/manual")
+    public ResponseEntity<?> createManual(
+            @RequestParam String from_account_id,
+            @RequestParam String to_account_id,
+            @RequestParam @Min(1) double amount,
+            @RequestParam(defaultValue = "transfer") String transaction_type
+    ) {
+        TransactionType transactionType = TransactionType.valueOf(transaction_type);
+        boolean ok = graph.createManualTransaction(
+                from_account_id, to_account_id, amount, transactionType, "MANUAL",
+                FraudUtil.getRandomLocation(), Instant.now()).success();
+        if (!ok) {
+            return ResponseEntity.badRequest().body(new GeneratorController.ApiMessage("Failed to create transaction"));
+        }
+        return ResponseEntity.ok(new GeneratorController.ApiMessage("Transaction created successfully"));
+    }
+
     // DELETE /transactions
     @DeleteMapping("/transactions")
     public Object deleteAllTransactions() {
@@ -94,7 +120,9 @@ public class GraphController {
 
     // GET /transactions/stats
     @GetMapping("/transactions/stats")
-    public Object transactionStats() { return graph.getTransactionStats(); }
+    public Object transactionStats() {
+        return graph.getTransactionStats();
+    }
 
     // GET /transactions/flagged
     @GetMapping("/transactions/flagged")
@@ -117,7 +145,9 @@ public class GraphController {
 
     // GET /accounts
     @GetMapping("/accounts")
-    public Object getAccounts() { return Map.of("accounts", graph.getAllAccounts()); }
+    public Object getAccounts() {
+        return Map.of("accounts", graph.getAllAccounts());
+    }
 
     // GET /accounts/flagged
     @GetMapping("/accounts/flagged")
@@ -156,26 +186,25 @@ public class GraphController {
     @PostMapping("/bulk-load")
     public Object bulkLoadCsv(@RequestParam(required = false) String vertices_path,
                               @RequestParam(required = false) String edges_path) {
-        try {
-            graph.seedSampleData();
-            return true;
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
+        graph.seedSampleData();
+        return true;
     }
 
     // GET /bulk-load-status
     @GetMapping("/bulk-load-status")
-    public Object bulkLoadStatus() { return graph.getBulkloadStatus(); }
+    public Object bulkLoadStatus() {
+        return graph.getBulkloadStatus();
+    }
 
     // GET /admin/indexes
     @GetMapping("/admin/indexes")
-    public Object getIndexInfo() { return graph.inspectIndexes(); }
+    public Object getIndexInfo() {
+        return graph.inspectIndexes();
+    }
 
     // POST /admin/indexes/create-transaction-indexes
     @PostMapping("/admin/indexes/create-transaction-indexes")
-    public Object createTxnIndexes() { return graph.createFraudDetectionIndexes(); }
-
-    /* simple response wrapper if you need typed DTOs later */
-    record ApiMessage(String message) {}
+    public Object createTxnIndexes() {
+        return graph.createFraudDetectionIndexes();
+    }
 }

@@ -56,7 +56,6 @@ public class PerformanceMetric {
             final long bucket = perfInfo.start().getEpochSecond() / UPDATE_FREQUENCY; // 5-second bucket
             final int slot = (int) (bucket % WINDOW_SIZE);
 
-            // Use the same lock consistently; no need for a different class lock
             Window window = transactionPerSecond[slot];
             if (window == null || !window.getStartTime().equals(bucket)) {
                 window = new Window(bucket);
@@ -112,12 +111,11 @@ public class PerformanceMetric {
         }
 
         if (entries == 0) return new MetricInfo(0d, 0d, 0d, 0d);
-
-        long seconds = (lastBucket - firstBucket + 1) * UPDATE_FREQUENCY; // convert buckets to seconds
-        double qps = entries > 0 && seconds > 0
-                ? (entries / (double) seconds)
-                : 0.0;
-
+        int currentIndex = (int) (nowBucket % WINDOW_SIZE) - 1;
+        if (currentIndex < 0) {
+            currentIndex = WINDOW_SIZE - 1;
+        }
+        double qps = transactionPerSecond[currentIndex] != null ? transactionPerSecond[currentIndex].getQPS() : 0.0;
         return new MetricInfo(min, max, sum / entries, qps);
     }
 

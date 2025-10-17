@@ -43,8 +43,14 @@ public class WarmupService {
 
     public boolean runWithCleanup() {
         if (!props.isEnabled()) {
-            logger.info("Warmup is disabled");
+            logger.warn("Warmup is disabled");
             return true;
+        }
+        generatorService.cacheAccountIds();
+        if (generatorService.getAccountCacheSize() == 0){
+            logger.warn("No account cache available to warmup, bulkloading and caching vertices now");
+            graphService.seedSampleData();
+            generatorService.cacheAccountIds();
         }
         logger.info("Starting warmup");
         try {
@@ -72,11 +78,7 @@ public class WarmupService {
 
             logger.debug("Finished warmup transaction creations");
         } finally {
-            try {
-                graphService.dropTransactions();
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-            }
+            graphService.seedSampleData();
         }
 
         logger.info("Warmup completed");

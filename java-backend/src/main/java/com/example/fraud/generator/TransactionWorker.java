@@ -105,7 +105,7 @@ public class TransactionWorker {
             }
 
         } catch (Exception e) {
-            logger.error("Transaction+Fraud execution error: {}", e.getMessage());
+            logger.error("Transaction+Fraud execution error: {}", e.toString());
         }
     }
 

@@ -14,13 +14,10 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/generator")
 public class GeneratorController {
-
     private final GeneratorService transactionGenerator;
-    private final GraphService graphService;
 
-    public GeneratorController(GeneratorService transactionGenerator, GraphService graphService) {
+    public GeneratorController(GeneratorService transactionGenerator) {
         this.transactionGenerator = transactionGenerator;
-        this.graphService = graphService;
     }
 
     // POST /generator/generate  -> 204 No Content
@@ -65,24 +62,6 @@ public class GeneratorController {
         return ResponseEntity.ok(new ApiStatus("Transaction generation stopped", "stopped"));
     }
 
-    // POST /generator/manual
-    @PostMapping("/manual")
-    public ResponseEntity<?> createManual(
-            @RequestParam String from_account_id,
-            @RequestParam String to_account_id,
-            @RequestParam @Min(1) double amount,
-            @RequestParam(defaultValue = "transfer") String transaction_type
-    ) {
-        TransactionType transactionType = TransactionType.valueOf(transaction_type);
-        boolean ok = graphService.createManualTransaction(
-                from_account_id, to_account_id, amount, transactionType, "MANUAL",
-                FraudUtil.getRandomLocation(), Instant.now()).success();
-        if (!ok) {
-            return ResponseEntity.badRequest().body(new ApiMessage("Failed to create transaction"));
-        }
-        return ResponseEntity.ok(new ApiMessage("Transaction created successfully"));
-    }
-
     // GET /generator/max-rate
     @GetMapping("/max-rate")
     public ResponseEntity<?> getMaxRate() {
@@ -99,8 +78,15 @@ public class GeneratorController {
         return ResponseEntity.ok(transactionGenerator.getStatus());
     }
 
-    record ApiMessage(String message) {}
-    record ApiStatus(String message, String status) {}
-    record StartResponse(String message, String status, int rate, int max_rate) {}
-    record MaxRateResponse(int max_rate, String message) {}
+    record ApiMessage(String message) {
+    }
+
+    record ApiStatus(String message, String status) {
+    }
+
+    record StartResponse(String message, String status, int rate, int max_rate) {
+    }
+
+    record MaxRateResponse(int max_rate, String message) {
+    }
 }

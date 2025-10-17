@@ -22,9 +22,9 @@ public class ExampleRule2 extends Rule {
 
     public ExampleRule2(GraphTraversalSource g,
                         @Value("${rules.example-rule-2.name:Transaction with Users Associated with Flagged Accounts}") String name,
-                        @Value("${rules.example-rule-2.description:Detects rapid repeat txns}") String description,
-                        @Value("#{'${rules.example-rule-2.key-indicators:velocity,burst}'.split(',')}") List<String> keyIndicators,
-                        @Value("${rules.example-rule-2.common-use-case:Card testing}") String commonUseCase,
+                        @Value("${rules.example-rule-2.description:Threat detection via 2-hop lookup}") String description,
+                        @Value("#{'rules.example-rule-2.key-indicators:Transaction directed to users associated with flagged accounts,Multi-hop neighborhood analysis,Real-time risk assessment'.split(',')}") List<String> keyIndicators,
+                        @Value("${rules.example-rule-2.common-use-case:Immediate threat detection, known fraudster connections}'") String commonUseCase,
                         @Value("${rules.example-rule-2.complexity:LOW}") String complexity,
                         @Value("${rules.example-rule-2.enabled:true}") boolean enabled,
                         @Value("${rules.example-rule-2.run-async:false}") boolean runAsync
