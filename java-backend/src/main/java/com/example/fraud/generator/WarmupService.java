@@ -42,8 +42,11 @@ public class WarmupService {
     }
 
     public boolean runWithCleanup() {
+        if (!props.isEnabled()) {
+            logger.info("Warmup is disabled");
+            return true;
+        }
         logger.info("Starting warmup");
-        if (!props.isEnabled()) return true;
         try {
             preOpenConnections();
 

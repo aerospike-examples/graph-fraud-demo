@@ -23,6 +23,7 @@ public class FraudService {
     private final PerformanceMonitor perf;
     private final ExecutorService exec;
     private final List<Rule> fraudRulesList;
+    private final List<Rule> asyncFraudRulesList;
     private final Map<String, Rule> fraudRulesMap;
     private final FraudProperties props;
 
@@ -30,12 +31,21 @@ public class FraudService {
                         List<Rule> fraudRulesList, FraudProperties props) {
         this.graph = graphService;
         this.perf = performanceMonitor;
-        this.fraudRulesList = fraudRulesList;
+
+        List <Rule> syncFraudRules = new ArrayList<>();
+        List <Rule> asyncFraudRules = new ArrayList<>();
         Map <String, Rule> fraudRulesMap = new HashMap<String,Rule>();
         for (Rule r : fraudRulesList) {
+            if (r.isRunAsync()) {
+                asyncFraudRules.add(r);
+            } else {
+                syncFraudRules.add(r);
+            }
             fraudRulesMap.put(r.getName(), r);
         }
         this.props = props;
+        this.fraudRulesList = syncFraudRules;
+        this.asyncFraudRulesList = asyncFraudRules;
         this.fraudRulesMap = fraudRulesMap;
         this.exec = new ThreadPoolExecutor(
                 props.getFraudWorkerPoolSize(), props.getFraudWorkerMaxPoolSize(),
@@ -72,11 +82,27 @@ public class FraudService {
     }
 
     public void submitFraudDetection(final TransactionInfo transactionInfo) {
-        exec.submit(() -> runFraudDetection(transactionInfo));
+        exec.submit(() -> runAsyncFraudDetection(transactionInfo));
+        runFraudDetection(transactionInfo);
     }
-    public TransactionSummary runFraudDetection(final TransactionInfo txnInfo) {
-        long startTime = System.nanoTime();
 
+    private void runAsyncFraudDetection(TransactionInfo transactionInfo) {
+        final GraphTraversalSource fraudG = graph.getFraudClient();
+        if (fraudG == null) {
+            log.warn("Graph client not available for fraud detection");
+        }
+
+        final List<FraudResult> fraudOutcomes = new ArrayList<>();
+        for (final Rule rule : asyncFraudRulesList) {
+            if (!rule.isEnabled()) continue;
+            fraudOutcomes.add(rule.executeRule(transactionInfo));
+        }
+        final TransactionSummary summary = new TransactionSummary(fraudOutcomes, transactionInfo);
+        storeFraudResults(graph.getMainClient(), transactionInfo.edgeId(), summary);
+        perf.recordAsyncRulesCompletedDetailed(summary);
+    }
+
+    public TransactionSummary runFraudDetection(final TransactionInfo txnInfo) {
         final GraphTraversalSource fraudG = graph.getFraudClient();
         if (fraudG == null) {
             log.warn("Graph client not available for fraud detection");

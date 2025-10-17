@@ -152,8 +152,8 @@ public class GraphController {
 
     // ----- Bulk loading & admin -----
 
-    // POST /bulk-load-csv
-    @PostMapping("/bulk-load-csv")
+    // POST /bulk-load
+    @PostMapping("/bulk-load")
     public Object bulkLoadCsv(@RequestParam(required = false) String vertices_path,
                               @RequestParam(required = false) String edges_path) {
         try {

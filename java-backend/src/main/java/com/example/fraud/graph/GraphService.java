@@ -356,7 +356,7 @@ public class GraphService {
                     .property("txn_id", txnId)
                     .property("amount", Math.round(amount * 100.0) / 100.0)
                     .property("currency", "USD")
-                    .property("type", type)
+                    .property("type", type.getValue())
                     .property("method", "electronic_transfer")
                     .property("location", location)
                     .property("timestamp", Instant.now().toString())

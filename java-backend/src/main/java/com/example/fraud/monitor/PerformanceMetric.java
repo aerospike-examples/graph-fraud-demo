@@ -8,8 +8,12 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import lombok.Getter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class PerformanceMetric {
+    private static final Logger log = LoggerFactory.getLogger("fraud_detection.performance");
+
     // Required for constructor.
     private static final int UPDATE_FREQUENCY = 5;
     private static final int WINDOW_SIZE = 10 * 60 / UPDATE_FREQUENCY; // 10 minutes * 60 seconds / update every 5 seconds
@@ -41,25 +45,24 @@ public class PerformanceMetric {
             } else {
                 ruleFailure.increment();
             }
-            ruleMetrics[index.incrementAndGet() % maxHistory] = new PerfMetric(
+
+            ruleMetrics[index.getAndIncrement() % maxHistory] = new PerfMetric(
                     perfInfo.totalTime().toMillis(),
                     perfInfo.isSuccessful(),
                     perfInfo.start(),
-                    storedTime);
+                    storedTime
+            );
 
-            final Long startTimeSeconds = perfInfo.start().getEpochSecond() / 5;
-            final int startTimeWindowFrame = (int) (startTimeSeconds % WINDOW_SIZE);
-            synchronized (PerformanceSummary.class) {
-                if (transactionPerSecond[startTimeWindowFrame] == null) {
-                    transactionPerSecond[startTimeWindowFrame] = new Window(startTimeSeconds);
-                }
-                final Window window = transactionPerSecond[startTimeWindowFrame];
-                final Long startTime = window.getStartTime();
-                if (startTime == null || startTime != startTimeWindowFrame) {
-                    transactionPerSecond[startTimeWindowFrame] = new Window(startTimeSeconds);
-                }
-                window.setExecutionTimeMs(perfInfo.totalTime().toMillis());
+            final long bucket = perfInfo.start().getEpochSecond() / UPDATE_FREQUENCY; // 5-second bucket
+            final int slot = (int) (bucket % WINDOW_SIZE);
+
+            // Use the same lock consistently; no need for a different class lock
+            Window window = transactionPerSecond[slot];
+            if (window == null || !window.getStartTime().equals(bucket)) {
+                window = new Window(bucket);
+                transactionPerSecond[slot] = window;
             }
+            window.setExecutionTimeMs(perfInfo.totalTime().toMillis());
         }
     }
 
@@ -81,40 +84,49 @@ public class PerformanceMetric {
         }
     }
 
-    public MetricInfo getMetricInfo() {
-        long min = Long.MAX_VALUE;
-        long max = Long.MIN_VALUE;
-        long sum = 0L;
+    public MetricInfo getMetricInfo(int minutes) {
+        long nowBucket = Instant.now().getEpochSecond() / UPDATE_FREQUENCY; // bucket index
+        long lookbackBuckets = Math.max(1, (minutes * 60L) / UPDATE_FREQUENCY);
+        long earliestBucket = nowBucket - lookbackBuckets + 1;
+
+        double min = Double.MAX_VALUE, max = Double.MIN_VALUE, sum = 0d;
         long entries = 0L;
-        long firstValidTimeSeconds = Long.MAX_VALUE;
-        long lastTimeSeconds = Long.MIN_VALUE;
-        long startTimeSeconds = Instant.now().getEpochSecond() / 5; // Current time in 5 second ticks.
-        long earliestValidTime = startTimeSeconds - WINDOW_SIZE;
-        for (final Window window : transactionPerSecond) {
-            if (window.getStartTime() < earliestValidTime) {
-                continue;
+        long firstBucket = Long.MAX_VALUE, lastBucket = Long.MIN_VALUE;
+
+        synchronized (lock) {
+            for (final Window window : transactionPerSecond) {
+                if (window == null) continue;
+                long b = window.getStartTime(); // bucket index units
+                if (b < earliestBucket) continue;
+
+                firstBucket = Math.min(firstBucket, b);
+                lastBucket = Math.max(lastBucket, b);
+
+                min = Math.min(min, window.minTime);
+                max = Math.max(max, window.maxTime);
+                for (Long t : window.executionTimes) {
+                    sum += t;
+                    entries++;
+                }
             }
-            firstValidTimeSeconds = Math.min(window.getStartTime() * 5, firstValidTimeSeconds);
-            lastTimeSeconds = Math.max(lastTimeSeconds, window.getStartTime());
-            min = Math.min(window.minTime, min);
-            max = Math.max(window.maxTime, max);
-            sum += window.executionTimes.stream().reduce(0L, Long::sum);
-            entries += window.executionTimes.size();
         }
-        if (lastTimeSeconds == firstValidTimeSeconds) {
-            // avoid divide by 0.
-            return new MetricInfo(min, max, sum / entries, entries);
-        } else {
-            return new MetricInfo(min, max, sum / entries, entries / (lastTimeSeconds - firstValidTimeSeconds));
-        }
+
+        if (entries == 0) return new MetricInfo(0d, 0d, 0d, 0d);
+
+        long seconds = (lastBucket - firstBucket + 1) * UPDATE_FREQUENCY; // convert buckets to seconds
+        double qps = entries > 0 && seconds > 0
+                ? (entries / (double) seconds)
+                : 0.0;
+
+        return new MetricInfo(min, max, sum / entries, qps);
     }
 
-    public record MetricInfo(Long min, Long max, Long avg, Long qps) {
+    public record MetricInfo(Double min, Double max, Double avg, Double qps) {
     }
 
     @Getter
     private static class Window {
-        final Long startTime;
+        final Long startTime; // bucket index
         final AtomicInteger queryCounter = new AtomicInteger();
         Long minTime = Long.MAX_VALUE;
         Long maxTime = -1L;
@@ -122,10 +134,6 @@ public class PerformanceMetric {
 
         public Window(final Long startTime) {
             this.startTime = startTime;
-        }
-
-        public Long getStartTime() {
-            return this.startTime;
         }
 
         public int getQPS() {

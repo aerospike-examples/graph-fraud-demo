@@ -20,7 +20,6 @@ import org.springframework.stereotype.Service;
 public class PerformanceMonitor {
 
     private static final Logger log = LoggerFactory.getLogger("fraud_detection.performance");
-
     private final ExecutorService bg = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "perf_background");
         t.setDaemon(true);
@@ -28,12 +27,11 @@ public class PerformanceMonitor {
     });
     @Getter
     private GeneratorStatus generatorStatus;
-
-    private final double currentTps = 0.0;
-    private final long startTimeEpochSec = 0L;   // 0 means not started
-    private volatile double elapsedTimeSec = 0.0;
-
     private final PerformanceSummary performanceSummary;
+
+    //Debug vars
+    private int transactionsMade = 0;
+
 
     public PerformanceMonitor(final List<Rule> rules) {
         int maxHistory = 1_000_000;
@@ -47,7 +45,15 @@ public class PerformanceMonitor {
     }
 
     public void recordTransactionCompletedDetailed(final TransactionSummary summary) {
+        transactionsMade++;
         bg.submit(() -> performanceSummary.updatePerformance(summary));
+    }
+
+    public void recordAsyncRulesCompletedDetailed(final TransactionSummary summary) {
+        if (transactionsMade % 200 == 0) {
+            log.info("Transaction completed ({})", summary);
+        }
+        bg.submit(() -> performanceSummary.updateAsyncPerformance(summary));
     }
 
     public void setGenerationState(boolean running, int targetTps, Instant startTimeEpochSec) {
@@ -58,7 +64,7 @@ public class PerformanceMonitor {
         performanceSummary.reset();
     }
 
-    private Map<String, Object> getMetricInfo(final PerformanceMetric metric) {
+    private Map<String, Object> getMetricInfo(final PerformanceMetric metric, int minutes) {
         /* TODO - need to think about this.
             Transaction Stats:
                 - Total Generated
@@ -76,7 +82,13 @@ public class PerformanceMonitor {
 
              Way to enable and disable performance metrics
          */
-        PerformanceMetric.MetricInfo info = metric.getMetricInfo();
+        PerformanceMetric.MetricInfo info = metric.getMetricInfo(minutes);
+        Long elapsed;
+        if (generatorStatus.startTime() != null) {
+            elapsed = nowEpochSec() - generatorStatus.startTime().getEpochSecond();
+        } else {
+            elapsed = 0L;
+        }
         return Map.of(
                 "average", info.avg(),
                 "max", info.max(),
@@ -84,17 +96,18 @@ public class PerformanceMonitor {
                 "total_success", metric.getSuccessCount(),
                 "total_failure", metric.getFailureCount(),
                 "QPS", info.qps(),
-                "elapsed_time_seconds", nowEpochSec() - startTimeEpochSec
+                "elapsed_time_seconds", elapsed
         );
     }
 
     public Map<String, Object> getAllStats(int minutes) {
+        //TODO: This is zeroing on all and elapsed time is wrong
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("timestamp", Instant.now().toString());
         out.put("is_running", generatorStatus.running());
-        out.put("transaction_stats", getMetricInfo(performanceSummary.transactionPerformanceInfo));
+        out.put("transaction_stats", getMetricInfo(performanceSummary.transactionPerformanceInfo, minutes));
         for (final Map.Entry<String, PerformanceMetric> rulePerf : performanceSummary.ruleNameToPerformanceInfo.entrySet()) {
-            out.put(rulePerf.getKey(), getMetricInfo(rulePerf.getValue()));
+            out.put(rulePerf.getKey(), getMetricInfo(rulePerf.getValue(), minutes));
         }
         return out;
     }

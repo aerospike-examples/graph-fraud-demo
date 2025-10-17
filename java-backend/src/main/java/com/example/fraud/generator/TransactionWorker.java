@@ -33,6 +33,7 @@ public class TransactionWorker {
         this.performanceMonitor = performanceMonitor;
         WORKER_POOL_SIZE = workerPoolSize;
         WORKER_MAX_POOL_SIZE = workerMaxPoolSize;
+        totalTransactions = new AtomicInteger(0);
     }
 
     public void startWorkers() {

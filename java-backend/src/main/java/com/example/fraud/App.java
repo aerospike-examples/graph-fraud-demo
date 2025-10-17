@@ -10,7 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 public class App {
     public static void main(String[] args) {
         SpringApplication app = new SpringApplication(App.class);
-        app.setWebApplicationType(WebApplicationType.NONE);
+        app.setWebApplicationType(WebApplicationType.SERVLET);
         app.run(args);
     }
 }
