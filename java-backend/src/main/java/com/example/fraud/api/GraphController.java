@@ -1,8 +1,11 @@
 package com.example.fraud.api;
 
+import com.example.fraud.fraud.TransactionInfo;
 import com.example.fraud.graph.GraphService;
 import com.example.fraud.model.TransactionType;
 import com.example.fraud.util.FraudUtil;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;
@@ -14,7 +17,8 @@ import java.time.Instant;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/")
+@RequestMapping("/api")
+@Tag(name = "Graph Operations", description = "Graph database operations and data management")
 public class GraphController {
 
     private final GraphService graph;
@@ -23,34 +27,30 @@ public class GraphController {
         this.graph = graph;
     }
 
-    // GET /
-    @GetMapping
+    @GetMapping("/status")
+    @Operation(summary = "API Status", description = "Get API status and basic information")
     public Map<String, Object> root() {
         return Map.of("message", "Fraud Detection API is running", "status", "healthy");
     }
 
-    // HEAD /health
     @RequestMapping(path = "/health", method = RequestMethod.HEAD)
     public ResponseEntity<Void> dockerHealth() {
         return ResponseEntity.ok().build();
     }
 
-    // GET /health
     @GetMapping("/health")
+    @Operation(summary = "Health Check", description = "Check if the service is running and database is connected")
     public Map<String, Object> health() {
         String graphStatus = graph.healthCheck() ? "connected" : "error";
         return Map.of("status", "healthy", "graph_connection", graphStatus, "timestamp", Instant.now().toString());
     }
 
-    // GET /dashboard/stats
     @GetMapping("/dashboard/stats")
+    @Operation(summary = "Dashboard Statistics", description = "Get overall system statistics for the dashboard")
     public Object dashboardStats() {
         return graph.getDashboardStats();
     }
 
-    // ----- Users -----
-
-    // GET /users
     @GetMapping("/users")
     public Object getUsers(
             @RequestParam(defaultValue = "1") @Min(1) int page,
@@ -62,22 +62,17 @@ public class GraphController {
         return graph.search("user", page, page_size, order_by, order, query);
     }
 
-    // GET /users/stats
     @GetMapping("/users/stats")
     public Object getUsersStats() {
         return graph.getUserStats();
     }
 
-    // GET /users/{user_id}
     @GetMapping("/users/{user_id}")
     public ResponseEntity<?> getUser(@PathVariable("user_id") String userId) {
         var summary = graph.getUserSummary(userId);
         return (summary == null) ? ResponseEntity.notFound().build() : ResponseEntity.ok(summary);
     }
 
-    // ----- Transactions -----
-
-    // GET /transactions
     @GetMapping("/transactions")
     public Object getTransactions(
             @RequestParam(defaultValue = "1") @Min(1) int page,
@@ -89,25 +84,7 @@ public class GraphController {
         return graph.search("txns", page, page_size, order_by, order, query);
     }
 
-    // POST /transactions/manual
-    @PostMapping("/manual")
-    public ResponseEntity<?> createManual(
-            @RequestParam String from_account_id,
-            @RequestParam String to_account_id,
-            @RequestParam @Min(1) double amount,
-            @RequestParam(defaultValue = "transfer") String transaction_type
-    ) {
-        TransactionType transactionType = TransactionType.valueOf(transaction_type);
-        boolean ok = graph.createManualTransaction(
-                from_account_id, to_account_id, amount, transactionType, "MANUAL",
-                FraudUtil.getRandomLocation(), Instant.now()).success();
-        if (!ok) {
-            return ResponseEntity.badRequest().body(new GeneratorController.ApiMessage("Failed to create transaction"));
-        }
-        return ResponseEntity.ok(new GeneratorController.ApiMessage("Transaction created successfully"));
-    }
 
-    // DELETE /transactions
     @DeleteMapping("/transactions")
     public Object deleteAllTransactions() {
         try {
@@ -118,13 +95,11 @@ public class GraphController {
         }
     }
 
-    // GET /transactions/stats
     @GetMapping("/transactions/stats")
     public Object transactionStats() {
         return graph.getTransactionStats();
     }
 
-    // GET /transactions/flagged
     @GetMapping("/transactions/flagged")
     public Object flaggedTransactions(
             @RequestParam(defaultValue = "1") @Min(1) int page,
@@ -133,7 +108,6 @@ public class GraphController {
         return graph.getFlaggedTransactionsPaginated(page, page_size);
     }
 
-    // GET /transaction/{transaction_id}
     @GetMapping("/transaction/{transaction_id}")
     public ResponseEntity<?> getTransactionDetail(@PathVariable("transaction_id") String transactionId) {
         String id = URLDecoder.decode(transactionId, StandardCharsets.UTF_8);
@@ -141,22 +115,17 @@ public class GraphController {
         return (detail == null) ? ResponseEntity.notFound().build() : ResponseEntity.ok(detail);
     }
 
-    // ----- Accounts -----
-
-    // GET /accounts
     @GetMapping("/accounts")
     public Object getAccounts() {
         return Map.of("accounts", graph.getAllAccounts());
     }
 
-    // GET /accounts/flagged
     @GetMapping("/accounts/flagged")
     public Object getFlaggedAccounts() {
         var flagged = graph.getFlaggedAccounts();
         return Map.of("flagged_accounts", flagged, "count", flagged.size());
     }
 
-    // POST /accounts/{account_id}/flag
     @PostMapping("/accounts/{account_id}/flag")
     public ResponseEntity<?> flagAccount(@PathVariable("account_id") String accountId,
                                          @RequestParam(defaultValue = "Manual flag for testing") String reason) {
@@ -169,7 +138,6 @@ public class GraphController {
         )) : ResponseEntity.notFound().build();
     }
 
-    // DELETE /accounts/{account_id}/flag
     @DeleteMapping("/accounts/{account_id}/flag")
     public ResponseEntity<?> unflagAccount(@PathVariable("account_id") String accountId) {
         boolean ok = graph.unflagAccount(accountId);
@@ -180,9 +148,6 @@ public class GraphController {
         )) : ResponseEntity.notFound().build();
     }
 
-    // ----- Bulk loading & admin -----
-
-    // POST /bulk-load
     @PostMapping("/bulk-load")
     public Object bulkLoadCsv(@RequestParam(required = false) String vertices_path,
                               @RequestParam(required = false) String edges_path) {
@@ -190,21 +155,47 @@ public class GraphController {
         return true;
     }
 
-    // GET /bulk-load-status
     @GetMapping("/bulk-load-status")
     public Object bulkLoadStatus() {
         return graph.getBulkloadStatus();
     }
 
-    // GET /admin/indexes
     @GetMapping("/admin/indexes")
     public Object getIndexInfo() {
         return graph.inspectIndexes();
     }
 
-    // POST /admin/indexes/create-transaction-indexes
     @PostMapping("/admin/indexes/create-transaction-indexes")
     public Object createTxnIndexes() {
         return graph.createFraudDetectionIndexes();
+    }
+
+    @PostMapping("/transaction-generation/manual")
+    public ResponseEntity<?> createManualTransaction(
+            @RequestParam String from_account_id,
+            @RequestParam String to_account_id,
+            @RequestParam @Min(1) double amount,
+            @RequestParam(defaultValue = "transfer") String transaction_type
+    ) {
+        try {
+            TransactionType transactionType = TransactionType.valueOf(transaction_type.toUpperCase());
+            String location = FraudUtil.getRandomLocation();
+            TransactionInfo result = graph.createManualTransaction(
+                    from_account_id, to_account_id, amount, transactionType, "MANUAL", location, Instant.now());
+            if (!result.success()) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("message", "Failed to create transaction")
+                );
+            }
+            return ResponseEntity.ok(Map.of("message", "Transaction created successfully"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("message", "Invalid transaction type: " + transaction_type)
+            );
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("message", "Failed to create transaction: " + e.getMessage())
+            );
+        }
     }
 }

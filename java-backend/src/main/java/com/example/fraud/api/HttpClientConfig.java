@@ -10,7 +10,7 @@ public class HttpClientConfig {
 
     @Bean
     RestClient restClient(RestClient.Builder builder,
-                          @Value("${app.api-base-url:http://localhost:${server.port}}") String baseUrl) {
+                          @Value("${app.api-base-url:http://localhost:${server.port}/api}") String baseUrl) {
         return builder.baseUrl(baseUrl).build();
     }
 }

@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/performance")
+@RequestMapping("/api/performance")
 public class PerformanceController {
 
     private final PerformanceMonitor performanceMonitor;
@@ -19,11 +19,9 @@ public class PerformanceController {
         this.performanceMonitor = performanceMonitor;
     }
 
-    // GET /performance/stats?time_window=
     @GetMapping("/stats")
     public Map<String, Object> stats(@RequestParam(name = "time_window", defaultValue = "5") @Min(1) @Max(60) int minutes) {
         var stats = performanceMonitor.getAllStats(minutes);
-        // TODO: Transaction Stats are coming back 0, and all fraud
         return Map.of(
                 "performance_stats", stats,
                 "time_window_minutes", minutes,
@@ -31,7 +29,6 @@ public class PerformanceController {
         );
     }
 
-    // POST /performance/reset
     @PostMapping("/reset")
     public Map<String, Object> reset() {
         performanceMonitor.resetPerformanceSummary();

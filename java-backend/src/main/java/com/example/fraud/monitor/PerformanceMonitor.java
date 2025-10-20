@@ -1,11 +1,8 @@
 package com.example.fraud.monitor;
 
-import com.example.fraud.fraud.FraudResult;
-import com.example.fraud.fraud.PerformanceInfo;
 import com.example.fraud.fraud.TransactionSummary;
 import com.example.fraud.generator.GeneratorStatus;
 import com.example.fraud.rules.Rule;
-import java.util.stream.DoubleStream;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +26,6 @@ public class PerformanceMonitor {
     private GeneratorStatus generatorStatus;
     private final PerformanceSummary performanceSummary;
 
-    //Debug vars
     private int transactionsMade = 0;
 
 
@@ -69,23 +65,6 @@ public class PerformanceMonitor {
     }
 
     private Map<String, Object> getMetricInfo(final PerformanceMetric metric, int minutes) {
-        /* TODO - need to think about this.
-            Transaction Stats:
-                - Total Generated
-                - Current Rate
-                - Duration
-                - Status
-
-            Fraud Stats:
-                - Avg
-                - Max
-                - Min
-                - Total Success
-                - Total Failure
-                - QPS
-
-             Way to enable and disable performance metrics
-         */
         PerformanceMetric.MetricInfo info = metric.getMetricInfo(minutes);
         Long elapsed;
         if (generatorStatus.startTime() != null) {
@@ -105,7 +84,6 @@ public class PerformanceMonitor {
     }
 
     public Map<String, Object> getAllStats(int minutes) {
-        //TODO: This is zeroing on all and elapsed time is wrong
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("timestamp", Instant.now().toString());
         out.put("is_running", generatorStatus.running());

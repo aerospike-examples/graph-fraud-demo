@@ -4,7 +4,6 @@ import com.example.fraud.config.TransactionGenerationProperties;
 import com.example.fraud.fraud.FraudService;
 import com.example.fraud.fraud.TransactionInfo;
 import com.example.fraud.graph.GraphService;
-import com.example.fraud.model.TransactionType;
 import com.example.fraud.monitor.PerformanceMonitor;
 import com.example.fraud.util.FraudUtil;
 import java.time.Instant;
@@ -91,6 +90,7 @@ public class GeneratorService {
     public int getMaxTransactionRate() {
         return props.getMaxTransactionRate();
     }
+
     public boolean startGeneration(int rate) {
         if (isRunning) {
             logger.warn("Transaction generation is already running");

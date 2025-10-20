@@ -402,7 +402,7 @@ public class GraphService {
                 .property("txn_id", txnId)
                 .property("amount", Math.round(amount * 100.0) / 100.0)
                 .property("currency", "USD")
-                .property("type", type)
+                .property("type", type.getValue())
                 .property("method", "electronic_transfer")
                 .property("location", location)
                 .property("timestamp", Instant.now().toString())
@@ -457,7 +457,6 @@ public class GraphService {
                 }
             }
 
-            // elementMap → order → fold → project(total, results) → by(count(local)) → by(unfold().range().fold())
             @SuppressWarnings("unchecked")
             Map<String, Object> packed = ((GraphTraversal<?, ?>) base)
                     .elementMap()
@@ -469,7 +468,6 @@ public class GraphService {
                     .by(__.unfold().range(startIdx, endIdx).fold())
                     .next();
 
-            // Normalize id/label in results (T.id -> "id", drop T.label)
             @SuppressWarnings("unchecked")
             List<Map<Object, Object>> results = (List<Map<Object, Object>>) packed.getOrDefault("results", List.of());
             List<Map<String, Object>> normalized = new ArrayList<>(results.size());
@@ -536,7 +534,6 @@ public class GraphService {
 
             if (userSummary == null) return null;
 
-            // Normalize user elementMap: move T.id -> "id", drop T.label
             @SuppressWarnings("unchecked")
             Map<Object, Object> userMap = (Map<Object, Object>) userSummary.get("user");
             if (userMap != null) {
@@ -567,6 +564,181 @@ public class GraphService {
         }
     }
 
+    public List<Map<String, Object>> getUserAccounts(String userId) {
+        try {
+            GraphTraversalSource g = getMainClient();
+            if (g == null) {
+                logger.error("No graph client available");
+                return null;
+            }
+
+            long userCount = g.V(userId).count().next();
+            if (userCount == 0) {
+                return null;
+            }
+
+            @SuppressWarnings("unchecked")
+            List<Map<Object, Object>> accounts = (List<Map<Object, Object>>) (List<?>) 
+                    g.V(userId).out("OWNS").elementMap().toList();
+
+            List<Map<String, Object>> normalized = new ArrayList<>(accounts.size());
+            for (Map<Object, Object> acc : accounts) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                for (Map.Entry<Object, Object> e : acc.entrySet()) {
+                    if (T.id.equals(e.getKey())) {
+                        row.put("id", e.getValue());
+                    } else if (!T.label.equals(e.getKey())) {
+                        row.put(String.valueOf(e.getKey()), e.getValue());
+                    }
+                }
+                normalized.add(row);
+            }
+
+            return normalized;
+
+        } catch (Exception e) {
+            logger.error("Error getting user accounts for user {}", userId, e);
+            return null;
+        }
+    }
+
+    public List<Map<String, Object>> getUserDevices(String userId) {
+        try {
+            GraphTraversalSource g = getMainClient();
+            if (g == null) {
+                logger.error("No graph client available");
+                return null;
+            }
+
+            long userCount = g.V(userId).count().next();
+            if (userCount == 0) {
+                return null;
+            }
+
+            @SuppressWarnings("unchecked")
+            List<Map<Object, Object>> devices = (List<Map<Object, Object>>) (List<?>) 
+                    g.V(userId).out("USES").elementMap().toList();
+
+            List<Map<String, Object>> normalized = new ArrayList<>(devices.size());
+            for (Map<Object, Object> dev : devices) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                for (Map.Entry<Object, Object> e : dev.entrySet()) {
+                    if (T.id.equals(e.getKey())) {
+                        row.put("id", e.getValue());
+                    } else if (!T.label.equals(e.getKey())) {
+                        row.put(String.valueOf(e.getKey()), e.getValue());
+                    }
+                }
+                normalized.add(row);
+            }
+
+            return normalized;
+
+        } catch (Exception e) {
+            logger.error("Error getting user devices for user {}", userId, e);
+            return null;
+        }
+    }
+
+    public Map<String, Object> getUserTransactions(String userId, int page, int pageSize) {
+        try {
+            GraphTraversalSource g = getMainClient();
+            if (g == null) {
+                logger.error("No graph client available");
+                return null;
+            }
+
+            long userCount = g.V(userId).count().next();
+            if (userCount == 0) {
+                return null;
+            }
+
+            int startIdx = Math.max(0, (page - 1) * pageSize);
+            int endIdx = startIdx + pageSize;
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> packed = g.V(userId)
+                    .out("OWNS")
+                    .bothE("TRANSACTS")
+                    .order().by("timestamp", Order.desc)
+                    .fold()
+                    .project("total", "transactions")
+                    .by(__.count(Scope.local))
+                    .by(__.unfold().range(startIdx, endIdx)
+                            .project("id", "amount", "currency", "timestamp", "location", "status", "type", "from_id", "to_id", "fraud_score", "is_fraud")
+                            .by(__.values("txn_id"))
+                            .by(__.values("amount"))
+                            .by(__.values("currency"))
+                            .by(__.values("timestamp"))
+                            .by(__.values("location"))
+                            .by(__.values("status"))
+                            .by(__.values("type"))
+                            .by(__.outV().id())
+                            .by(__.inV().id())
+                            .by(__.coalesce(__.values("fraud_score"), __.constant(0.0)))
+                            .by(__.coalesce(__.values("is_fraud"), __.constant(false)))
+                            .fold())
+                    .next();
+
+            int total = ((Number) packed.getOrDefault("total", 0)).intValue();
+            int totalPages = (total + pageSize - 1) / pageSize;
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("transactions", packed.get("transactions"));
+            result.put("total", total);
+            result.put("page", page);
+            result.put("page_size", pageSize);
+            result.put("total_pages", totalPages);
+
+            return result;
+
+        } catch (Exception e) {
+            logger.error("Error getting user transactions for user {}", userId, e);
+            return null;
+        }
+    }
+
+    public List<Map<String, Object>> getUserConnectedDevices(String userId) {
+        try {
+            GraphTraversalSource g = getMainClient();
+            if (g == null) {
+                logger.error("No graph client available");
+                return List.of();
+            }
+
+            @SuppressWarnings("unchecked")
+            List<Map<Object, Object>> connectedUsers = (List<Map<Object, Object>>) (List<?>) 
+                    g.V(userId)
+                            .out("USES")
+                            .in("USES")
+                            .where(__.not(__.hasId(userId)))
+                            .dedup()
+                            .project("user_id", "name", "shared_devices")
+                            .by(__.id())
+                            .by(__.values("name"))
+                            .by(__.out("USES")
+                                    .where(__.in("USES").hasId(userId))
+                                    .id()
+                                    .fold())
+                            .toList();
+
+            List<Map<String, Object>> normalized = new ArrayList<>(connectedUsers.size());
+            for (Map<Object, Object> user : connectedUsers) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                for (Map.Entry<Object, Object> e : user.entrySet()) {
+                    row.put(String.valueOf(e.getKey()), e.getValue());
+                }
+                normalized.add(row);
+            }
+
+            return normalized;
+
+        } catch (Exception e) {
+            logger.error("Error getting connected device users for user {}", userId, e);
+            return List.of();
+        }
+    }
+
     public Map<String, Object> getFlaggedTransactionsPaginated(int page, int pageSize) {
         try {
             GraphTraversalSource g = getMainClient();
@@ -574,7 +746,6 @@ public class GraphService {
                 throw new IllegalStateException("Graph client not available");
             }
 
-            // All transactions with 'fraud_status' present
             List<Vertex> flagged = g.V().hasLabel("transaction").has("fraud_status").toList();
 
             int startIdx = Math.max(0, (page - 1) * pageSize);
@@ -594,12 +765,10 @@ public class GraphService {
             for (int i = startIdx; i < endIdx; i++) {
                 Vertex txV = flagged.get(i);
 
-                // transaction properties
                 Map<String, Object> txProps = FraudUtil.flattenValueMapGeneric(
                         g.V(txV).valueMap().next()
                 );
 
-                // sender account (in from TRANSFERS_TO)
                 String senderId = "Unknown";
                 try {
                     List<Vertex> senders = g.V(txV).in("TRANSFERS_TO").toList();
@@ -613,7 +782,6 @@ public class GraphService {
                     logger.debug("Error getting sender account", ex);
                 }
 
-                // receiver account (out to TRANSFERS_FROM)
                 String receiverId = "Unknown";
                 try {
                     List<Vertex> receivers = g.V(txV).out("TRANSFERS_FROM").toList();
@@ -627,12 +795,10 @@ public class GraphService {
                     logger.debug("Error getting receiver account", ex);
                 }
 
-                // fraud props pulled directly from the transaction vertex
                 double fraudScore = (double) FraudUtil.getPropertyValue(txV, "fraud_score", 0.0);
                 String fraudStatus = FraudUtil.getPropertyValue(txV, "fraud_status", "clean").toString();
                 String fraudReason = FraudUtil.getPropertyValue(txV, "reason", "").toString();
 
-                // TODO: Make a object for this
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("id", txProps.getOrDefault("transaction_id", ""));
                 row.put("sender_id", senderId);
@@ -789,7 +955,6 @@ public class GraphService {
             GraphTraversalSource g = getMainClient();
             if (g == null) return List.of();
 
-            // project account_id (T.id) and account_type ("type")
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> accounts = (List<Map<String, Object>>) (List<?>)
                     g.V().hasLabel("account")
