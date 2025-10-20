@@ -77,7 +77,70 @@ export default function Performance() {
 
       const statsData = await statsResponse.json();
 
-      setPerformanceData(statsData.performance_stats);
+      const normalize = (raw: any): PerformanceData => {
+        const RULE_TO_METHOD: Record<string, "rt1" | "rt2" | "rt3"> = {
+          "Transaction to Flagged Account": "rt1",
+          "Transaction with Users Associated with Flagged Accounts": "rt2",
+          "Transactions with Users Associated with Flagged Devices": "rt3",
+        };
+
+        const toPerf = (m: any, label: string): PerformanceStats => {
+          const totalSuccess = Number(m?.total_success ?? 0);
+          const totalFailure = Number(m?.total_failure ?? 0);
+          const total = totalSuccess + totalFailure;
+          const successRate =
+            total > 0 ? Math.round((totalSuccess / total) * 100) : 0;
+          return {
+            method: label,
+            avg_execution_time: Number(m?.average ?? 0),
+            max_execution_time: Number(m?.max ?? 0),
+            min_execution_time: Number(m?.min ?? 0),
+            total_queries: total,
+            success_rate: successRate,
+            queries_per_second: Number(m?.QPS ?? 0),
+            query_complexity: "N/A",
+            cache_enabled: "unknown",
+          };
+        };
+
+        const empty = (label: string): PerformanceStats => ({
+          method: label,
+          avg_execution_time: 0,
+          max_execution_time: 0,
+          min_execution_time: 0,
+          total_queries: 0,
+          success_rate: 0,
+          queries_per_second: 0,
+          query_complexity: "N/A",
+          cache_enabled: "unknown",
+        });
+
+        const stats = raw ?? {};
+        const timestamp =
+          stats.timestamp ?? statsData.timestamp ?? new Date().toISOString();
+        const keys = Object.keys(stats).filter(
+          (k) => !["timestamp", "is_running", "transaction_stats"].includes(k)
+        );
+
+        const mapped: Partial<Record<"rt1" | "rt2" | "rt3", PerformanceStats>> =
+          {};
+        const order: ("rt1" | "rt2" | "rt3")[] = ["rt1", "rt2", "rt3"];
+
+        keys.forEach((k, idx) => {
+          const method = RULE_TO_METHOD[k] ?? order[idx];
+          if (!method) return;
+          mapped[method] = toPerf(stats[k], method.toUpperCase());
+        });
+
+        return {
+          rt1: mapped.rt1 ?? empty("RT1"),
+          rt2: mapped.rt2 ?? empty("RT2"),
+          rt3: mapped.rt3 ?? empty("RT3"),
+          timestamp,
+        };
+      };
+
+      setPerformanceData(normalize(statsData.performance_stats));
       setTimelineData(null);
     } catch (err) {
       setError(
@@ -217,7 +280,7 @@ export default function Performance() {
                   data.avg_execution_time
                 )}`}
               >
-                {data.avg_execution_time}ms
+                {Number(data.avg_execution_time ?? 0).toFixed(2)}ms
               </div>
               <div className="text-sm text-muted-foreground">Avg Time</div>
             </div>
@@ -257,7 +320,10 @@ export default function Performance() {
 
     // Get all execution times across all methods for consistent scaling
     const allExecutionTimes = methods.flatMap(
-      (method) => timelineData[method]?.map((d) => d.execution_time) || []
+      (method) =>
+        (timelineData
+          ? timelineData[method]?.map((d) => d.execution_time)
+          : []) || []
     );
 
     if (allExecutionTimes.length === 0) {
@@ -331,7 +397,7 @@ export default function Performance() {
           <div className="flex items-center justify-between px-6 py-3 border-b bg-gray-50/50">
             <div className="flex items-center space-x-4">
               {methods.map((method) => {
-                const data = timelineData[method];
+                const data = timelineData ? timelineData[method] : [];
                 const hasData = data && data.length > 0;
                 return (
                   <div key={method} className="flex items-center space-x-1.5">
@@ -419,7 +485,7 @@ export default function Performance() {
                     preserveAspectRatio="none"
                   >
                     {methods.map((method) => {
-                      const data = timelineData[method];
+                      const data = timelineData ? timelineData[method] : [];
                       if (!data || data.length === 0) return null;
 
                       const path = createLinePath(data, 800); // Use viewBox width
@@ -500,7 +566,7 @@ export default function Performance() {
           <div className="px-6 py-3 border-t bg-gray-50/30">
             <div className="grid grid-cols-3 gap-4">
               {methods.map((method) => {
-                const data = timelineData[method];
+                const data = timelineData ? timelineData[method] : [];
                 if (!data || data.length === 0)
                   return (
                     <div key={method} className="text-center">

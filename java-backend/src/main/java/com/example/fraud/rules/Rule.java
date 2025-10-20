@@ -3,6 +3,7 @@ package com.example.fraud.rules;
 import com.example.fraud.fraud.FraudResult;
 import com.example.fraud.fraud.TransactionInfo;
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
@@ -15,9 +16,14 @@ public abstract class Rule {
     private final List<String> keyIndicators;
     private final String commonUseCase;
     private final String complexity;
-    private final boolean enabled;
+    private boolean enabled;
     private final boolean runAsync;
+    @JsonIgnore
     protected final GraphTraversalSource g;
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
 
     public abstract FraudResult executeRule(final TransactionInfo info);
 }

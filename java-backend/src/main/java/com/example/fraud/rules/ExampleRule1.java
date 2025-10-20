@@ -1,6 +1,5 @@
 package com.example.fraud.rules;
 
-import com.example.fraud.fraud.FlaggedConnection;
 import com.example.fraud.fraud.FraudCheckDetails;
 import com.example.fraud.fraud.PerformanceInfo;
 import com.example.fraud.model.FraudCheckStatus;
@@ -12,9 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
-import org.apache.tinkerpop.gremlin.structure.T;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
-import org.apache.tinkerpop.gremlin.structure.util.detached.DetachedVertex;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -24,8 +21,8 @@ public class ExampleRule1 extends Rule {
     public ExampleRule1(GraphTraversalSource g,
                         @Value("${rules.example-rule-1.name:Transaction to Flagged Account}") String name,
                         @Value("${rules.example-rule-1.description:Immediate threat detection via 1-hop lookup}") String description,
-                        @Value("#{'rules.example-rule-1.key-indicators:Transaction directed to known flagged account,1-hop graph lookup for immediate detection,Real-time risk assessment'.split(',')}") List<String> keyIndicators,
-                        @Value("${'rules.example-rule-1.common-use-case:Immediate threat detection, known fraudster connections}'") String commonUseCase,
+                        @Value("#{'Transaction directed to known flagged account,1-hop graph lookup for immediate detection,Real-time risk assessment'.split(',')}") List<String> keyIndicators,
+                        @Value("${rules.example-rule-1.common-use-case:Immediate threat detection, known fraudster connections}") String commonUseCase,
                         @Value("${rules.example-rule-1.complexity:LOW}") String complexity,
                         @Value("${rules.example-rule-1.enabled:true}") boolean enabled,
                         @Value("${rules.example-rule-1.run-async:false}") boolean runAsync) {

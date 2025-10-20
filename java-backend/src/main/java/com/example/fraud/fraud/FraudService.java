@@ -68,6 +68,14 @@ public class FraudService {
         return m;
     }
 
+    public boolean setRuleEnabled(String name, boolean enabled) {
+        Rule r = fraudRulesMap.get(name);
+        if (r == null) return false;
+        r.setEnabled(enabled);
+        log.info("Rule '{}' enabled set to {}", name, enabled);
+        return true;
+    }
+
     public void submitFraudDetection(final TransactionInfo transactionInfo) {
         final List<Future<FraudResult>> futures = new ArrayList<>();
         for (final Rule rule : fraudRulesList) {
