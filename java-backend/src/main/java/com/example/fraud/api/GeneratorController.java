@@ -1,18 +1,15 @@
 package com.example.fraud.api;
 
-import com.example.fraud.fraud.TransactionInfo;
 import com.example.fraud.generator.GeneratorService;
-import com.example.fraud.graph.GraphService;
-import com.example.fraud.model.TransactionType;
-import com.example.fraud.util.FraudUtil;
-
-import jakarta.validation.constraints.Min;
-import java.time.Instant;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/generator")
+@RequestMapping("/api")
+@Tag(name = "Transaction Generation", description = "Control transaction generation and monitoring")
 public class GeneratorController {
     private final GeneratorService transactionGenerator;
 
@@ -20,73 +17,76 @@ public class GeneratorController {
         this.transactionGenerator = transactionGenerator;
     }
 
-    // POST /generator/generate  -> 204 No Content
-    @PostMapping("/generate")
-    public ResponseEntity<?> generateRandomTransaction() {
-        TransactionInfo t = transactionGenerator.generateTransaction();
-        if (!t.success()) {
-            return ResponseEntity.badRequest().body(
-                    new ApiMessage("Generate random transaction request failed")
-            );
-        }
-        return ResponseEntity.noContent().build();
+    @GetMapping("/generate/status")
+    @Operation(summary = "Get Generation Status", description = "Get current transaction generation status and statistics")
+    public ResponseEntity<?> status() {
+        var status = transactionGenerator.getStatus();
+        var total = transactionGenerator.getTotalTransactions();
+
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("running", status.running());
+        out.put("generationRate", status.generationRate());
+        out.put("startTime", status.startTime());
+        out.put("total", total);
+        return ResponseEntity.ok(out);
     }
 
-    // POST /generator/start?rate=
-    @PostMapping("/start")
-    public ResponseEntity<?> start(
-            @RequestParam @Min(1) int rate,
-            @RequestParam(defaultValue = "") String start
-    ) {
-        int max = transactionGenerator.getMaxTransactionRate();
-        if (rate > max) {
+    @PostMapping("/generate/start")
+    @Operation(summary = "Start Generation", description = "Start transaction generation at specified rate")
+    public ResponseEntity<?> start(@RequestBody Map<String, Object> body) {
+        try {
+            int rate = ((Number) body.get("rate")).intValue();
+            int max = transactionGenerator.getMaxTransactionRate();
+
+            if (rate > max) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("error", "Generation rate " + rate + " exceeds maximum allowed rate of " + max)
+                );
+            }
+
+            boolean ok = transactionGenerator.startGeneration(rate);
+            if (!ok) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("error", "Transaction generation is already running")
+                );
+            }
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Transaction generation started at " + rate + " transactions/second",
+                    "status", "started",
+                    "rate", rate,
+                    "max_rate", max
+            ));
+        } catch (Exception e) {
             return ResponseEntity.badRequest().body(
-                    new ApiMessage("Generation rate " + rate + " exceeds maximum allowed rate of " + max)
+                    Map.of("error", "Failed to start generation: " + e.getMessage())
             );
         }
-        boolean ok = transactionGenerator.startGeneration(rate);
-        if (!ok) {
-            return ResponseEntity.badRequest().body(new ApiMessage("Transaction generation is already running"));
-        }
-        return ResponseEntity.ok(new StartResponse(
-                "Transaction generation started at " + rate + " transactions/second", "started", rate, max));
     }
 
-    // POST /generator/stop
-    @PostMapping("/stop")
+    @PostMapping("/generate/stop")
+    @Operation(summary = "Stop Generation", description = "Stop transaction generation")
     public ResponseEntity<?> stop() {
         boolean ok = transactionGenerator.stopGeneration();
         if (!ok) {
-            return ResponseEntity.badRequest().body(new ApiMessage("Transaction generation is not running"));
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "Transaction generation is not running")
+            );
         }
-        return ResponseEntity.ok(new ApiStatus("Transaction generation stopped", "stopped"));
+        return ResponseEntity.ok(Map.of(
+                "message", "Transaction generation stopped",
+                "status", "stopped"
+        ));
     }
 
-    // GET /generator/max-rate
-    @GetMapping("/max-rate")
+    @GetMapping("/transaction-generation/max-rate")
+    @Operation(summary = "Get Max Rate", description = "Get maximum allowed transaction generation rate")
     public ResponseEntity<?> getMaxRate() {
         int max = transactionGenerator.getMaxTransactionRate();
-        return ResponseEntity.ok(new MaxRateResponse(max,
-                "Maximum allowed transaction generation rate: " + max + " transactions/second"));
-    }
-
-
-    // GET /generator/status
-    @GetMapping("/status")
-    public ResponseEntity<?> status() {
-        int totalTransactions = transactionGenerator.getTotalTransactions();
-        return ResponseEntity.ok(transactionGenerator.getStatus());
-    }
-
-    record ApiMessage(String message) {
-    }
-
-    record ApiStatus(String message, String status) {
-    }
-
-    record StartResponse(String message, String status, int rate, int max_rate) {
-    }
-
-    record MaxRateResponse(int max_rate, String message) {
+        return ResponseEntity.ok(Map.of(
+                "max_rate", max,
+                "message", "Maximum allowed transaction generation rate: " + max + " transactions/second"
+        ));
     }
 }
+

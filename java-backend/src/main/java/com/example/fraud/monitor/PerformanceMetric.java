@@ -14,12 +14,10 @@ import org.slf4j.LoggerFactory;
 public class PerformanceMetric {
     private static final Logger log = LoggerFactory.getLogger("fraud_detection.performance");
 
-    // Required for constructor.
     private static final int UPDATE_FREQUENCY = 5;
     private static final int WINDOW_SIZE = 10 * 60 / UPDATE_FREQUENCY; // 10 minutes * 60 seconds / update every 5 seconds
     final int maxHistory;
 
-    // Default info required.
     private final Object lock = new Object();
     private PerfMetric[] ruleMetrics;
     private final LongAdder ruleSuccess = new LongAdder();

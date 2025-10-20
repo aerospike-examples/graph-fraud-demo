@@ -12,7 +12,6 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
@@ -158,11 +157,11 @@ public class FraudCLI implements CommandLineRunner {
 
     private void generatorStatus() {
         try {
-            String json = http.get().uri(uri -> uri.path("/generator/status").build()).retrieve().body(String.class);
+            String json = http.get().uri(uri -> uri.path("/generate/status").build()).retrieve().body(String.class);
             System.out.println("Generator Status: \n" + json);
             generatorRunning.compareAndSet(true, false);
         } catch (Exception e) {
-            System.out.println("Error seeding data: " + e.getMessage());
+            System.out.println("Error getting status: " + e.getMessage());
         }
     }
 
@@ -178,9 +177,14 @@ public class FraudCLI implements CommandLineRunner {
 
     private void stopGenerator() {
         try {
-            http.post().uri(uri -> uri.path("/generator/stop").build()).retrieve().toBodilessEntity();
-            System.out.println("Generator stopped!");
-            generatorRunning.compareAndSet(true, false);
+            String json = http.post().uri(uri -> uri.path("/generate/stop").build()).retrieve().body(String.class);
+            JsonNode root = mapper.readTree(json);
+            if (root.has("status") && "stopped".equals(root.get("status").asText())) {
+                System.out.println("Generator stopped!");
+                generatorRunning.compareAndSet(true, false);
+            } else {
+                System.out.println("Failed to stop generator");
+            }
         } catch (Exception e) {
             System.out.println("Error stopping generator: " + e.getMessage());
         }
@@ -197,20 +201,27 @@ public class FraudCLI implements CommandLineRunner {
         }
         try {
             int rate = Integer.parseInt(args[0]);
-            StartResponse json = http.post().uri(uri -> uri.path("/generator/start").queryParam("rate", rate)
-                    .build()).retrieve().body(StartResponse.class);
+            String requestBody = String.format("{\"rate\": %d, \"start\": \"now\"}", rate);
+            
+            String json = http.post()
+                    .uri(uri -> uri.path("/generate/start").build())
+                    .header("Content-Type", "application/json")
+                    .body(requestBody)
+                    .retrieve()
+                    .body(String.class);
 
-            if (json != null && Objects.equals(json.status, "started")) {
-                System.out.println("Generator started.");
+            JsonNode root = mapper.readTree(json);
+            if (root.has("status") && "started".equals(root.get("status").asText())) {
+                System.out.println("Generator started at " + root.get("rate").asInt() + " TPS.");
                 generatorRunning.compareAndSet(false, true);
+            } else if (root.has("error")) {
+                System.out.println("Error: " + root.get("error").asText());
             } else {
                 System.out.println("Generator failed to start.");
             }
         } catch (Exception e) {
             System.out.println("Error starting generator: " + e.getMessage());
         }
-
-
     }
 
     private void showIndexes() {
@@ -235,15 +246,13 @@ public class FraudCLI implements CommandLineRunner {
     private void createFraudIndexes() {
         System.out.println("Creating fraud detection indexes...");
         try {
-            String json = http.get().uri(uri -> uri.path("/admin/indexes/create-transaction-indexes").build()).retrieve().body(String.class);
+            String json = http.post().uri(uri -> uri.path("/admin/indexes/create-transaction-indexes").build()).retrieve().body(String.class);
             JsonNode root = mapper.readTree(json);
 
-
-            System.out.print("Fraud indexes created successfully.");
+            System.out.println("Fraud indexes created successfully.");
         } catch (JsonProcessingException e) {
             System.out.println("Error creating indexes: " + e.getMessage());
         }
-
     }
 
     private void showTransactions() {
@@ -462,12 +471,6 @@ public class FraudCLI implements CommandLineRunner {
         } catch (Exception e) {
             throw new RuntimeException("Bad JSON from server", e);
         }
-    }
-
-    record BasicResponse(String message, String status, Boolean ok) {
-    }
-
-    record StartResponse(String message, String status, Integer rate, Integer max_rate) {
     }
 
     record TransactionStatResponse(Long total_txns, Long total_blocked, Long total_review, Long total_clean) {

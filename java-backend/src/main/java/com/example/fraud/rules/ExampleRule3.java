@@ -9,7 +9,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import lombok.experimental.SuperBuilder;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,8 +20,8 @@ public class ExampleRule3 extends Rule {
     public ExampleRule3(GraphTraversalSource g,
                         @Value("${rules.example-rule-3.name:Transactions with Users Associated with Flagged Devices}") String name,
                         @Value("${rules.example-rule-3.description:Detect threats through flagged device usage}") String description,
-                        @Value("#{'rules.example-rule-3.key-indicators:Transactions directed to users associated with fradulent devices,Multi-hop neighborhood analysis,Transaction history analysis'.split(',')}") List<String> keyIndicators,
-                        @Value("${rules.example-rule-3.common-use-case:Immediate threat detection, known fraudster connections}'") String commonUseCase,
+                        @Value("#{'Transactions directed to users associated with fradulent devices,Multi-hop neighborhood analysis,Transaction history analysis'.split(',')}") List<String> keyIndicators,
+                        @Value("${rules.example-rule-3.common-use-case:Immediate threat detection, known fraudster connections}") String commonUseCase,
                         @Value("${rules.example-rule-3.complexity:HIGH}") String complexity,
                         @Value("${rules.example-rule-3.enabled:true}") boolean enabled,
                         @Value("${rules.example-rule-3.run-async:false}") boolean runAsync
@@ -34,7 +33,6 @@ public class ExampleRule3 extends Rule {
     public FraudResult executeRule(final TransactionInfo info) {
         final Instant t0 = Instant.now();
         try {
-            @SuppressWarnings("unchecked")
             final Map<String, Object> results = (Map<String, Object>) g.E(info.edgeId())
                     .project("sender", "receiver", "accounts", "devices")
                     .by(__.outV().in("OWNS").id())
@@ -44,9 +42,7 @@ public class ExampleRule3 extends Rule {
                             .has("fraud_flag", true).id().dedup().fold())
                     .next();
 
-            @SuppressWarnings("unchecked")
             final List<Object> accounts = (List<Object>)(results.get("accounts"));
-            @SuppressWarnings("unchecked")
             final List<Object> devices = (List<Object>)(results.get("devices"));
 
             if (devices == null || devices.isEmpty()) {
