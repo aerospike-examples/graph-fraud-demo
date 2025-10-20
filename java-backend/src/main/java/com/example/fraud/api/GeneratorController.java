@@ -1,13 +1,15 @@
 package com.example.fraud.api;
 
 import com.example.fraud.generator.GeneratorService;
-import jakarta.validation.constraints.Min;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-@RequestMapping("/api")
 @RestController
+@RequestMapping("/api")
+@Tag(name = "Transaction Generation", description = "Control transaction generation and monitoring")
 public class GeneratorController {
     private final GeneratorService transactionGenerator;
 
@@ -16,11 +18,21 @@ public class GeneratorController {
     }
 
     @GetMapping("/generate/status")
+    @Operation(summary = "Get Generation Status", description = "Get current transaction generation status and statistics")
     public ResponseEntity<?> status() {
-        return ResponseEntity.ok(transactionGenerator.getStatus());
+        var status = transactionGenerator.getStatus();
+        var total = transactionGenerator.getTotalTransactions();
+
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("running", status.running());
+        out.put("generationRate", status.generationRate());
+        out.put("startTime", status.startTime());
+        out.put("total", total);
+        return ResponseEntity.ok(out);
     }
 
     @PostMapping("/generate/start")
+    @Operation(summary = "Start Generation", description = "Start transaction generation at specified rate")
     public ResponseEntity<?> start(@RequestBody Map<String, Object> body) {
         try {
             int rate = ((Number) body.get("rate")).intValue();
@@ -53,6 +65,7 @@ public class GeneratorController {
     }
 
     @PostMapping("/generate/stop")
+    @Operation(summary = "Stop Generation", description = "Stop transaction generation")
     public ResponseEntity<?> stop() {
         boolean ok = transactionGenerator.stopGeneration();
         if (!ok) {
@@ -67,6 +80,7 @@ public class GeneratorController {
     }
 
     @GetMapping("/transaction-generation/max-rate")
+    @Operation(summary = "Get Max Rate", description = "Get maximum allowed transaction generation rate")
     public ResponseEntity<?> getMaxRate() {
         int max = transactionGenerator.getMaxTransactionRate();
         return ResponseEntity.ok(Map.of(

@@ -15,11 +15,11 @@ import Confirm from "@/components/Confirm";
 
 export interface GenerationStats {
   running: boolean;
-  total: number;
+  total?: number;
   startTime?: string;
   currentRate: number;
-  maxRate: number;
-  errors: number;
+  maxRate?: number;
+  errors?: number;
   duration: string;
 }
 
@@ -36,7 +36,7 @@ const Statistics = ({ isGenerating, stats, setStats }: Props) => {
     setLoading(true);
     try {
       const response = await fetch("/api/transactions", { method: "DELETE" });
-      if (response.ok) setStats((prev) => ({ ...prev, totalGenerated: 0 }));
+      if (response.ok) setStats((prev) => ({ ...prev, total: 0 }));
       else alert("An error occured");
     } catch (e) {
       alert(`An error occured: ${e}`);

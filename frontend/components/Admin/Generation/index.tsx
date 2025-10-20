@@ -39,14 +39,19 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
   const getPollingInterval = () => {
     return setInterval(async () => {
       getGenerationStats()
-        .then(({ running, startTime, ...rest }) =>
-          setStats({
-            running,
-            startTime,
-            ...rest,
+        .then((status: any) =>
+          setStats((prev) => ({
+            ...prev,
+            running: status?.running ?? false,
+            startTime: status?.startTime ?? prev.startTime,
+            currentRate: status?.generationRate ?? prev.currentRate,
+            total:
+              typeof status?.total === "number" ? status.total : prev.total,
             duration:
-              running && startTime ? getDuration(startTime) : "00:00:00",
-          })
+              status?.running && status?.startTime
+                ? getDuration(status.startTime)
+                : "00:00:00",
+          }))
         )
         .catch((error) => console.error("Error polling status:", error));
     }, 1000);
@@ -68,7 +73,7 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
         setIsGenerating(true);
         pollingRef.current = getPollingInterval();
         toast.success("Transaction generation started");
-        setStats((prev) => ({ ...prev, isRunning: true, startTime: start }));
+        setStats((prev) => ({ ...prev, running: true, startTime: start }));
       } else {
         throw new Error(error);
       }
@@ -88,7 +93,7 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
       if (!error) {
         setIsGenerating(false);
         toast.success("Transaction generation stopped");
-        setStats((prev) => ({ ...prev, isRunning: false }));
+        setStats((prev) => ({ ...prev, running: false }));
       } else {
         throw new Error(error);
       }
@@ -101,16 +106,22 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
   };
 
   useEffect(() => {
-    getGenerationStats().then(({ running, startTime, ...rest }) => {
-      if (running) {
+    getGenerationStats().then((status: any) => {
+      if (status?.running) {
         setIsGenerating(true);
         pollingRef.current = getPollingInterval();
       }
-      setStats({
-        running,
-        ...rest,
-        duration: running && startTime ? getDuration(startTime) : "00:00:00",
-      });
+      setStats((prev) => ({
+        ...prev,
+        running: status?.running ?? false,
+        startTime: status?.startTime ?? prev.startTime,
+        currentRate: status?.generationRate ?? prev.currentRate,
+        total: typeof status?.total === "number" ? status.total : prev.total,
+        duration:
+          status?.running && status?.startTime
+            ? getDuration(status.startTime)
+            : "00:00:00",
+      }));
     });
     return () => {
       if (pollingRef.current) {

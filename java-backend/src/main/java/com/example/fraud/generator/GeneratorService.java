@@ -108,6 +108,7 @@ public class GeneratorService {
 
         try {
             performanceMonitor.resetPerformanceSummary();
+            transactionWorker.clearTotalTransactions();
 
             isRunning = true;
 

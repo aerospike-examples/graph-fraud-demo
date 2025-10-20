@@ -105,4 +105,8 @@ public class TransactionWorker {
     public int getTotalTransactions() {
         return totalTransactions.get();
     }
+
+    public void clearTotalTransactions() {
+        totalTransactions.set(0);
+    }
 }
