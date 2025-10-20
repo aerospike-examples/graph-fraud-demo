@@ -100,6 +100,22 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
+<plugin>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-maven-plugin</artifactId>
+  <version>${project.parent.version}</version>
+  <executions>
+    <execution>
+      <goals>
+        <goal>repackage</goal>
+      </goals>
+    </execution>
+  </executions>
+  <!-- set your real main class if not auto-detected -->
+  <configuration>
+    <mainClass>com.example.fraud.App</mainClass>
+  </configuration>
+</plugin>
         </plugins>
     </build>
 

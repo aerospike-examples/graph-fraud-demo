@@ -817,8 +817,8 @@ public class GraphService {
 
     public void seedSampleData() {
         mainG.V().drop().iterate();
-        String verticesPath = "/data/graph_csv/vertices";
-        String edgesPath = "/data/graph_csv/edges";
+        String verticesPath = "/data/vertices";
+        String edgesPath = "/data/edges";
 
         logger.info("Bulk load Starting");
         mainG.with("evaluationTimeout", 20000)
