@@ -62,8 +62,6 @@ public class GraphService {
             mainBuilder
                     .port(props.gremlinPort())
                     .connectionSetupTimeoutMillis(500)
-                    .maxConnectionPoolSize(props.mainConnectionPoolSize())
-                    .minConnectionPoolSize(props.mainConnectionPoolSize())
                     .create();
             mainCluster = mainBuilder.create();
             logger.info("main cluster created");

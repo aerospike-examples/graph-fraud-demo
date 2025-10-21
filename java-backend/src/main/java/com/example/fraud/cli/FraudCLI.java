@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Profile;
 
 import java.io.Console;
 import java.util.Locale;
@@ -22,6 +23,7 @@ import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.web.client.RestClient;
 
+@Profile("cli")
 @Component
 public class FraudCLI implements CommandLineRunner {
 
