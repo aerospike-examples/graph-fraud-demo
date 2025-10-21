@@ -993,7 +993,7 @@ public class GraphService {
                 .call("aerospike.graphloader.admin.bulk-load.load")
                 .with("aerospike.graphloader.vertices", verticesPath)
                 .with("aerospike.graphloader.edges", edgesPath)
-                .with("aerospike.graphloader.gcs-keyfile", "/opt/secrets/gcs-key.json")
+                .with("aerospike.graphloader.gcs-keyfile", "/opt/secrets/gcs-keyfile.json")
                 .with("incremental_load", false)
                 .next();
 
