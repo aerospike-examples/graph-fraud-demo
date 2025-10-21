@@ -985,14 +985,15 @@ public class GraphService {
 
     public void seedSampleData() {
         mainG.V().drop().iterate();
-        String verticesPath = "/data/vertices";
-        String edgesPath = "/data/edges";
+        String verticesPath = "gs://connor-test-l3/data/graph_csv/vertices";
+        String edgesPath = "gs://connor-test-l3/data/graph_csv/edges";
 
         logger.info("Bulk load Starting");
         mainG.with("evaluationTimeout", 20000)
                 .call("aerospike.graphloader.admin.bulk-load.load")
                 .with("aerospike.graphloader.vertices", verticesPath)
                 .with("aerospike.graphloader.edges", edgesPath)
+                .with("aerospike.graphloader.gcs-keyfile", "/opt/secrets/gcs-key.json")
                 .with("incremental_load", false)
                 .next();
 
