@@ -55,10 +55,13 @@ public class GraphService {
 
     private void connect() {
         try {
-            logger.info("Connecting to Aerospike Graph: {}", (Object) props.gremlinHost());
+            logger.info("Connecting to Aerospike Graph: {}", (Object) props.gremlinHosts());
 
             Cluster.Builder mainBuilder = Cluster.build();
-                mainBuilder.addContactPoint(props.gremlinHost());
+            String[] hosts = props.gremlinHosts().split(",");
+            for (String host : hosts) {
+                mainBuilder.addContactPoint(host);
+            }
             mainBuilder
                     .port(props.gremlinPort())
                     .connectionSetupTimeoutMillis(500)
@@ -69,7 +72,9 @@ public class GraphService {
             logger.info("main cluster created");
 
             Cluster.Builder builder = Cluster.build();
-            builder.addContactPoint(props.gremlinHost());
+            for (String host : hosts) {
+                builder.addContactPoint(host);
+            }
             builder
                     .port(props.gremlinPort())
                     .connectionSetupTimeoutMillis(500)

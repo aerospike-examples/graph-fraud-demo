@@ -10,6 +10,6 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "graph")
 public record GraphProperties(@Positive @NotNull Integer mainConnectionPoolSize,
                               @Positive @NotNull Integer fraudConnectionPoolSize,
-                              @NotNull String gremlinHost,
+                              @NotNull String gremlinHosts,
                               @NotNull Integer gremlinPort) {
 }
