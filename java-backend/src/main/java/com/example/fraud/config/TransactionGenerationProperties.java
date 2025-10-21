@@ -34,6 +34,6 @@ public class TransactionGenerationProperties {
         this.transactionSchedulerTpsCapacity = transactionSchedulerTpsCapacity != null
                 ? transactionSchedulerTpsCapacity : 100;
         this.maxTransactionRate = maxTransactionRate != null
-                ? maxTransactionRate : 2000;
+                ? maxTransactionRate : 4000;
     }
 }
