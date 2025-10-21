@@ -39,7 +39,10 @@ public class ExampleRule1 extends Rule {
 
             if (fraudVertices.isEmpty()) {
                 return new FraudResult(false, 0, "No flagged accounts found",
-                        FraudCheckStatus.CLEARED,null, false,
+                        FraudCheckStatus.CLEARED,
+                        new FraudCheckDetails(List.of(), info.fromId(), info.toId(), 0,
+                                Instant.now(), this.getName()),
+                        false,
                         new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
             }
 
