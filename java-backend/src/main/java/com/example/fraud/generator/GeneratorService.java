@@ -40,7 +40,7 @@ public class GeneratorService {
         this.fraudService = fraudService;
         this.performanceMonitor = performanceMonitor;
 
-        this.transactionWorker = new TransactionWorker(this, fraudService, performanceMonitor,
+        this.transactionWorker = new TransactionWorker(this, fraudService,
                 props.getTransactionWorkerPoolSize(), props.getTransactionWorkerMaxPoolSize());
         this.transactionScheduler = new TransactionScheduler(transactionWorker, performanceMonitor);
     }
@@ -108,7 +108,7 @@ public class GeneratorService {
 
         try {
             performanceMonitor.resetPerformanceSummary();
-            transactionWorker.clearTotalTransactions();
+            transactionWorker.clearSuccessfulTransactions();
 
             isRunning = true;
 
@@ -195,9 +195,7 @@ public class GeneratorService {
     public int getAccountCacheSize() {
         return accountVertices.size();
     }
-    public int getTotalTransactions() {
-        return transactionWorker.getTotalTransactions();
-    }
+    public int getSuccessfulTransactions() { return transactionWorker.getSuccessfulTransactions(); }
     public GeneratorStatus getStatus() {
         return performanceMonitor.getGeneratorStatus();
     }

@@ -2,38 +2,33 @@ package com.example.fraud.generator;
 
 import com.example.fraud.fraud.FraudService;
 import com.example.fraud.fraud.TransactionInfo;
-import com.example.fraud.monitor.PerformanceMonitor;
-import java.time.Duration;
-import java.time.Instant;
+
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
+
 import java.util.concurrent.*;
 
 public class TransactionWorker {
     private final GeneratorService generatorService;
     private final FraudService fraudService;
-    private final PerformanceMonitor performanceMonitor;
     private static final Logger logger = LoggerFactory.getLogger(TransactionWorker.class);
 
     private final int WORKER_POOL_SIZE;
-    private final int WORKER_MAX_POOL_SIZE;
-    private AtomicInteger totalTransactions;
+
+    private AtomicInteger successfulTransactions;      // actually created
 
     private volatile boolean running = false;
     private ExecutorService executor;
 
     public TransactionWorker(GeneratorService generatorService, FraudService fraudService,
-                             PerformanceMonitor performanceMonitor, int workerPoolSize, int workerMaxPoolSize) {
+                             int workerPoolSize, int workerMaxPoolSize) {
         this.generatorService = generatorService;
         this.fraudService = fraudService;
-        this.performanceMonitor = performanceMonitor;
         WORKER_POOL_SIZE = workerPoolSize;
-        WORKER_MAX_POOL_SIZE = workerMaxPoolSize;
-        totalTransactions = new AtomicInteger(0);
+
+        successfulTransactions = new AtomicInteger(0);
     }
 
     public void startWorkers() {
@@ -80,7 +75,6 @@ public class TransactionWorker {
             throw new RuntimeException("Workers not started");
         }
         executor.submit(() -> executeTransaction(taskData));
-        totalTransactions.incrementAndGet();
     }
 
 
@@ -92,6 +86,7 @@ public class TransactionWorker {
                     result.success() &&
                     result.edgeId() != null &&
                     result.txnId() != null) {
+                successfulTransactions.incrementAndGet();
                 fraudService.submitFraudDetection(result);
             } else {
                 logger.warn("Transaction creation failed");
@@ -102,11 +97,11 @@ public class TransactionWorker {
         }
     }
 
-    public int getTotalTransactions() {
-        return totalTransactions.get();
+    public int getSuccessfulTransactions() {
+        return successfulTransactions.get();
     }
 
-    public void clearTotalTransactions() {
-        totalTransactions.set(0);
+    public void clearSuccessfulTransactions() {
+        successfulTransactions.set(0);
     }
 }

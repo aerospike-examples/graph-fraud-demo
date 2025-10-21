@@ -2,7 +2,7 @@
 
 # Fraud Detection Application Runner
 # This script starts both the backend (FastAPI) and frontend (Next.js) applications
-# along with Docker Compose containers (Aerospike Graph, Graph Service, Zipkin)
+# along with Docker Compose containers (Aerospike Graph, Graph Service)
 
 # Default values
 LOAD_USERS=false
@@ -229,7 +229,6 @@ echo ""
 echo "🐳 Docker Containers:"
 echo "   Aerospike Database: localhost:3000-3002"
 echo "   Graph Service: localhost:8182 (Gremlin), localhost:9090 (Prometheus)"
-echo "   Zipkin Tracing: localhost:9411"
 echo ""
 echo "🌐 Frontend: http://localhost:4001"
 echo "🔌 Backend API: http://localhost:4000"

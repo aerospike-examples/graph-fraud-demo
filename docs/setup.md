@@ -5,6 +5,7 @@ This guide will help you set up the Fraud Detection Application on your local ma
 ## 📋 Prerequisites
 
 ### Required Software
+
 1. **Docker & Docker Compose** - For Aerospike Graph Service and related services
    - [Install Docker Desktop](https://docs.docker.com/get-docker/) (includes Docker Compose)
    - Ensure Docker is running before starting the application
@@ -13,6 +14,7 @@ This guide will help you set up the Fraud Detection Application on your local ma
 4. **Git** - Version control
 
 ### System Requirements
+
 - **RAM**: 4GB minimum, 8GB recommended
 - **Storage**: 2GB free space for Docker images
 - **OS**: Windows 10+, macOS 10.15+, or Linux (Ubuntu 18.04+)
@@ -20,21 +22,21 @@ This guide will help you set up the Fraud Detection Application on your local ma
 ## 🐳 Containerized Services
 
 The application uses Docker Compose to automatically provide:
+
 - **Aerospike Database Server** - Graph data storage (ports 3000-3002)
 - **Aerospike Graph Service (AGS)** - Graph query engine (port 8182)
-- **Zipkin** - Distributed tracing (port 9411)
-
-
 
 ## 🚀 Quick Start
 
 ### 1. Clone the Repository
+
 ```bash
 git clone <repository-url>
 cd DemoApp
 ```
 
 ### 2. Run the Application (Recommended)
+
 The `run_app.sh` script handles everything automatically:
 
 ```bash
@@ -49,12 +51,14 @@ The `run_app.sh` script handles everything automatically:
 ```
 
 **Command Line Options:**
+
 - `-h, --help` - Show help message
 - `-l, --load-users` - Delete all data and load users, accounts, devices from users.json
 
 The script will automatically:
+
 1. **Check Docker availability** and start Docker Compose services
-2. **Wait for services to be healthy** (Aerospike DB, Graph Service, Zipkin)
+2. **Wait for services to be healthy** (Aerospike DB, Graph Service)
 3. **Create Python virtual environment** and install dependencies
 4. **Install Node.js dependencies**
 5. **Start the FastAPI backend** on port 4000
@@ -62,17 +66,19 @@ The script will automatically:
 7. **Optionally load sample data**
 
 ### 3. Access the Application
+
 Once setup is complete, you can access:
+
 - **Frontend**: http://localhost:4001
 - **Backend API**: http://localhost:4000
 - **API Documentation**: http://localhost:4000/docs
-- **Zipkin Tracing**: http://localhost:9411 (optional)
 
 ## 🛠️ Manual Setup (Advanced)
 
 If you prefer to run services manually:
 
 ### 1. Start Docker Services
+
 ```bash
 # Start containerized services
 docker-compose up -d
@@ -103,6 +109,7 @@ pip install -r requirements.txt
 # Start the backend server
 python main.py
 ```
+
 The backend will be available at http://localhost:4000
 
 ### 3. Frontend Setup
@@ -116,14 +123,17 @@ npm install
 # Start the development server
 npm run dev
 ```
+
 The frontend will be available at http://localhost:3000 (or port 4001 with custom config)
 
 ## 📊 Sample Data Setup
 
 ### Loading Sample Data
+
 The application includes sample data in `data/users.json`. To load this data:
 
 1. **Using the API endpoint**
+
    ```bash
    curl -X POST http://localhost:4000/seed-data
    ```
@@ -136,12 +146,14 @@ The application includes sample data in `data/users.json`. To load this data:
 ### Local Testing Setup
 
 1. **Start Docker Compose**
+
    ```bash
    docker compose up -d
    ```
 
 2. **Stop the frontend, backend, and generator containers**
    Do this manually through docker desktop, or via
+
    ```bash
    docker stop <container-name>
    ```
@@ -165,31 +177,38 @@ The application includes sample data in `data/users.json`. To load this data:
    ```
 
 ### Cloud Testing Setup
+
 Different VMs (using systemd services):
+
 #### graph-demo-client -- Backend and Frontend
+
 demo-backend.service
 demo-frontend.service
 
 #### graph-demo-generator -- Generator
+
 demo-generator.service
 
 #### graph-demo-aerospike-node-[1,3] -- Aerospike Server Nodes
+
 aerospike.service
 aerospike-prometheus-exporter.service
 
-#### graph-demo-aerospike-graph -- AGS and Zipkin
-Aerospike Graph Service: *asgraph* (DOCKER, aerospike/aerospike-graph-service:latest)
-Zipkin: *zipkin* (DOCKER, openzipkin/zipkin:latest)
+#### graph-demo-aerospike-graph -- AGS
+
+Aerospike Graph Service: _asgraph_ (DOCKER, aerospike/aerospike-graph-service:latest)
 
 ### Sample Data Structure
+
 The sample data includes:
+
 - **Users**: 100+ sample users with realistic profiles
 - **Accounts**: Multiple accounts per user (savings, checking, etc.)
 - **Devices**: User devices with fingerprints and login history
 - **Fraud Flags**: Some accounts and devices are pre-flagged for testing
 
-
 ### Environment Variables
+
 Create a `.env` file in the backend directory for custom configuration:
 
 ```env
@@ -205,4 +224,3 @@ GRAPH_PORT=8182
 # Frontend Configuration
 NEXT_PUBLIC_API_URL=http://localhost:4000
 ```
-

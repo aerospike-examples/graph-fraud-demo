@@ -7,23 +7,26 @@ const DocsPage = () => {
   const [height, setHeight] = useState("100vh");
 
   useEffect(() => {
-    if (frameRef.current) {
-      setTimeout(
-        () =>
-          setHeight(
-            `${
-              frameRef?.current?.contentWindow?.document?.documentElement
-                .scrollHeight ?? 0
-            }px`
-          ),
-        500
-      );
-    }
+    const iframe = frameRef.current;
+    if (!iframe) return;
+    const onLoad = () => {
+      try {
+        const doc = iframe.contentWindow?.document;
+        const h =
+          doc?.documentElement?.scrollHeight || doc?.body?.scrollHeight || 0;
+        if (h && h > 400) setHeight(`${h}px`);
+        else setHeight("100vh");
+      } catch (e) {
+        setHeight("100vh");
+      }
+    };
+    iframe.addEventListener("load", onLoad);
+    return () => iframe.removeEventListener("load", onLoad);
   }, []);
 
   return (
     <iframe
-      src="http://localhost:8080"
+      src="/swagger-ui/index.html"
       className="iframe"
       style={{ width: "100%", height }}
       ref={frameRef}

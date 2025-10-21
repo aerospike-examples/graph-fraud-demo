@@ -21,13 +21,13 @@ public class GeneratorController {
     @Operation(summary = "Get Generation Status", description = "Get current transaction generation status and statistics")
     public ResponseEntity<?> status() {
         var status = transactionGenerator.getStatus();
-        var total = transactionGenerator.getTotalTransactions();
+        var successful = transactionGenerator.getSuccessfulTransactions();
 
         Map<String, Object> out = new java.util.LinkedHashMap<>();
         out.put("running", status.running());
         out.put("generationRate", status.generationRate());
         out.put("startTime", status.startTime());
-        out.put("total", total);
+        out.put("total", successful);
         return ResponseEntity.ok(out);
     }
 
