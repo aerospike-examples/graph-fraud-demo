@@ -48,8 +48,7 @@ public class WarmupService {
         }
         generatorService.cacheAccountIds();
         if (generatorService.getAccountCacheSize() == 0){
-            logger.warn("No account cache available to warmup, bulkloading and caching vertices now");
-            graphService.seedSampleData();
+            logger.warn("No account cache available to warmup, caching vertices now");
             generatorService.cacheAccountIds();
         }
         logger.info("Starting warmup");
@@ -78,7 +77,11 @@ public class WarmupService {
 
             logger.debug("Finished warmup transaction creations");
         } finally {
-            graphService.seedSampleData();
+            try {
+                graphService.dropTransactions();
+            } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+            }
         }
 
         logger.info("Warmup completed");

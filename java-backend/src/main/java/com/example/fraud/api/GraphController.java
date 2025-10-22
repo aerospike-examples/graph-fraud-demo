@@ -148,18 +148,6 @@ public class GraphController {
         )) : ResponseEntity.notFound().build();
     }
 
-    @PostMapping("/bulk-load")
-    public Object bulkLoadCsv(@RequestParam(required = false) String vertices_path,
-                              @RequestParam(required = false) String edges_path) {
-        graph.seedSampleData();
-        return true;
-    }
-
-    @GetMapping("/bulk-load-status")
-    public Object bulkLoadStatus() {
-        return graph.getBulkloadStatus();
-    }
-
     @GetMapping("/admin/indexes")
     public Object getIndexInfo() {
         return graph.inspectIndexes();
