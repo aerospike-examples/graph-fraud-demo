@@ -12,15 +12,28 @@ DOCKER_BUILDKIT=0 docker compose up -d
 **Access the application:**
 - Frontend: http://localhost:8080
 
+## Data Generator
+```bash
+python3 generate_user_data_pp_shards_inplace.py \
+  --users 500000 \
+  --region american \
+  --output ./data/graph_csv \
+  --workers 8 \
+  --gcs-bucket my-bucket-name \
+  --gcs-prefix demo/run-2025-10-22/ \
+  --gcs-delete-local
+```
+python3 generate_user_data_pp_shards_inplace.py --users 1000000 --region american --output ./data/graph_csv --workers 8 --gcs-bucket my-bucket-name --gcs-prefix demo/run-2025-10-22/ --gcs-delete-local
+
 ## 🏗️ Architecture
 
-### Backend (Python + FastAPI)
-- **Framework**: FastAPI with async support
+### Backend (Java + Springboot)
+- **Framework**: Springboot
 - **Graph Database**: Aerospike Graph Service (AGS) via Gremlin queries
 - **Features**:
   - RESTful API endpoints for fraud detection
   - Real-time Gremlin query execution
-  - Sample data seeding
+  - Distributed Bulkload Data Seeding
   - User and transaction management
   - Fraud pattern detection algorithms
 

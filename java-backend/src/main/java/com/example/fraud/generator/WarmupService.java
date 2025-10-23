@@ -46,10 +46,10 @@ public class WarmupService {
             logger.warn("Warmup is disabled");
             return true;
         }
-        generatorService.cacheAccountIds();
+        generatorService.cacheAccountVertices();
         if (generatorService.getAccountCacheSize() == 0){
             logger.warn("No account cache available to warmup, caching vertices now");
-            generatorService.cacheAccountIds();
+            generatorService.cacheAccountVertices();
         }
         logger.info("Starting warmup");
         try {

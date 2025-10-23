@@ -49,7 +49,7 @@ public class GeneratorService {
         logger.debug("Initializing transaction workers...");
 
         if (accountVertices.isEmpty()) {
-            cacheAccountIds();
+            cacheAccountVertices();
         }
 
         transactionWorker.startWorkers();
@@ -57,34 +57,8 @@ public class GeneratorService {
         logger.debug("Workers initialized and ready");
     }
 
-    public void cacheAccountIds() {
-        try {
-            logger.debug("Caching account IDs from database...");
-            long startTime = System.nanoTime();
-            GraphTraversalSource g = graphService.getMainClient();
-            if (g == null) {
-                logger.error("Graph client not available");
-                return;
-            }
-
-            List<Object> accountIds = graphService.getAccountIds();
-
-            double cacheTimeMs = (System.nanoTime() - startTime) / 1_000_000.0;
-            int accountCount = accountIds.size();
-
-            if (accountCount < 1) {
-                logger.warn("No accounts found in database - transaction generation will fail");
-            } else {
-                logger.info("Cached {} account IDs in {}ms",
-                        String.format("%,d", accountCount),
-                        String.format("%.1f", cacheTimeMs));
-            }
-
-            accountVertices = accountIds;
-
-        } catch (Exception e) {
-            logger.error("Error caching account IDs: {}", e.getMessage());
-        }
+    public void cacheAccountVertices() {
+        this.accountVertices = graphService.cacheAccountIdsByRange();
     }
 
     public int getMaxTransactionRate() {

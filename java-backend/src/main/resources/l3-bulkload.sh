@@ -17,7 +17,7 @@ gcloud dataproc clusters create "$dataproc_name" \
     --enable-component-gateway \
     --region $region \
     --zone $zone \
-    --master-machine-type "$instance_type" \e
+    --master-machine-type "$instance_type" \
     --master-boot-disk-type pd-ssd \
     --master-boot-disk-size 25 \
     --num-workers "$num_workers" \

@@ -180,6 +180,22 @@ public class GraphService {
         }
     }
 
+    public long getAccountCount() {
+        if (mainG == null) {
+            logger.warn("No graph client available for summary");
+            return 0;
+        }
+
+        logger.info("Getting graph summary using Aerospike Graph admin API");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summaryResult = (Map<String, Object>)
+                mainG.call("aerospike.graph.admin.metadata.summary").next();
+
+        logger.debug("Raw graph summary result: {}", summaryResult);
+        Map<String, Object> parsedSummary = (Map<String, Object>) summaryResult.getOrDefault("Vertex count by label", new HashMap<>());
+        return (long) parsedSummary.get("account");
+    }
+
     public Map<String, Object> getDashboardStats() {
         try {
             if (mainG == null) {
@@ -973,12 +989,39 @@ public class GraphService {
         }
     }
 
-    public List<Object> getAccountIds() {
+    public List<Object> cacheAccountIdsByRange() {
+        long total = getAccountCount();
+        if (total > Integer.MAX_VALUE) throw new IllegalStateException("Too many accounts for one array");
 
-        return mainG.V()
-                .hasLabel("account")
-                .id()
-                .toList();
+        final int BATCH = 50_000;
+        List<Object> cache = new ArrayList<>((int) total);
+
+        for (long offset = 0; offset < total; offset += BATCH) {
+            int limit = (int) Math.min(BATCH, total - offset);
+            List<Object> page = getAccountIdBatchRange(offset, limit);
+
+            cache.addAll(page);
+            if (((offset / BATCH) % 10) == 0) {
+                logger.info("Fetched page {} / {}",
+                        (offset / BATCH) + 1, (int) ((total + BATCH - 1) / BATCH));
+            }
+        }
+        return cache;
+    }
+
+    public List<Object> getAccountIdBatchRange(long start, int limit) {
+        long EVAL_TIMEOUT_MS = 1_800_000L;
+
+        GraphTraversal<Vertex,Object> t = mainG
+                .with("evaluationTimeout", EVAL_TIMEOUT_MS)
+                .V().hasLabel("account")
+                .order().by(T.id)
+                .range(start, start + limit)   // accepts long bounds
+                .id();
+
+        ArrayList<Object> page = new ArrayList<>(limit);
+        while (t.hasNext()) page.add(t.next());
+        return page;
     }
 
     public void seedSampleData() {
