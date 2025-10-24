@@ -48,14 +48,6 @@ public class PerformanceMonitor {
         bg.submit(() -> performanceSummary.updatePerformance(summary));
     }
 
-    public void recordAsyncRulesCompletedDetailed(final TransactionSummary summary) {
-        if (transactionsMade % 200 == 0) {
-            log.debug("Transaction completed ({})", summary);
-        }
-        transactionsMade++;
-        bg.submit(() -> performanceSummary.updateAsyncPerformance(summary));
-    }
-
     public void setGenerationState(boolean running, int targetTps, Instant startTimeEpochSec) {
         generatorStatus = new GeneratorStatus(running, targetTps, startTimeEpochSec);
     }

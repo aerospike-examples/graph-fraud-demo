@@ -23,7 +23,7 @@ public class TransactionWorker {
     private ExecutorService executor;
 
     public TransactionWorker(GeneratorService generatorService, FraudService fraudService,
-                             int workerPoolSize, int workerMaxPoolSize) {
+                             int workerPoolSize) {
         this.generatorService = generatorService;
         this.fraudService = fraudService;
         WORKER_POOL_SIZE = workerPoolSize;

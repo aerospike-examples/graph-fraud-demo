@@ -33,7 +33,6 @@ import java.util.Map;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 
-import static com.example.fraud.util.FraudUtil.capitalizeWords;
 import static org.apache.tinkerpop.gremlin.process.traversal.AnonymousTraversalSource.traversal;
 
 @Service
@@ -112,7 +111,7 @@ public class GraphService {
         return true;
     }
 
-    public void close() {
+    public void shutdown() {
         if (mainCluster != null) {
             try {
                 mainCluster.close();
@@ -129,10 +128,6 @@ public class GraphService {
                 logger.warn("Error closing fraud connection: {}", e.getMessage());
             }
         }
-    }
-
-    public void shutdown() {
-        close();
     }
 
     public GraphTraversalSource getMainClient() {
@@ -231,6 +226,7 @@ public class GraphService {
             if (txns > 0) {
                 try {
                     @SuppressWarnings("unchecked")
+                    //TODO: Use metadata for this
                     Map<String, Object> txnStats = (Map<String, Object>) mainG.E()
                             .hasLabel("TRANSACTS")
                             .group("m")
@@ -282,6 +278,7 @@ public class GraphService {
                 throw new RuntimeException("Graph client not available. Cannot get users without graph database connection.");
             }
 
+            // TODO: Use summary for total and metadata for rest
             @SuppressWarnings("unchecked")
             List<Number> riskScores = (List<Number>) (List<?>) mainG.V()
                     .hasLabel("user")
@@ -318,6 +315,7 @@ public class GraphService {
                 throw new RuntimeException("Graph client not available. Cannot get transactions without graph database connection.");
             }
 
+            // TODO: Split into 3 queries? get total from graph summary, use label.count for other two
             @SuppressWarnings("unchecked")
             Map<String, Long> stats = (Map<String, Long>) (Map<String, ?>) mainG.E()
                     .hasLabel("TRANSACTS")
@@ -430,97 +428,6 @@ public class GraphService {
 
         return new TransactionInfo(true, edgeId, txnId, fromId, toId, amount,
                 new PerformanceInfo(start, Duration.between(start, Instant.now()), true));
-    }
-
-    public Map<String, Object> search(String type,
-                                      int page,
-                                      Integer pageSize,
-                                      String orderBy,
-                                      String order,
-                                      String query) {
-        try {
-            GraphTraversalSource g = getMainClient();
-            if (g == null) {
-                throw new IllegalStateException("Graph client not available. Cannot get search results.");
-            }
-
-            final int ps = (pageSize == null || pageSize <= 0) ? Integer.MAX_VALUE : pageSize;
-            final int startIdx = Math.max(0, (page - 1) * ps);
-            final int endIdx = (pageSize == null || pageSize <= 0) ? Integer.MAX_VALUE : startIdx + ps;
-
-            GraphTraversal.Admin<?, ?> base = "user".equalsIgnoreCase(type)
-                    ? g.V().hasLabel("user").asAdmin()
-                    : g.E().hasLabel("TRANSACTS").asAdmin();
-
-            if (query != null && !query.isBlank()) {
-                String qTitle = capitalizeWords(query);
-                String qUpper = query.toUpperCase(Locale.ROOT);
-                String qLower = query.toLowerCase(Locale.ROOT);
-
-                if ("user".equalsIgnoreCase(type)) {
-                    base = ((GraphTraversal<?, ?>) base).or(
-                            __.has("name", TextP.containing(qTitle)),
-                            __.hasId(TextP.containing(qUpper)),
-                            __.has("email", TextP.containing(qLower)),
-                            __.has("location", TextP.containing(qTitle))
-                    ).asAdmin();
-                } else {
-                    base = ((GraphTraversal<?, ?>) base).or(
-                            __.inV().hasId(TextP.containing(qUpper)),
-                            __.outV().hasId(TextP.containing(qUpper)),
-                            __.has("txn_id", TextP.containing(qUpper)),
-                            __.has("location", TextP.containing(qTitle))
-                    ).asAdmin();
-                }
-            }
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> packed = ((GraphTraversal<?, ?>) base)
-                    .elementMap()
-                    .order()
-                    .by(orderBy, "asc".equalsIgnoreCase(order) ? Order.asc : Order.desc)
-                    .fold()
-                    .project("total", "results")
-                    .by(__.count(Scope.local))
-                    .by(__.unfold().range(startIdx, endIdx).fold())
-                    .next();
-
-            @SuppressWarnings("unchecked")
-            List<Map<Object, Object>> results = (List<Map<Object, Object>>) packed.getOrDefault("results", List.of());
-            List<Map<String, Object>> normalized = new ArrayList<>(results.size());
-            for (Map<Object, Object> m : results) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                for (Map.Entry<Object, Object> e : m.entrySet()) {
-                    if (T.id.equals(e.getKey())) {
-                        row.put("id", e.getValue());
-                    } else if (!T.label.equals(e.getKey())) {
-                        row.put(String.valueOf(e.getKey()), e.getValue());
-                    }
-                }
-                normalized.add(row);
-            }
-
-            int total = ((Number) packed.getOrDefault("total", 0)).intValue();
-            int totalPages = (ps == Integer.MAX_VALUE) ? 1 : ((total + ps - 1) / ps);
-
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("results", normalized);
-            out.put("total", total);
-            out.put("page", page);
-            out.put("page_size", (pageSize == null ? 0 : pageSize));
-            out.put("total_pages", totalPages);
-            return out;
-
-        } catch (Exception e) {
-            logger.error("Error getting search results", e);
-            return Map.of(
-                    "results", List.of(),
-                    "total", 0,
-                    "page", page,
-                    "page_size", (pageSize == null ? 0 : pageSize),
-                    "total_pages", 0
-            );
-        }
     }
 
 
@@ -756,108 +663,6 @@ public class GraphService {
         }
     }
 
-    public Map<String, Object> getFlaggedTransactionsPaginated(int page, int pageSize) {
-        try {
-            GraphTraversalSource g = getMainClient();
-            if (g == null) {
-                throw new IllegalStateException("Graph client not available");
-            }
-
-            List<Vertex> flagged = g.V().hasLabel("transaction").has("fraud_status").toList();
-
-            int startIdx = Math.max(0, (page - 1) * pageSize);
-            int endIdx = Math.min(flagged.size(), startIdx + pageSize);
-
-            if (startIdx >= flagged.size()) {
-                return Map.of(
-                        "transactions", List.of(),
-                        "total", flagged.size(),
-                        "page", page,
-                        "page_size", pageSize,
-                        "total_pages", (flagged.size() + pageSize - 1) / pageSize
-                );
-            }
-
-            List<Map<String, Object>> txns = new ArrayList<>(endIdx - startIdx);
-
-            for (int i = startIdx; i < endIdx; i++) {
-                Vertex txV = flagged.get(i);
-
-                Map<String, Object> txProps = FraudUtil.flattenValueMapGeneric(
-                        g.V(txV).valueMap().next()
-                );
-
-                String senderId = "Unknown";
-                try {
-                    List<Vertex> senders = g.V(txV).in("TRANSFERS_TO").toList();
-                    if (!senders.isEmpty()) {
-                        Map<String, Object> senderProps = FraudUtil.flattenValueMapGeneric(
-                                g.V(senders.get(0)).valueMap().next()
-                        );
-                        senderId = String.valueOf(senderProps.getOrDefault("account_id", "Unknown"));
-                    }
-                } catch (Exception ex) {
-                    logger.debug("Error getting sender account", ex);
-                }
-
-                String receiverId = "Unknown";
-                try {
-                    List<Vertex> receivers = g.V(txV).out("TRANSFERS_FROM").toList();
-                    if (!receivers.isEmpty()) {
-                        Map<String, Object> receiverProps = FraudUtil.flattenValueMapGeneric(
-                                g.V(receivers.get(0)).valueMap().next()
-                        );
-                        receiverId = String.valueOf(receiverProps.getOrDefault("account_id", "Unknown"));
-                    }
-                } catch (Exception ex) {
-                    logger.debug("Error getting receiver account", ex);
-                }
-
-                double fraudScore = (double) FraudUtil.getPropertyValue(txV, "fraud_score", 0.0);
-                String fraudStatus = FraudUtil.getPropertyValue(txV, "fraud_status", "clean").toString();
-                String fraudReason = FraudUtil.getPropertyValue(txV, "reason", "").toString();
-
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("id", txProps.getOrDefault("transaction_id", ""));
-                row.put("sender_id", senderId);
-                row.put("receiver_id", receiverId);
-                row.put("amount", txProps.getOrDefault("amount", 0.0));
-                row.put("currency", "INR");
-                row.put("timestamp", txProps.getOrDefault("timestamp", ""));
-                row.put("location", txProps.getOrDefault("location", "Unknown"));
-                row.put("status", txProps.getOrDefault("status", "completed"));
-                row.put("fraud_score", fraudScore);
-                row.put("transaction_type", txProps.getOrDefault("type", "transfer"));
-                row.put("is_fraud", fraudScore >= 75.0);
-                row.put("fraud_status", fraudStatus);
-                row.put("fraud_reason", fraudReason);
-                row.put("device_id", null);
-
-                txns.add(row);
-            }
-
-            int total = flagged.size();
-            int totalPages = (total + pageSize - 1) / pageSize;
-            return Map.of(
-                    "transactions", txns,
-                    "total", total,
-                    "page", page,
-                    "page_size", pageSize,
-                    "total_pages", totalPages
-            );
-
-        } catch (Exception e) {
-            logger.error("Error getting flagged transactions", e);
-            return Map.of(
-                    "transactions", List.of(),
-                    "total", 0,
-                    "page", page,
-                    "page_size", pageSize,
-                    "total_pages", 0
-            );
-        }
-    }
-
     public Map<String, Object> getTransactionSummary(String txnEdgeId) {
         try {
             GraphTraversalSource g = getMainClient();
@@ -865,6 +670,9 @@ public class GraphService {
                 throw new IllegalStateException("Graph client not available. Cannot get transaction detail.");
             }
 
+            logger.info(txnEdgeId);
+            logger.info(mainG.E().hasLabel("TRANSACTS").id().toList().toString());
+            logger.info(mainG.E(txnEdgeId).toList().toString());
             @SuppressWarnings("unchecked")
             Map<String, Object> detail = (Map<String, Object>) g.E(txnEdgeId)
                     .project("txn", "src", "dest")
@@ -893,49 +701,14 @@ public class GraphService {
         }
     }
 
-    public List<Map<String, Object>> getFlaggedAccounts() {
+    public boolean flagAccount(Object accountId, String reason) {
         try {
             GraphTraversalSource g = getMainClient();
-            if (g == null) throw new IllegalStateException("Graph client not available");
-
-            List<Vertex> accounts = g.V().hasLabel("account").has("fraud_flag", true).toList();
-
-            List<Map<String, Object>> flagged = new ArrayList<>(accounts.size());
-            for (Vertex v : accounts) {
-                Map<Object, Object> vm = g.V(v).valueMap().next();
-                Map<String, Object> acc = FraudUtil.flattenValueMapGeneric(vm);
-
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("account_id", acc.getOrDefault("account_id", ""));
-                row.put("type", acc.getOrDefault("type", ""));
-                row.put("balance", acc.getOrDefault("balance", 0.0));
-                row.put("flag_reason", acc.getOrDefault("flagReason", ""));
-                row.put("flag_timestamp", acc.getOrDefault("flagTimestamp", ""));
-                row.put("status", acc.getOrDefault("status", "active"));
-
-                flagged.add(row);
-            }
-            return flagged;
-
-        } catch (Exception e) {
-            logger.error("Error getting flagged accounts", e);
-            return List.of();
-        }
-    }
-
-    public boolean flagAccount(String accountId, String reason) {
-        try {
-            GraphTraversalSource g = getMainClient();
-            if (g == null) throw new IllegalStateException("Graph client not available");
-
-            List<Vertex> accounts = g.V().hasLabel("account").has("account_id", accountId).toList();
-            if (accounts.isEmpty()) return false;
-
-            g.V(accounts.get(0))
-                    .property("fraud_flag", true)
-                    .property("flagReason", reason)
-                    .property("flagTimestamp", Instant.now().toString())
-                    .iterate();
+                g.V(accountId)
+                        .property("fraud_flag", true)
+                        .property("flagReason", reason)
+                        .property("flagTimestamp", Instant.now().toString())
+                        .iterate();
 
             logger.info("Account {} flagged as fraudulent: {}", accountId, reason);
             return true;
@@ -946,15 +719,13 @@ public class GraphService {
         }
     }
 
-    public boolean unflagAccount(String accountId) {
+    public boolean unflagAccount(Object accountId) {
         try {
+            // TODO: If this isnt used, where do we unflag the account?
             GraphTraversalSource g = getMainClient();
             if (g == null) throw new IllegalStateException("Graph client not available");
 
-            List<Vertex> accounts = g.V().hasLabel("account").has("account_id", accountId).toList();
-            if (accounts.isEmpty()) return false;
-
-            g.V(accounts.get(0))
+            g.V(accountId)
                     .property("fraud_flag", false)
                     .property("unflagTimestamp", Instant.now().toString())
                     .iterate();
@@ -965,28 +736,6 @@ public class GraphService {
         } catch (Exception e) {
             logger.error("Error unflagging account {}", accountId, e);
             return false;
-        }
-    }
-
-    public List<Map<String, Object>> getAllAccounts() {
-        try {
-            GraphTraversalSource g = getMainClient();
-            if (g == null) return List.of();
-
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> accounts = (List<Map<String, Object>>) (List<?>)
-                    g.V().hasLabel("account")
-                            .project("account_id", "account_type")
-                            .by(__.id())
-                            .by("type")
-                            .toList();
-
-            logger.info("Found {} account vertices", accounts.size());
-            return accounts;
-
-        } catch (Exception e) {
-            logger.error("Error getting all accounts", e);
-            return List.of();
         }
     }
 
@@ -1027,158 +776,19 @@ public class GraphService {
                 mainG.call("aerospike.graphloader.admin.bulk-load.status").next();
     }
 
-    public void dropTransactions() throws InterruptedException {
-        try {
-            while (true) {
-                long remaining = 0;
-                try {
-                    remaining = mainG.with("evaluationTimeout", 20000)
-                            .E().hasLabel("TRANSACTS").count().next();
-                } catch (Exception e) {
-                    logger.warn("dropTransactions count failed (retrying): {}", e.getMessage());
-                    remaining = 1;
-                }
-                if (remaining <= 0) break;
-
-                try {
-                    mainG.with("evaluationTimeout", 20000)
-                            .E().hasLabel("TRANSACTS")
-                            .drop().iterate();
-                } catch (Exception e) {
-                    logger.warn("dropTransactions chunk failed (retrying): {}", e.getMessage());
-                }
-                Thread.sleep(250);
-            }
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            throw ie;
-        }
+    public void dropAll() {
+            mainG.V().drop().iterate();
     }
 
-    public Map<String, Object> inspectIndexes() {
+    public boolean accountExists(String accountId) {
         try {
-            if (mainG == null) {
-                throw new RuntimeException("Graph client not available");
-            }
-
-            Object cardinalityInfo = mainG.call("aerospike.graph.admin.index.cardinality").next();
-
-            Object indexList;
-            try {
-                indexList = mainG.call("aerospike.graph.admin.index.list").next();
-            } catch (Exception e) {
-                indexList = "Error getting index list: " + e.getMessage();
-            }
-
-            logger.info("Index cardinality: {}", cardinalityInfo);
-            logger.info("Index list: {}", indexList);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("cardinality", cardinalityInfo);
-            result.put("index_list", indexList);
-            result.put("status", "success");
-            return result;
-
+            GraphTraversalSource g = getMainClient();
+            if (g == null) return false;
+            long cnt = g.V(accountId).count().next();
+            return cnt > 0;
         } catch (Exception e) {
-            logger.error("Error inspecting indexes: {}", e.getMessage());
-            Map<String, Object> result = new HashMap<>();
-            result.put("error", e.getMessage());
-            result.put("status", "error");
-            return result;
+            logger.warn("accountExists check failed for {}: {}", accountId, e.getMessage());
+            return false;
         }
-    }
-
-    public Map<String, Object> createFraudDetectionIndexes() {
-        try {
-            if (mainG == null) {
-                throw new RuntimeException("Graph client not available");
-            }
-
-            List<Map<String, Object>> results = new java.util.ArrayList<>();
-
-            try {
-                Object result1 = mainG.call("aerospike.graph.admin.index.create")
-                        .with("element_type", "vertex")
-                        .with("property_key", "fraud_flag")
-                        .next();
-
-                Map<String, Object> indexResult = new HashMap<>();
-                indexResult.put("index", "fraud_flag");
-                indexResult.put("status", "created");
-                indexResult.put("result", result1);
-                results.add(indexResult);
-                logger.info("Created index: fraud_flag");
-            } catch (Exception e) {
-                Map<String, Object> indexResult = new HashMap<>();
-                indexResult.put("index", "fraud_flag");
-                indexResult.put("status", "error");
-                indexResult.put("error", e.getMessage());
-                results.add(indexResult);
-                logger.warn("Index fraud_flag: {}", e.getMessage());
-            }
-
-            try {
-                Object result2 = mainG.call("aerospike.graph.admin.index.create")
-                        .with("element_type", "vertex")
-                        .with("property_key", "~label")
-                        .next();
-
-                Map<String, Object> indexResult = new HashMap<>();
-                indexResult.put("index", "vertex_label");
-                indexResult.put("status", "created");
-                indexResult.put("result", result2);
-                results.add(indexResult);
-                logger.info("Created index: vertex_label");
-            } catch (Exception e) {
-                Map<String, Object> indexResult = new HashMap<>();
-                indexResult.put("index", "vertex_label");
-                indexResult.put("status", "error");
-                indexResult.put("error", e.getMessage());
-                results.add(indexResult);
-            }
-
-            try {
-                Object result3 = mainG.call("aerospike.graph.admin.index.create")
-                        .with("element_type", "vertex")
-                        .with("property_key", "account_id")
-                        .next();
-
-                Map<String, Object> indexResult = new HashMap<>();
-                indexResult.put("index", "account_id");
-                indexResult.put("status", "created");
-                indexResult.put("result", result3);
-                results.add(indexResult);
-                logger.info("Created index: account_id");
-            } catch (Exception e) {
-                Map<String, Object> indexResult = new HashMap<>();
-                indexResult.put("index", "account_id");
-                indexResult.put("status", "error");
-                indexResult.put("error", e.getMessage());
-                results.add(indexResult);
-            }
-
-            long successful = results.stream()
-                    .filter(r -> "created".equals(r.get("status")))
-                    .count();
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "completed");
-            response.put("results", results);
-            response.put("total_indexes", results.size());
-            response.put("successful", successful);
-            return response;
-
-        } catch (Exception e) {
-            logger.error("Error creating fraud detection indexes: {}", e.getMessage());
-            Map<String, Object> response = new HashMap<>();
-            response.put("error", e.getMessage());
-            response.put("status", "error");
-            return response;
-        }
-    }
-
-    public void printSummary() {
-        final Object summary = mainG.call("aerospike.graph.admin.metadata.summary").next();
-        logger.info("Graph summary: {}", summary);
     }
 }

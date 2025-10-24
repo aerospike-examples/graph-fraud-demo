@@ -10,6 +10,7 @@ import {
   getStatusIcon,
 } from "@/lib/utils";
 import TxnDetails, { type TxnDetail } from "@/components/Transactions/Details";
+import { notFound } from "next/navigation";
 import Stat from "@/components/Stat";
 import Label from "@/components/Label";
 
@@ -18,14 +19,21 @@ const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api";
 export default async function TransactionsPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
   const { id: transactionId } = await params;
-  const encodedID = encodeURIComponent(transactionId);
+  let rawId = transactionId;
+  try {
+    rawId = decodeURIComponent(transactionId);
+  } catch {}
+  const encodedID = encodeURIComponent(rawId);
 
   const response = await fetch(`${API_BASE_URL}/transaction/${encodedID}`, {
     cache: "no-store",
   });
+  if (!response.ok) {
+    notFound();
+  }
   const { txn, src, dest }: TxnDetail = await response.json();
 
   const calculateOverallRisk = (fraud_score: number = 0) => {

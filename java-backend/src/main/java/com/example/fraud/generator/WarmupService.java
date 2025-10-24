@@ -21,7 +21,6 @@ public class WarmupService {
 
     private static final Logger logger = LoggerFactory.getLogger(WarmupService.class);
     private final GraphTraversalSource g;
-    private final GraphService graphService;
     private final GeneratorService generatorService;
     private final FraudService fraudService;
 
@@ -36,7 +35,6 @@ public class WarmupService {
         this.g = graphService.getMainClient();
         this.props = warmupProperties;
 
-        this.graphService = graphService;
         this.generatorService = generatorService;
         this.fraudService = fraudService;
     }
@@ -47,37 +45,29 @@ public class WarmupService {
             return true;
         }
         logger.info("Starting warmup");
-        try {
-            preOpenConnections();
+        preOpenConnections();
 
-            final long durationNanos = props.getTime().toNanos();
-            final long deadlineNanos = System.nanoTime() + durationNanos;
+        final long durationNanos = props.getTime().toNanos();
+        final long deadlineNanos = System.nanoTime() + durationNanos;
 
-            while (System.nanoTime() < deadlineNanos) {
-                try {
-                    Instant scheduledTime = Instant.now();
-                    double amount = 100.0 + ThreadLocalRandom.current().nextDouble(14900.0);
-                    TransactionType type = FraudUtil.getRandomTransactionType();
-
-                    TransactionTask task = new TransactionTask(scheduledTime, amount, type);
-                    TransactionInfo result = generatorService.generateTransaction(task);
-
-                    if (result != null && result.success()) {
-                        fraudService.submitFraudDetection(result);
-                    }
-                } catch (Exception e) {
-                    logger.error("Unexpected error during warmup iteration", e);
-                }
-            }
-
-            logger.debug("Finished warmup transaction creations");
-        } finally {
+        while (System.nanoTime() < deadlineNanos) {
             try {
-                graphService.dropTransactions();
-            } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
+                Instant scheduledTime = Instant.now();
+                double amount = 100.0 + ThreadLocalRandom.current().nextDouble(14900.0);
+                TransactionType type = FraudUtil.getRandomTransactionType();
+
+                TransactionTask task = new TransactionTask(scheduledTime, amount, type);
+                TransactionInfo result = generatorService.generateTransaction(task);
+
+                if (result != null && result.success()) {
+                    fraudService.submitFraudDetection(result);
+                }
+            } catch (Exception e) {
+                logger.error("Unexpected error during warmup iteration", e);
             }
         }
+
+        logger.debug("Finished warmup transaction creations");
 
         logger.info("Warmup completed");
         return true;

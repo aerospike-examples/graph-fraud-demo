@@ -33,12 +33,7 @@ export default function TableData({
     : label?.badge
     ? result[label.badge.text]
     : "";
-  if (item === "sender") {
-    value = result.OUT[1];
-  }
-  if (item === "receiver") {
-    value = result.IN[1];
-  }
+
 
   let risk = { level: "low", color: "success" };
 

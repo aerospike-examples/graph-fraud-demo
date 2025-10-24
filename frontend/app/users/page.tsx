@@ -85,22 +85,36 @@ const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api";
 
 export default async function UsersPage() {
   async function handleSearch(
-    page: number = 1,
-    size: number = 10,
-    orderBy: string = "date",
-    order: "asc" | "desc" = "desc",
+    _page: number = 1,
+    _size: number = 10,
+    _orderBy: string = "date",
+    _order: "asc" | "desc" = "desc",
     query?: string
   ) {
     "use server";
-
-    const response = await fetch(
-      `${API_BASE_URL}/users?page=${page}&page_size=${size}&order_by=${orderBy}&order=${order}${
-        query ? `&query=${query}` : ""
-      }`,
-      { cache: "no-store" }
-    );
-    const search = await response.json();
-    return search;
+    const q = (query ?? "").trim();
+    if (!q) return { results: [], total_pages: 0, total: 0 } as any;
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/users/${encodeURIComponent(q)}`,
+        { cache: "no-store" }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const u = (data?.user ?? {}) as any;
+        const row = {
+          id: u.id ?? q,
+          name: u.name ?? "",
+          email: u.email ?? "",
+          location: u.location ?? "",
+          age: u.age ?? 0,
+          risk_score: u.risk_score ?? 0,
+          signup_date: u.signup_date ?? "",
+        } as any;
+        return { results: [row], total_pages: 1, total: 1 } as any;
+      }
+    } catch {}
+    return { results: [], total_pages: 0, total: 0 } as any;
   }
 
   return (
@@ -116,7 +130,14 @@ export default async function UsersPage() {
           <UserStats />
         </Suspense>
       </div>
-      <Results handleSearch={handleSearch} title="Users" options={options} />
+      <Results
+        handleSearch={handleSearch}
+        title="Users"
+        options={options}
+        requireQuery
+        minQueryLength={1}
+        disablePagination
+      />
     </div>
   );
 }

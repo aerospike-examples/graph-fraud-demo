@@ -41,22 +41,4 @@ public class FraudController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
-
-    @PostMapping("/fraud-patterns/run")
-    public ResponseEntity<?> runFraudPatterns() {
-        try {
-            return ResponseEntity.ok(Map.of("message", "Fraud patterns analysis started"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @GetMapping("/detect/fraudulent-transactions")
-    public ResponseEntity<?> detectFraudulentTransactions() {
-        try {
-            return ResponseEntity.ok(Map.of("message", "Fraudulent transactions detection completed", "count", 0));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
 }

@@ -14,11 +14,18 @@ interface Props {
 const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api";
 
 export default async function UserStats({ loading }: Props) {
+    // TODO: Fix with metadata
   const loadStats = async () => {
-    const response = await fetch(`${API_BASE_URL}/users/stats`, {
-      cache: "no-store",
-    });
-    const data: UserStats = await response.json();
+    // const response = await fetch(`${API_BASE_URL}/users/stats`, {
+    //   cache: "no-store",
+    // });
+    // const data: UserStats = await response.json();
+      const data: UserStats = {
+          total_users: 0,
+          total_low_risk: 0,
+          total_med_risk: 0,
+          total_high_risk: 0
+      }
     return data;
   };
 

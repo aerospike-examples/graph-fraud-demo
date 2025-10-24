@@ -5,11 +5,10 @@ import lombok.Getter;
 
 @Getter
 @AllArgsConstructor
-public enum FraudRiskLevel {
-    LOW("low"),
-    MEDIUM("medium"),
-    HIGH("high"),
-    CRITICAL("critical");
+public enum AutoFlagMode {
+    BOTH("both"),
+    SENDER("sender"),
+    RECEIVER("receiver");
 
     private final String value;
 }
