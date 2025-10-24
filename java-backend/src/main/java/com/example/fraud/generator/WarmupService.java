@@ -46,11 +46,6 @@ public class WarmupService {
             logger.warn("Warmup is disabled");
             return true;
         }
-        generatorService.cacheAccountVertices();
-        if (generatorService.getAccountCacheSize() == 0){
-            logger.warn("No account cache available to warmup, caching vertices now");
-            generatorService.cacheAccountVertices();
-        }
         logger.info("Starting warmup");
         try {
             preOpenConnections();

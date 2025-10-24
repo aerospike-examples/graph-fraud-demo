@@ -20,6 +20,8 @@ public class GeneratorService {
 
     private static final Logger logger = LoggerFactory.getLogger(GeneratorService.class);
     private static final Logger statsLogger = LoggerFactory.getLogger("fraud_detection.stats");
+    private final long numAccounts;
+    private final int numAccountsWidth;
 
     private final GraphService graphService;
     private final FraudService fraudService;
@@ -27,7 +29,6 @@ public class GeneratorService {
     private final TransactionGenerationProperties props;
 
     private volatile boolean isRunning = false;
-    private List<Object> accountVertices = new ArrayList<>();
     private final TransactionWorker transactionWorker;
     private final TransactionScheduler transactionScheduler;
 
@@ -39,7 +40,8 @@ public class GeneratorService {
         this.graphService = graphService;
         this.fraudService = fraudService;
         this.performanceMonitor = performanceMonitor;
-
+        this.numAccounts = this.graphService.getAccountCount();
+        this.numAccountsWidth = digits((int) numAccounts);
         this.transactionWorker = new TransactionWorker(this, fraudService,
                 props.getTransactionWorkerPoolSize(), props.getTransactionWorkerMaxPoolSize());
         this.transactionScheduler = new TransactionScheduler(transactionWorker, performanceMonitor);
@@ -48,17 +50,10 @@ public class GeneratorService {
     public void initializeWorkers() {
         logger.debug("Initializing transaction workers...");
 
-        if (accountVertices.isEmpty()) {
-            cacheAccountVertices();
-        }
 
         transactionWorker.startWorkers();
 
         logger.debug("Workers initialized and ready");
-    }
-
-    public void cacheAccountVertices() {
-        this.accountVertices = graphService.cacheAccountIdsByRange();
     }
 
     public int getMaxTransactionRate() {
@@ -72,13 +67,6 @@ public class GeneratorService {
         }
 
         initializeWorkers();
-
-        if (accountVertices.isEmpty()) {
-            logger.error("No accounts available for transaction generation - ensure database is seeded");
-            return false;
-        }
-
-        logger.debug("Using {} cached accounts for transaction generation", String.format("%,d", accountVertices.size()));
 
         try {
             performanceMonitor.resetPerformanceSummary();
@@ -136,17 +124,11 @@ public class GeneratorService {
     public TransactionInfo generateTransaction(TransactionTask transactionTask) {
         Instant start = Instant.now();
         try {
-            if (accountVertices.size() < 2) {
-                logger.error("Insufficient cached accounts for transaction generation");
-                throw new RuntimeException("Need at least 2 accounts for transaction generation");
-            }
             Random rand = ThreadLocalRandom.current();
-            int size = accountVertices.size();
-            int idx1 = rand.nextInt(size);
-            int idx2 = rand.nextInt(size - 1);
-            if (idx2 >= idx1) idx2++;
-            Object senderAccountId = accountVertices.get(idx1);
-            Object receiverAccountId = accountVertices.get(idx2);
+            // A000002902
+
+            Object senderAccountId = randAccount();
+            Object receiverAccountId = randAccount();
 
             String location = FraudUtil.getRandomLocation();
 
@@ -166,13 +148,34 @@ public class GeneratorService {
         }
     }
 
-    public int getAccountCacheSize() {
-        return accountVertices.size();
+    private String randAccount() {
+        int n = (numAccounts == Integer.MAX_VALUE)
+                ? ThreadLocalRandom.current().nextInt() & 0x7fffffff
+                : ThreadLocalRandom.current().nextInt((int) (numAccounts + 1));
+        int width = digits((int) numAccounts);
+        return padWithPrefix('A', n, width);
     }
+
+    private static int digits(int x) {
+        if (x < 10) return 1;
+        return 1 + (int)Math.floor(Math.log10(x));
+    }
+
+    private static String padWithPrefix(char prefix, int n, int width) {
+        String s = Integer.toString(n);
+        int pad = width - s.length();
+        StringBuilder sb = new StringBuilder(1 + width);
+        sb.append(prefix);
+        for (int i = 0; i < pad; i++) sb.append('0');
+        return sb.append(s).toString();
+    }
+
     public int getSuccessfulTransactions() { return transactionWorker.getSuccessfulTransactions(); }
+
     public GeneratorStatus getStatus() {
         return performanceMonitor.getGeneratorStatus();
     }
+
     public void shutdown() {
         try {
             if (isRunning) {
