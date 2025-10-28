@@ -35,7 +35,7 @@ const Statistics = ({ isGenerating, stats, setStats }: Props) => {
   const clearTxns = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/transactions", { method: "DELETE" });
+      const response = await fetch("/api/bulk-load", { method: "POST" });
       if (response.ok) setStats((prev) => ({ ...prev, total: 0 }));
       else alert("An error occured");
     } catch (e) {

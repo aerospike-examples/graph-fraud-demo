@@ -21,10 +21,9 @@ public class GeneratorService {
     private static final Logger logger = LoggerFactory.getLogger(GeneratorService.class);
     private static final Logger statsLogger = LoggerFactory.getLogger("fraud_detection.stats");
     private final long numAccounts;
-    private final int numAccountsWidth;
+    private final int numAccountsWidth = 9;
 
     private final GraphService graphService;
-    private final FraudService fraudService;
     private final PerformanceMonitor performanceMonitor;
     private final TransactionGenerationProperties props;
 
@@ -38,12 +37,10 @@ public class GeneratorService {
                             TransactionGenerationProperties transactionGenerationProperties) {
         this.props = transactionGenerationProperties;
         this.graphService = graphService;
-        this.fraudService = fraudService;
         this.performanceMonitor = performanceMonitor;
         this.numAccounts = this.graphService.getAccountCount();
-        this.numAccountsWidth = digits((int) numAccounts);
         this.transactionWorker = new TransactionWorker(this, fraudService,
-                props.getTransactionWorkerPoolSize(), props.getTransactionWorkerMaxPoolSize());
+                props.getTransactionWorkerPoolSize());
         this.transactionScheduler = new TransactionScheduler(transactionWorker, performanceMonitor);
     }
 
@@ -115,20 +112,15 @@ public class GeneratorService {
         return true;
     }
 
-    public TransactionInfo generateTransaction() {
-        return generateTransaction(new TransactionTask(Instant.now(),
-        100.0 + ThreadLocalRandom.current().nextDouble(14900.0),
-        FraudUtil.getRandomTransactionType()));
-    }
-
     public TransactionInfo generateTransaction(TransactionTask transactionTask) {
         Instant start = Instant.now();
         try {
-            Random rand = ThreadLocalRandom.current();
-            // A000002902
-
             Object senderAccountId = randAccount();
             Object receiverAccountId = randAccount();
+            while (senderAccountId.equals(receiverAccountId)) {
+                receiverAccountId = randAccount();
+            }
+
 
             String location = FraudUtil.getRandomLocation();
 
@@ -152,8 +144,7 @@ public class GeneratorService {
         int n = (numAccounts == Integer.MAX_VALUE)
                 ? ThreadLocalRandom.current().nextInt() & 0x7fffffff
                 : ThreadLocalRandom.current().nextInt((int) (numAccounts + 1));
-        int width = digits((int) numAccounts);
-        return padWithPrefix('A', n, width);
+        return padWithPrefix('A', n, numAccountsWidth);
     }
 
     private static int digits(int x) {

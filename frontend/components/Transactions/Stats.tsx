@@ -14,6 +14,7 @@ interface Props {
 const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api";
 
 export default async function TxnStats({ loading }: Props) {
+    //TODO: Fix this for new metadata stats
   const loadStats = async () => {
     const response = await fetch(`${API_BASE_URL}/transactions/stats`, {
       cache: "no-store",

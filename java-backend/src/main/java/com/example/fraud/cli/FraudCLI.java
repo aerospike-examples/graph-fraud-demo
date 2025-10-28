@@ -50,6 +50,7 @@ public class FraudCLI implements CommandLineRunner {
                   start <tps>          - Start generator at specified TPS
                   stop                 - Stop transaction generator
                   status               - Show generator status
+                  seed                 - Run GCP L2 Bulkload
                   threads [opts]       - Show JVM thread status. Options:
                                                         --stacks (include stack traces)
                                                         --sort cpu|name|id
@@ -135,7 +136,6 @@ public class FraudCLI implements CommandLineRunner {
                 case "stats" -> showPerfStats();
                 case "transactions", "txns" -> showTransactions();
                 case "indexes" -> showIndexes();
-                case "create-fraud-index" -> createFraudIndexes();
                 case "seed", "clear-txns" -> {
                     seed();
                     System.out.println("Transactions cleared!");
@@ -242,18 +242,6 @@ public class FraudCLI implements CommandLineRunner {
             }
         } catch (Exception e) {
             System.out.println("Error getting index information: " + e.getMessage());
-        }
-    }
-
-    private void createFraudIndexes() {
-        System.out.println("Creating fraud detection indexes...");
-        try {
-            String json = http.post().uri(uri -> uri.path("/admin/indexes/create-transaction-indexes").build()).retrieve().body(String.class);
-            JsonNode root = mapper.readTree(json);
-
-            System.out.println("Fraud indexes created successfully.");
-        } catch (JsonProcessingException e) {
-            System.out.println("Error creating indexes: " + e.getMessage());
         }
     }
 
@@ -464,14 +452,6 @@ public class FraudCLI implements CommandLineRunner {
                     System.out.println();
                 }
             }
-        }
-    }
-
-    private JsonNode readJson(String s) {
-        try {
-            return mapper.readTree(s);
-        } catch (Exception e) {
-            throw new RuntimeException("Bad JSON from server", e);
         }
     }
 

@@ -29,15 +29,12 @@ public class TransactionScheduler {
     private final AtomicInteger readyWorkersCount = new AtomicInteger(0);
     private final Lock readyWorkersLock = new ReentrantLock();
     private volatile boolean running = false;
-    private volatile int targetTps = 0;
     private CountDownLatch workersReadyLatch;
     private CountDownLatch startTimingLatch;
-    private TransactionType[] transactionTypes;
 
     public TransactionScheduler(TransactionWorker transactionWorker, PerformanceMonitor performanceMonitor) {
         this.transactionWorker = transactionWorker;
         this.performanceMonitor = performanceMonitor;
-        transactionTypes = TransactionType.values();
     }
 
     public boolean startGeneration(int tps) {
@@ -94,7 +91,6 @@ public class TransactionScheduler {
             return false;
         }
 
-        targetTps = 0;
         running = false;
 
         if (startTimingLatch != null) {
@@ -217,10 +213,6 @@ public class TransactionScheduler {
                 }
             }
         }
-    }
-
-    public int getTargetTps() {
-        return targetTps;
     }
 
     public void shutdown() {

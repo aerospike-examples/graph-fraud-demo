@@ -47,9 +47,19 @@ interface Props {
   ) => Promise<SearchResult>;
   title: string;
   options: Option[];
+  requireQuery?: boolean;
+  minQueryLength?: number;
+  disablePagination?: boolean;
 }
 
-const Results = ({ handleSearch, title, options }: Props) => {
+const Results = ({
+  handleSearch,
+  title,
+  options,
+  requireQuery = false,
+  minQueryLength = 1,
+  disablePagination = false,
+}: Props) => {
   const pathname = usePathname();
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -66,6 +76,7 @@ const Results = ({ handleSearch, title, options }: Props) => {
   const [results, setResults] = useState<Record<string, any>[]>([]);
   const [loading, setLoading] = useState(true);
   const loaded = useRef(false);
+  const lastQueryRef = useRef<string>("");
 
   const fetchData = async (
     page: number = currentPage,
@@ -75,12 +86,32 @@ const Results = ({ handleSearch, title, options }: Props) => {
     q?: string
   ) => {
     setLoading(true);
-    const search = await handleSearch(page, size, oB, o, q);
+    const query = (q ?? lastQueryRef.current ?? "").trim();
+    if (requireQuery && query.length < minQueryLength) {
+      setResults([]);
+      setTotalPages(0);
+      setTotalEntries(0);
+      setTimeout(() => setLoading(false), 150);
+      return;
+    }
+    lastQueryRef.current = query;
+    const search = await handleSearch(page, size, oB, o, query);
     setResults(search.results);
     setTotalPages(search.total_pages);
     setTotalEntries(search.total);
     setTimeout(() => setLoading(false), 300);
   };
+
+  useEffect(() => {
+    if (!loaded.current) {
+      if (requireQuery) {
+        setLoading(false);
+      } else {
+        fetchData();
+      }
+      loaded.current = true;
+    }
+  }, [requireQuery]);
 
   const handleSort = (key: string) => {
     if (loading) return;
@@ -103,13 +134,6 @@ const Results = ({ handleSearch, title, options }: Props) => {
     fetchData(page);
   };
 
-  useEffect(() => {
-    if (!loaded.current) {
-      fetchData();
-      loaded.current = true;
-    }
-  }, []);
-
   return (
     <Card className="grow flex flex-col">
       <CardHeader className="gap-4">
@@ -118,6 +142,7 @@ const Results = ({ handleSearch, title, options }: Props) => {
           fetchData={(q) => fetchData(currentPage, pageSize, orderBy, order, q)}
           placeholder={`Search ${title}`}
           setCurrentPage={() => setCurrentPage(1)}
+          minQueryLength={minQueryLength}
         />
       </CardHeader>
       <CardContent className="grow overflow-x-auto flex flex-col">
@@ -201,17 +226,19 @@ const Results = ({ handleSearch, title, options }: Props) => {
           </tbody>
         </table>
       </CardContent>
-      <CardFooter>
-        <Pagination
-          title={title}
-          currentPage={currentPage}
-          totalPages={totalPages}
-          pageSize={pageSize}
-          totalEntries={totalEntries}
-          setPageSize={handlePageSize}
-          handlePagination={handlePagination}
-        />
-      </CardFooter>
+      {!disablePagination && (
+        <CardFooter>
+          <Pagination
+            title={title}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalEntries={totalEntries}
+            setPageSize={handlePageSize}
+            handlePagination={handlePagination}
+          />
+        </CardFooter>
+      )}
     </Card>
   );
 };

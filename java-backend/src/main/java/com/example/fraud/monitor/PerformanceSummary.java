@@ -13,25 +13,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class PerformanceSummary {
-    // Rule specific info.
-    private static final Logger log = LoggerFactory.getLogger("fraud_detection.performance");
     final Map<String, PerformanceMetric> ruleNameToPerformanceInfo = new HashMap<>();
     final PerformanceMetric transactionPerformanceInfo;
 
-    //debug var
-    final AtomicInteger transactionsCount = new AtomicInteger(0);
     public PerformanceSummary(final List<Rule> rules, final int maxHistory) {
         for (final Rule rule : rules) {
             ruleNameToPerformanceInfo.put(rule.getName(), new PerformanceMetric(maxHistory));
         }
         transactionPerformanceInfo = new PerformanceMetric(maxHistory);
-    }
-
-    public void updateAsyncPerformance(final TransactionSummary summary) {
-        final Instant storedTime = Instant.now();
-        for (final FraudResult result: summary.fraudOutcomes()) {
-            updatePerformanceForName(result.details().ruleName(), result, storedTime);
-        }
     }
 
     public void updatePerformance(final TransactionSummary summary) {
@@ -49,22 +38,6 @@ public class PerformanceSummary {
 
     private void updatePerformanceForTransaction(final TransactionInfo transactionInfo, final Instant storedTime) {
         transactionPerformanceInfo.insertMetric(transactionInfo.performanceInfo(), storedTime);
-    }
-
-    public long getTotalFailed() {
-        long totalFailed = 0;
-        for (final PerformanceMetric performanceInfo : ruleNameToPerformanceInfo.values()) {
-            totalFailed += performanceInfo.getFailureCount();
-        }
-        return totalFailed;
-    }
-
-    public long getTotalSuccess() {
-        long totalSuccess = 0;
-        for (final PerformanceMetric performanceInfo : ruleNameToPerformanceInfo.values()) {
-            totalSuccess += performanceInfo.getSuccessCount();
-        }
-        return totalSuccess;
     }
 
     public void reset() {

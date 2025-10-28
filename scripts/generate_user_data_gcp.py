@@ -5,9 +5,7 @@ Process-pooled + sharded writer: each process writes into the same directory lay
 creating per-worker files named like "<name>-part-<shard>-<num_shards>.csv".
 
 Example use of this generator
-python .\scripts\generate_user_data_pp_shards_inplace.py --users 2500000
-    --region american --output ./data/graph_csv --workers 16
-    --gcs-bucket fraud-demo --gcs-prefix demo/2.5MUser/ --gcs-delete-local
+python ./scripts/generate_user_data_gcp.py --users 20000 --region american --output ./data/graph_csv --workers 16 --gcs-bucket fraud-demo --gcs-prefix demo/20kUser/ --gcs-delete-local
 """
 
 import argparse
@@ -21,6 +19,8 @@ from faker import Faker
 from google.cloud import storage
 from google.oauth2 import service_account
 from dotenv import load_dotenv, find_dotenv
+from multiprocessing import Manager
+
 
 # ------------------------
 # Original configurations (kept identical to preserve semantics)
@@ -28,6 +28,7 @@ from dotenv import load_dotenv, find_dotenv
 
 fake_us = Faker('en_US')
 fake_in = Faker('en_IN')
+
 
 load_dotenv(find_dotenv(), override=False)
 def set_seeds(seed=42):
@@ -145,7 +146,7 @@ def gcs_upload_file(local_path: Path, bucket_name: str, object_name: str, bucket
 
 def run_shard(shard_id:int, start_user_index:int, num_users:int, total_users:int,
               region:str, output_dir:str, seed:int, num_shards:int,
-              gcs_bucket: str | None, gcs_prefix: str, gcs_delete_local: bool):
+              gcs_bucket: str | None, gcs_prefix: str, gcs_delete_local: bool, shared):
     """
     shard_id: 0..num_shards-1
     start_user_index: global 0-based index of first user handled by this shard
@@ -194,6 +195,10 @@ def run_shard(shard_id:int, start_user_index:int, num_users:int, total_users:int
         val = device_base + device_counter
         return f"DEV{val:07d}"  # safely extends beyond if needed (string grows)
 
+    def next_account_id():
+        with shared['lock']:
+            shared['counter'].value += 1
+            return f"A{shared['counter'].value:09d}"
     # ---- Build device pool & shared groups within this shard
     base_devices = int(num_users * 3.5)
     min_devices = num_users + 500
@@ -231,8 +236,8 @@ def run_shard(shard_id:int, start_user_index:int, num_users:int, total_users:int
 
     written_device_ids = set()
 
-    def generate_user(global_user_idx:int):
-        user_id = f"U{(global_user_idx + 1):07d}"
+    def generate_user(user_idx:int):
+        user_id = f"U{(user_idx + 1):07d}"
         name = faker.name()
         if region == 'american':
             phone = f"+1-{rnd.randint(200, 999)}-{rnd.randint(200, 999)}-{rnd.randint(1000, 9999)}"
@@ -277,7 +282,7 @@ def run_shard(shard_id:int, start_user_index:int, num_users:int, total_users:int
         num_accounts = rnd.choices([1, 2, 3, 4], weights=[0.3, 0.4, 0.2, 0.1])[0]
         accounts = []
         for j in range(num_accounts):
-            account_id = f"A{(global_i + 1):07d}{(j + 1):02d}"
+            account_id = next_account_id()
             account_type = rnd.choice(ACCOUNT_TYPES)
             if account_type == "credit":
                 balance = round(rnd.uniform(-50000, 0), 2)
@@ -288,6 +293,7 @@ def run_shard(shard_id:int, start_user_index:int, num_users:int, total_users:int
             bank_name = rnd.choice(REGIONAL_DATA[region]['banks'])
             created_date = (now - timedelta(days=rnd.randint(0, 1000))).strftime('%Y-%m-%dT%H:%M:%SZ')
             fraud_flag = rnd.random() < 0.1
+
             accounts.append({
                 'id': account_id, 'type': account_type, 'balance': balance,
                 'bank_name': bank_name, 'status': 'active',
@@ -407,18 +413,23 @@ def main():
     import time
     t0 = time.time()
     results = []
-    with ProcessPoolExecutor(max_workers=len(plan)) as ex:
-        futs = []
-        for sid, sidx, cnt in plan:
-            fut = fut = ex.submit(
-                run_shard,
-                sid, sidx, cnt, total_users,
-                args.region, args.output, args.seed, len(plan),
-                args.gcs_bucket, _ensure_prefix(args.gcs_prefix), args.gcs_delete_local
-            )
-            futs.append(fut)
-        for f in as_completed(futs):
-            results.append(f.result())
+    with Manager() as manager:
+        shared = {
+            'counter': manager.Value('q', 0),
+            'lock': manager.Lock(),
+        }
+        with ProcessPoolExecutor(max_workers=len(plan)) as ex:
+            futs = []
+            for sid, sidx, cnt in plan:
+                fut = fut = ex.submit(
+                    run_shard,
+                    sid, sidx, cnt, total_users,
+                    args.region, args.output, args.seed, len(plan),
+                    args.gcs_bucket, _ensure_prefix(args.gcs_prefix), args.gcs_delete_local, shared
+                )
+                futs.append(fut)
+            for f in as_completed(futs):
+                results.append(f.result())
     dt = time.time() - t0
 
     for r in sorted(results):

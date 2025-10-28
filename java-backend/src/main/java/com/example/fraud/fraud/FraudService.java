@@ -1,7 +1,10 @@
 package com.example.fraud.fraud;
 
 import com.example.fraud.config.FraudProperties;
+import com.example.fraud.metadata.AerospikeMetadataManager;
+import com.example.fraud.model.AutoFlagMode;
 import com.example.fraud.model.FraudCheckStatus;
+import com.example.fraud.model.MetadataRecord;
 import com.example.fraud.monitor.PerformanceMonitor;
 import com.example.fraud.graph.GraphService;
 import com.example.fraud.rules.Rule;
@@ -27,12 +30,15 @@ public class FraudService {
     private final List<Rule> fraudRulesList;
     private final Map<String, Rule> fraudRulesMap;
     private final FraudProperties props;
+    private final GraphService graphService;
+    private final AerospikeMetadataManager metadataManager;
 
-    public FraudService(GraphService graphService, PerformanceMonitor performanceMonitor,
-                        List<Rule> fraudRulesList, FraudProperties props) {
+    public FraudService(PerformanceMonitor performanceMonitor,
+                        List<Rule> fraudRulesList, FraudProperties props,
+                        GraphService graphService, AerospikeMetadataManager metadataManager) {
         this.graph = graphService;
         this.perf = performanceMonitor;
-        Map <String, Rule> fraudRulesMap = new HashMap<String,Rule>();
+        Map<String, Rule> fraudRulesMap = new HashMap<String, Rule>();
         for (Rule r : fraudRulesList) {
             fraudRulesMap.put(r.getName(), r);
         }
@@ -40,6 +46,8 @@ public class FraudService {
         this.fraudRulesList = fraudRulesList;
         this.fraudRulesMap = fraudRulesMap;
         this.exec = Executors.newFixedThreadPool(props.getFraudWorkerPoolSize(), new NamedFactory("fraud"));
+        this.graphService = graphService;
+        this.metadataManager = metadataManager;
     }
 
     public void shutdown() {
@@ -57,15 +65,6 @@ public class FraudService {
             log.warn("Error shutting down fraud executor: {}", e.toString());
             exec.shutdownNow();
         }
-    }
-
-    public Map<String, Boolean> getFraudChecksState() {
-        final Map<String, Boolean> m = new LinkedHashMap<>(fraudRulesMap.size());
-
-        for (final Map.Entry<String, Rule> pair : fraudRulesMap.entrySet()) {
-            m.put(pair.getKey(), pair.getValue().isEnabled());
-        }
-        return m;
     }
 
     public boolean setRuleEnabled(String name, boolean enabled) {
@@ -105,34 +104,63 @@ public class FraudService {
 
     private void storeFraudResults(GraphTraversalSource mainG, Object edgeId,
                                    TransactionSummary fraudChecks) {
+        boolean fraud = false;
+        FraudCheckStatus status = FraudCheckStatus.CLEARED;
         for (FraudResult check : fraudChecks.fraudOutcomes()) {
             if (check == null || !check.isFraud()) continue;
-            storeFraudResult(mainG, edgeId, check);
+            FraudCheckStatus newStatus = storeFraudResult(mainG, edgeId, check);
+            if (status.lte(newStatus)) {
+                status = newStatus;
+            }
+            fraud = true;
         }
+        if (fraud) {
+            metadataManager.incrementCount(MetadataRecord.FRAUD, status.getValue(), 1);
+        }
+
+
     }
 
-    private void storeFraudResult(GraphTraversalSource g, Object edgeId, FraudResult check) {
+    private FraudCheckStatus storeFraudResult(GraphTraversalSource g, Object edgeId, FraudResult check) {
         int fraudScore = 0;
-        String status = "review";
+        String status = check.status().getValue();
         List<String> details = new ArrayList<>();
 
-        Object s = check.fraudScore();
-        int score = (s instanceof Number) ? ((Number) s).intValue() : 0;
+        Number s = check.fraudScore();
+        int score = s.intValue();
         if (score > fraudScore) fraudScore = score;
-
-        Object st = check.status();
-        if (st.equals(FraudCheckStatus.BLOCKED)) status = "blocked";
 
         Object det = check.details();
         details.add(String.valueOf(det));
 
-        g.E(edgeId)
-                .property("is_fraud", true)
-                .property("fraud_score", fraudScore)
-                .property("fraud_status", status)
-                .property("eval_timestamp", Instant.now().toString())
-                .property("details", details)
-                .iterate();
+        Map<Object, Object> curr = g.E(edgeId).valueMap("is_fraud", "fraud_score").next();
+        if ((int) curr.getOrDefault("fraud_score", 0) < fraudScore) {
+            g.E(edgeId)
+                    .property("is_fraud", true)
+                    .property("fraud_score", fraudScore)
+                    .property("fraud_status", status)
+                    .property("eval_timestamp", Instant.now().toString())
+                    .property("details", details)
+                    .iterate();
+
+            if (props.isAutoFlagEnabled()) {
+                AutoFlagMode mode = props.getAutoFlagMode();
+                switch (mode) {
+                    case AutoFlagMode.SENDER -> {
+                        graphService.flagAccount(check.details().sender(), check.reason());
+                    }
+                    case AutoFlagMode.RECEIVER -> {
+                        graphService.flagAccount(check.details().receiver(), check.reason());
+                    }
+                    default -> {
+                        // Assume Both
+                        graphService.flagAccount(check.details().sender(), check.reason());
+                        graphService.flagAccount(check.details().receiver(), check.reason());
+                    }
+                }
+            }
+        }
+        return check.status();
     }
 
     private static final class NamedFactory implements ThreadFactory {

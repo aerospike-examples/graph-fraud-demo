@@ -1,14 +1,19 @@
 package com.example.fraud.model;
 
+import java.util.Objects;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 @Getter
 @AllArgsConstructor
 public enum FraudCheckStatus {
-    REVIEW("review"),
-    BLOCKED("blocked"),
-    CLEARED("cleared");
+    REVIEW("review", 1),
+    BLOCKED("blocked", 2),
+    CLEARED("cleared", 0);
 
     private final String value;
+    private final int rank;
+
+    public boolean lte(FraudCheckStatus other) { return other != null && this.rank <= other.rank; }
+
 }

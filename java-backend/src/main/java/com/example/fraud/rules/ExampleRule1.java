@@ -12,13 +12,14 @@ import java.util.List;
 import java.util.Map;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 
 @Component
 public class ExampleRule1 extends Rule {
-    public ExampleRule1(GraphTraversalSource g,
+    public ExampleRule1(@Qualifier("fraudG") GraphTraversalSource g,
                         @Value("${rules.example-rule-1.name:Transaction to Flagged Account}") String name,
                         @Value("${rules.example-rule-1.description:Immediate threat detection via 1-hop lookup}") String description,
                         @Value("#{'Transaction directed to known flagged account,1-hop graph lookup for immediate detection,Real-time risk assessment'.split(',')}") List<String> keyIndicators,

@@ -16,15 +16,16 @@ interface DashboardStats {
 const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api";
 
 export default async function Main({ loading }: { loading?: boolean }) {
-  const loadStats = async () => {
+
+
+   const loadStats = async () => {
     const response = await fetch(`${API_BASE_URL}/dashboard/stats`, {
       cache: "no-store",
     });
-    const stats = await response.json();
-    return stats;
+     return await response.json();
   };
 
-  const stats: DashboardStats | null = loading ? null : await loadStats();
+  const stats: DashboardStats = loading ? null : await loadStats();
 
   return (
     <>
