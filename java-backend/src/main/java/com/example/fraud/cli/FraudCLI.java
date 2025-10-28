@@ -50,6 +50,7 @@ public class FraudCLI implements CommandLineRunner {
                   start <tps>          - Start generator at specified TPS
                   stop                 - Stop transaction generator
                   status               - Show generator status
+                  seed                 - Run GCP L2 Bulkload
                   threads [opts]       - Show JVM thread status. Options:
                                                         --stacks (include stack traces)
                                                         --sort cpu|name|id

@@ -3,6 +3,7 @@
 import Results, { type Option } from "@/components/ResultTable";
 import { Suspense } from "react";
 import TransactionStats from "@/components/Transactions/Stats";
+import RefreshButton from "@/components/RefreshButton";
 
 export interface TransactionStats {
   total_txns: number;
@@ -151,16 +152,17 @@ export default async function TransactionsPage() {
 
   return (
     <div className="space-y-6 flex flex-col grow">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Transaction Explorer
-          </h1>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Transaction Explorer</h1>
+
+        <div className="mb-2 flex items-center justify-between gap-3">
           <p className="text-muted-foreground">
             Search and explore transaction details and patterns
           </p>
+          <RefreshButton />
         </div>
       </div>
+
       <div className="grid gap-4 md:grid-cols-4">
         <Suspense fallback={<TransactionStats loading />}>
           <TransactionStats />

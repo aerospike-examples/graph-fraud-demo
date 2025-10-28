@@ -21,7 +21,7 @@ public class GeneratorService {
     private static final Logger logger = LoggerFactory.getLogger(GeneratorService.class);
     private static final Logger statsLogger = LoggerFactory.getLogger("fraud_detection.stats");
     private final long numAccounts;
-    private final int numAccountsWidth;
+    private final int numAccountsWidth = 9;
 
     private final GraphService graphService;
     private final PerformanceMonitor performanceMonitor;
@@ -39,7 +39,6 @@ public class GeneratorService {
         this.graphService = graphService;
         this.performanceMonitor = performanceMonitor;
         this.numAccounts = this.graphService.getAccountCount();
-        this.numAccountsWidth = digits((int) numAccounts);
         this.transactionWorker = new TransactionWorker(this, fraudService,
                 props.getTransactionWorkerPoolSize());
         this.transactionScheduler = new TransactionScheduler(transactionWorker, performanceMonitor);
@@ -116,10 +115,12 @@ public class GeneratorService {
     public TransactionInfo generateTransaction(TransactionTask transactionTask) {
         Instant start = Instant.now();
         try {
-            // A000002902
-
             Object senderAccountId = randAccount();
             Object receiverAccountId = randAccount();
+            while (senderAccountId.equals(receiverAccountId)) {
+                receiverAccountId = randAccount();
+            }
+
 
             String location = FraudUtil.getRandomLocation();
 

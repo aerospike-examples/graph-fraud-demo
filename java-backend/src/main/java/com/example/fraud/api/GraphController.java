@@ -95,6 +95,13 @@ public class GraphController {
         )) : ResponseEntity.notFound().build();
     }
 
+
+    @PostMapping("/bulk-load")
+    public Object bulkLoadCsv() {
+        graph.seedSampleData();
+        return true;
+    }
+
     @DeleteMapping("/accounts/{account_id}/flag")
     public ResponseEntity<?> unflagAccount(@PathVariable("account_id") String accountId) {
         boolean ok = graph.unflagAccount(accountId);

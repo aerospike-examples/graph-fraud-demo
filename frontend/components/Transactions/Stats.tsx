@@ -16,16 +16,10 @@ const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api";
 export default async function TxnStats({ loading }: Props) {
     //TODO: Fix this for new metadata stats
   const loadStats = async () => {
-    // const response = await fetch(`${API_BASE_URL}/transactions/stats`, {
-    //   cache: "no-store",
-    // });
-    //const data: TransactionStats = await response.json();
-      const data: TransactionStats = {
-          total_txns: 0,
-          total_blocked: 0,
-          total_review: 0,
-          total_clean: 0
-      };
+    const response = await fetch(`${API_BASE_URL}/transactions/stats`, {
+      cache: "no-store",
+    });
+    const data: TransactionStats = await response.json();
     return data;
   };
 

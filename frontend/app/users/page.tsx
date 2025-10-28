@@ -3,6 +3,7 @@
 import Results, { type Option } from "@/components/ResultTable";
 import UserStats from "@/components/Users/Stats";
 import { Suspense } from "react";
+import RefreshButton from "@/components/RefreshButton";
 
 const options: Option[] = [
   {
@@ -121,9 +122,13 @@ export default async function UsersPage() {
     <div className="space-y-6 flex flex-col grow">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">User Explorer</h1>
-        <p className="text-muted-foreground">
-          Browse and search user profiles with detailed information
-        </p>
+
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-muted-foreground">
+            Browse and search user profiles with detailed information
+          </p>
+          <RefreshButton />
+        </div>
       </div>
       <div className="grid gap-4 md:grid-cols-4">
         <Suspense fallback={<UserStats loading />}>

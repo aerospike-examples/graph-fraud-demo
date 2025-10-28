@@ -3,26 +3,21 @@ package com.example.fraud.graph;
 import com.example.fraud.config.GraphProperties;
 import com.example.fraud.fraud.PerformanceInfo;
 import com.example.fraud.fraud.TransactionInfo;
+import com.example.fraud.metadata.AerospikeMetadataManager;
+import com.example.fraud.model.MetadataRecord;
 import com.example.fraud.model.TransactionType;
-import com.example.fraud.util.FraudUtil;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.UUID;
 import org.apache.tinkerpop.gremlin.driver.Cluster;
 import org.apache.tinkerpop.gremlin.driver.remote.DriverRemoteConnection;
-import org.apache.tinkerpop.gremlin.process.traversal.P;
-import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.apache.tinkerpop.gremlin.structure.T;
 import org.apache.tinkerpop.gremlin.process.traversal.Order;
 import org.apache.tinkerpop.gremlin.process.traversal.Scope;
-import org.apache.tinkerpop.gremlin.process.traversal.TextP;
-import org.apache.tinkerpop.gremlin.structure.T;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,9 +39,12 @@ public class GraphService {
     private Cluster mainCluster;
     private GraphTraversalSource fraudG;
     private GraphTraversalSource mainG;
+    private final AerospikeMetadataManager metadataManager;
 
-    public GraphService(GraphProperties graphProperties) {
+
+    public GraphService(GraphProperties graphProperties, AerospikeMetadataManager metadataManager) {
         this.props = graphProperties;
+        this.metadataManager = metadataManager;
         connect();
     }
 
@@ -188,7 +186,23 @@ public class GraphService {
 
         logger.debug("Raw graph summary result: {}", summaryResult);
         Map<String, Object> parsedSummary = (Map<String, Object>) summaryResult.getOrDefault("Vertex count by label", new HashMap<>());
-        return (long) parsedSummary.get("account");
+        return (long) parsedSummary.getOrDefault("account", 0L);
+    }
+
+    public long getUserCount() {
+        if (mainG == null) {
+            logger.warn("No graph client available for summary");
+            return 0;
+        }
+
+        logger.info("Getting graph summary using Aerospike Graph admin API");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summaryResult = (Map<String, Object>)
+                mainG.call("aerospike.graph.admin.metadata.summary").next();
+
+        logger.debug("Raw graph summary result: {}", summaryResult);
+        Map<String, Object> parsedSummary = (Map<String, Object>) summaryResult.getOrDefault("Vertex count by label", new HashMap<>());
+        return (long) parsedSummary.getOrDefault("user", 0L);
     }
 
     public Map<String, Object> getDashboardStats() {
@@ -225,21 +239,11 @@ public class GraphService {
 
             if (txns > 0) {
                 try {
-                    @SuppressWarnings("unchecked")
-                    //TODO: Use metadata for this
-                    Map<String, Object> txnStats = (Map<String, Object>) mainG.E()
-                            .hasLabel("TRANSACTS")
-                            .group("m")
-                            .by(__.constant("flagged"))
-                            .by(__.has("fraud_score", P.gt(0)).count())
-                            .group("m")
-                            .by(__.constant("amount"))
-                            .by(__.values("amount").sum())
-                            .cap("m")
-                            .next();
-
-                    flagged = ((Number) txnStats.getOrDefault("flagged", 0L)).longValue();
-                    amount = ((Number) txnStats.getOrDefault("amount", 0.0)).doubleValue();
+                    Map<String, Object> bins = metadataManager.readRecord(MetadataRecord.FRAUD);
+                    long blocked = ((Number) bins.getOrDefault("blocked", 0L)).longValue();
+                    long reviewed = ((Number) bins.getOrDefault("reviewed", 0L)).longValue();
+                    flagged = blocked + reviewed;
+                    amount = ((Number) bins.getOrDefault("amount", 0.0)).longValue();
                     fraudRate = (flagged / (double) txns) * 100.0;
 
                 } catch (Exception e) {
@@ -278,23 +282,17 @@ public class GraphService {
                 throw new RuntimeException("Graph client not available. Cannot get users without graph database connection.");
             }
 
-            // TODO: Use summary for total and metadata for rest
-            @SuppressWarnings("unchecked")
-            List<Number> riskScores = (List<Number>) (List<?>) mainG.V()
-                    .hasLabel("user")
-                    .values("risk_score")
-                    .toList();
-
-            long totalUsers = riskScores.size();
-            long lowRisk = riskScores.stream().filter(score -> score.doubleValue() < 25).count();
-            long medRisk = riskScores.stream().filter(score -> score.doubleValue() >= 25 && score.doubleValue() < 70).count();
-            long highRisk = riskScores.stream().filter(score -> score.doubleValue() >= 70).count();
+            Map<String, Object> bins = metadataManager.readRecord(MetadataRecord.USERS);
+            long critical = (long) bins.getOrDefault("critical", 0L);
+            long high = (long) bins.getOrDefault("high", 0L);
+            long medium = (long) bins.getOrDefault("medium", 0L);
+            long low = (long) bins.getOrDefault("low", 0L);
 
             Map<String, Object> stats = new HashMap<>();
-            stats.put("total_users", totalUsers);
-            stats.put("total_low_risk", lowRisk);
-            stats.put("total_med_risk", medRisk);
-            stats.put("total_high_risk", highRisk);
+            stats.put("total_users", getUserCount());
+            stats.put("total_low_risk", high);
+            stats.put("total_med_risk", medium);
+            stats.put("total_high_risk", low);
 
             return stats;
 
@@ -314,29 +312,17 @@ public class GraphService {
             if (mainG == null) {
                 throw new RuntimeException("Graph client not available. Cannot get transactions without graph database connection.");
             }
+            Map<String, Object> bins = metadataManager.readRecord(MetadataRecord.FRAUD);
+            long total = (long) bins.getOrDefault("total", 0L);
+            long blocked = (long) bins.getOrDefault("blocked", 0L);
+            long review = (long) bins.getOrDefault("review", 0L);
 
-            // TODO: Split into 3 queries? get total from graph summary, use label.count for other two
-            @SuppressWarnings("unchecked")
-            Map<String, Long> stats = (Map<String, Long>) (Map<String, ?>) mainG.E()
-                    .hasLabel("TRANSACTS")
-                    .fold()
-                    .project("total", "blocked", "review")
-                    .by(__.unfold().count())
-                    .by(__.unfold().has("fraud_status", "blocked").count())
-                    .by(__.unfold().has("fraud_status", "review").count())
-                    .next();
-
-            long total = stats.getOrDefault("total", 0L);
-            long blocked = stats.getOrDefault("blocked", 0L);
-            long review = stats.getOrDefault("review", 0L);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("total_txns", total);
-            result.put("total_blocked", blocked);
-            result.put("total_review", review);
-            result.put("total_clean", total - blocked - review);
-
-            return result;
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("total_txns", total);
+            stats.put("total_blocked", blocked);
+            stats.put("total_review", review);
+            stats.put("total_clean", total - blocked - review);
+            return stats;
 
         } catch (Exception e) {
             logger.error("Error getting transaction stats: {}", e.getMessage());
@@ -379,6 +365,9 @@ public class GraphService {
                     .property("gen_type", genType)
                     .id()
                     .next();
+            metadataManager.incrementCount(MetadataRecord.FRAUD, "amount", (long) amount);
+            metadataManager.incrementCount(MetadataRecord.FRAUD, "total", 1L);
+
             logger.debug("{} transaction created: {} from {} to {} amount {}",
                     genType, txnId, fromId, toId, amount);
             return new TransactionInfo(true, edgeId, txnId, fromId, toId, amount,
@@ -709,7 +698,7 @@ public class GraphService {
                         .property("flagReason", reason)
                         .property("flagTimestamp", Instant.now().toString())
                         .iterate();
-
+            metadataManager.incrementCount(MetadataRecord.ACCOUNTS, "flagged", 1);
             logger.info("Account {} flagged as fraudulent: {}", accountId, reason);
             return true;
 
@@ -721,7 +710,6 @@ public class GraphService {
 
     public boolean unflagAccount(Object accountId) {
         try {
-            // TODO: If this isnt used, where do we unflag the account?
             GraphTraversalSource g = getMainClient();
             if (g == null) throw new IllegalStateException("Graph client not available");
 
@@ -729,7 +717,7 @@ public class GraphService {
                     .property("fraud_flag", false)
                     .property("unflagTimestamp", Instant.now().toString())
                     .iterate();
-
+            metadataManager.incrementCount(MetadataRecord.ACCOUNTS, "flagged", -1);
             logger.info("Account {} unflagged", accountId);
             return true;
 
@@ -741,8 +729,8 @@ public class GraphService {
 
     public void seedSampleData() {
         mainG.V().drop().iterate();
-        String verticesPath = "gs://connor-test-l3/data/graph_csv/vertices";
-        String edgesPath = "gs://connor-test-l3/data/graph_csv/edges";
+        String verticesPath = "gs://fraud-demo/demo/20kUser/vertices";
+        String edgesPath = "gs://fraud-demo/demo/20kUser/edges";
 
         logger.info("Bulk load Starting");
         mainG.with("evaluationTimeout", 20000)

@@ -19,6 +19,7 @@ services:
         condition: service_healthy
     volumes:
       - ./data:/data
+      -  ./secrets:/opt/secrets/
     environment:
       - aerospike.client.namespace=test
       - aerospike.client.host=aerospike-db
@@ -33,25 +34,6 @@ services:
     ports:
       - "8182:8182"
       - "9090:9090"
-  backend:
-    build:
-      context: .
-      dockerfile: backend.Dockerfile
-    container_name: "asgraph-backend"
-    depends_on:
-      aerospike-db:
-        condition: service_healthy
-      aerospike-graph-service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://0.0.0.0:4000/health"]
-      interval: 5s
-      timeout: 10s
-      retries: 4
-    networks:
-      - asgraph_net
-    ports:
-      - "4000:4000"
 networks:
   asgraph_net:
     name: asgraph_net
