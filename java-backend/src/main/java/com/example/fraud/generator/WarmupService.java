@@ -39,10 +39,10 @@ public class WarmupService {
         this.fraudService = fraudService;
     }
 
-    public boolean runWithCleanup() {
+    public void runWithCleanup() {
         if (!props.isEnabled()) {
             logger.warn("Warmup is disabled");
-            return true;
+            return;
         }
         logger.info("Starting warmup");
         preOpenConnections();
@@ -66,11 +66,7 @@ public class WarmupService {
                 logger.error("Unexpected error during warmup iteration", e);
             }
         }
-
-        logger.debug("Finished warmup transaction creations");
-
         logger.info("Warmup completed");
-        return true;
     }
 
     private void preOpenConnections() {

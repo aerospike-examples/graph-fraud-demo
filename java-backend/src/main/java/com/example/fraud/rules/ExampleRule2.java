@@ -58,15 +58,11 @@ public class ExampleRule2 extends Rule {
                     (senderList != null ? senderList.size() : 0) + (receiverList != null ? receiverList.size() : 0));
 
             if (senderList != null) {
-                for (Object o : senderList) {
-                    flagged.add(o);
-                }
+                flagged.addAll(senderList);
             }
 
             if (receiverList != null) {
-                for (Object o : receiverList) {
-                    flagged.add(o);
-                }
+                flagged.addAll(receiverList);
             }
 
             final int total = flagged.size();

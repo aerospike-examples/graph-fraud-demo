@@ -3,7 +3,6 @@ package com.example.fraud.api;
 import com.example.fraud.monitor.PerformanceMonitor;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;

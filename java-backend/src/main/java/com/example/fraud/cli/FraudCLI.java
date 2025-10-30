@@ -1,7 +1,6 @@
 package com.example.fraud.cli;
 
 import com.example.fraud.util.FraudUtil;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;

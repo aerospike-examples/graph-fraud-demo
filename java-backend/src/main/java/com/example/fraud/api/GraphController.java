@@ -58,10 +58,9 @@ public class GraphController {
     }
 
 
-    @DeleteMapping("/transactions")
-    public Object deleteAllTransactions() {
+    @DeleteMapping("/data")
+    public void clearDB() {
             graph.dropAll();
-            return true;
     }
 
     @GetMapping("/transactions/stats")
@@ -99,7 +98,7 @@ public class GraphController {
     @PostMapping("/bulk-load")
     public Object bulkLoadCsv() {
         graph.seedSampleData();
-        return true;
+        return ResponseEntity.ok();
     }
 
     @DeleteMapping("/accounts/{account_id}/flag")

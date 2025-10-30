@@ -283,7 +283,6 @@ public class GraphService {
             }
 
             Map<String, Object> bins = metadataManager.readRecord(MetadataRecord.USERS);
-            long critical = (long) bins.getOrDefault("critical", 0L);
             long high = (long) bins.getOrDefault("high", 0L);
             long medium = (long) bins.getOrDefault("medium", 0L);
             long low = (long) bins.getOrDefault("low", 0L);
@@ -374,9 +373,6 @@ public class GraphService {
                     new PerformanceInfo(start, Duration.between(start, Instant.now()), true));
         } catch (Exception e) {
             logger.error("Error creating transaction: {}", e.getMessage());
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", "Error creating transaction: " + e.getMessage());
             return new TransactionInfo(false, null, null, null, null, -1,
                     new PerformanceInfo(start, Duration.between(start, Instant.now()), false));
         }
@@ -474,181 +470,6 @@ public class GraphService {
         } catch (Exception e) {
             logger.error("Error getting user summary", e);
             return null;
-        }
-    }
-
-    public List<Map<String, Object>> getUserAccounts(String userId) {
-        try {
-            GraphTraversalSource g = getMainClient();
-            if (g == null) {
-                logger.error("No graph client available");
-                return null;
-            }
-
-            long userCount = g.V(userId).count().next();
-            if (userCount == 0) {
-                return null;
-            }
-
-            @SuppressWarnings("unchecked")
-            List<Map<Object, Object>> accounts = (List<Map<Object, Object>>) (List<?>) 
-                    g.V(userId).out("OWNS").elementMap().toList();
-
-            List<Map<String, Object>> normalized = new ArrayList<>(accounts.size());
-            for (Map<Object, Object> acc : accounts) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                for (Map.Entry<Object, Object> e : acc.entrySet()) {
-                    if (T.id.equals(e.getKey())) {
-                        row.put("id", e.getValue());
-                    } else if (!T.label.equals(e.getKey())) {
-                        row.put(String.valueOf(e.getKey()), e.getValue());
-                    }
-                }
-                normalized.add(row);
-            }
-
-            return normalized;
-
-        } catch (Exception e) {
-            logger.error("Error getting user accounts for user {}", userId, e);
-            return null;
-        }
-    }
-
-    public List<Map<String, Object>> getUserDevices(String userId) {
-        try {
-            GraphTraversalSource g = getMainClient();
-            if (g == null) {
-                logger.error("No graph client available");
-                return null;
-            }
-
-            long userCount = g.V(userId).count().next();
-            if (userCount == 0) {
-                return null;
-            }
-
-            @SuppressWarnings("unchecked")
-            List<Map<Object, Object>> devices = (List<Map<Object, Object>>) (List<?>) 
-                    g.V(userId).out("USES").elementMap().toList();
-
-            List<Map<String, Object>> normalized = new ArrayList<>(devices.size());
-            for (Map<Object, Object> dev : devices) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                for (Map.Entry<Object, Object> e : dev.entrySet()) {
-                    if (T.id.equals(e.getKey())) {
-                        row.put("id", e.getValue());
-                    } else if (!T.label.equals(e.getKey())) {
-                        row.put(String.valueOf(e.getKey()), e.getValue());
-                    }
-                }
-                normalized.add(row);
-            }
-
-            return normalized;
-
-        } catch (Exception e) {
-            logger.error("Error getting user devices for user {}", userId, e);
-            return null;
-        }
-    }
-
-    public Map<String, Object> getUserTransactions(String userId, int page, int pageSize) {
-        try {
-            GraphTraversalSource g = getMainClient();
-            if (g == null) {
-                logger.error("No graph client available");
-                return null;
-            }
-
-            long userCount = g.V(userId).count().next();
-            if (userCount == 0) {
-                return null;
-            }
-
-            int startIdx = Math.max(0, (page - 1) * pageSize);
-            int endIdx = startIdx + pageSize;
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> packed = g.V(userId)
-                    .out("OWNS")
-                    .bothE("TRANSACTS")
-                    .order().by("timestamp", Order.desc)
-                    .fold()
-                    .project("total", "transactions")
-                    .by(__.count(Scope.local))
-                    .by(__.unfold().range(startIdx, endIdx)
-                            .project("id", "amount", "currency", "timestamp", "location", "status", "type", "from_id", "to_id", "fraud_score", "is_fraud")
-                            .by(__.values("txn_id"))
-                            .by(__.values("amount"))
-                            .by(__.values("currency"))
-                            .by(__.values("timestamp"))
-                            .by(__.values("location"))
-                            .by(__.values("status"))
-                            .by(__.values("type"))
-                            .by(__.outV().id())
-                            .by(__.inV().id())
-                            .by(__.coalesce(__.values("fraud_score"), __.constant(0.0)))
-                            .by(__.coalesce(__.values("is_fraud"), __.constant(false)))
-                            .fold())
-                    .next();
-
-            int total = ((Number) packed.getOrDefault("total", 0)).intValue();
-            int totalPages = (total + pageSize - 1) / pageSize;
-
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("transactions", packed.get("transactions"));
-            result.put("total", total);
-            result.put("page", page);
-            result.put("page_size", pageSize);
-            result.put("total_pages", totalPages);
-
-            return result;
-
-        } catch (Exception e) {
-            logger.error("Error getting user transactions for user {}", userId, e);
-            return null;
-        }
-    }
-
-    public List<Map<String, Object>> getUserConnectedDevices(String userId) {
-        try {
-            GraphTraversalSource g = getMainClient();
-            if (g == null) {
-                logger.error("No graph client available");
-                return List.of();
-            }
-
-            @SuppressWarnings("unchecked")
-            List<Map<Object, Object>> connectedUsers = (List<Map<Object, Object>>) (List<?>) 
-                    g.V(userId)
-                            .out("USES")
-                            .in("USES")
-                            .where(__.not(__.hasId(userId)))
-                            .dedup()
-                            .project("user_id", "name", "shared_devices")
-                            .by(__.id())
-                            .by(__.values("name"))
-                            .by(__.out("USES")
-                                    .where(__.in("USES").hasId(userId))
-                                    .id()
-                                    .fold())
-                            .toList();
-
-            List<Map<String, Object>> normalized = new ArrayList<>(connectedUsers.size());
-            for (Map<Object, Object> user : connectedUsers) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                for (Map.Entry<Object, Object> e : user.entrySet()) {
-                    row.put(String.valueOf(e.getKey()), e.getValue());
-                }
-                normalized.add(row);
-            }
-
-            return normalized;
-
-        } catch (Exception e) {
-            logger.error("Error getting connected device users for user {}", userId, e);
-            return List.of();
         }
     }
 

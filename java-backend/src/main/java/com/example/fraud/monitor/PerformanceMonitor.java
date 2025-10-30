@@ -58,7 +58,7 @@ public class PerformanceMonitor {
 
     private Map<String, Object> getMetricInfo(final PerformanceMetric metric, int minutes) {
         PerformanceMetric.MetricInfo info = metric.getMetricInfo(minutes);
-        Long elapsed;
+        long elapsed;
         if (generatorStatus.startTime() != null) {
             elapsed = nowEpochSec() - generatorStatus.startTime().getEpochSecond();
         } else {

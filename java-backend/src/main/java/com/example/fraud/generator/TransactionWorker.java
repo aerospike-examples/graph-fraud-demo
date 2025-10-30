@@ -17,7 +17,7 @@ public class TransactionWorker {
 
     private final int WORKER_POOL_SIZE;
 
-    private AtomicInteger successfulTransactions;      // actually created
+    private final AtomicInteger successfulTransactions;
 
     private volatile boolean running = false;
     private ExecutorService executor;

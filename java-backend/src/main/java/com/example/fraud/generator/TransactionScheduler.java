@@ -86,9 +86,9 @@ public class TransactionScheduler {
         }
     }
 
-    public boolean stopGeneration() {
+    public void stopGeneration() {
         if (!running) {
-            return false;
+            return;
         }
 
         running = false;
@@ -109,7 +109,6 @@ public class TransactionScheduler {
         readyWorkersCount.set(0);
 
         logger.debug("Transaction generation stopped");
-        return true;
     }
 
     private void generationLoop(int workerTps, int workerId, int totalWorkers) {

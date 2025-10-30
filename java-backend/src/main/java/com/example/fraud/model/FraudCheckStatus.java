@@ -1,6 +1,5 @@
 package com.example.fraud.model;
 
-import java.util.Objects;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 

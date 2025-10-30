@@ -50,7 +50,6 @@ public class AerospikeMetadataManager {
     });
     private final CountDownLatch latch = new CountDownLatch(LATCH_SIZE);
     private final AtomicInteger totalCount;
-    private boolean exit = false;
 
     private AerospikeMetadataManager(MetadataProperties props, Map<String, AerospikeMetadata> metadataMap,
                                      AerospikeClient client, WritePolicy writePolicy) {
@@ -95,7 +94,6 @@ public class AerospikeMetadataManager {
     public void shutdown() {
         scheduler.shutdown();
         writeExecutor.shutdown();
-        exit = true;
         for (int i = 0; i < LATCH_SIZE; i++) {
             latch.countDown();
         }

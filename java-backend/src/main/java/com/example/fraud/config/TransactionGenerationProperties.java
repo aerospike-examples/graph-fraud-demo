@@ -1,11 +1,7 @@
 package com.example.fraud.config;
 
-import jakarta.validation.constraints.Null;
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
 import lombok.Getter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.convert.DurationUnit;
 import org.springframework.lang.Nullable;
 import org.springframework.validation.annotation.Validated;
 

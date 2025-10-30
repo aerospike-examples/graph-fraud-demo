@@ -35,7 +35,7 @@ const Statistics = ({ isGenerating, stats, setStats }: Props) => {
   const clearTxns = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/bulk-load", { method: "POST" });
+      const response = await fetch("/api/data", { method: "DELETE" });
       if (response.ok) setStats((prev) => ({ ...prev, total: 0 }));
       else alert("An error occured");
     } catch (e) {
@@ -105,7 +105,7 @@ const Statistics = ({ isGenerating, stats, setStats }: Props) => {
                   size="sm"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
-                  Clear All Transactions
+                  Clear Database
                 </Button>
               </Confirm>
             </div>

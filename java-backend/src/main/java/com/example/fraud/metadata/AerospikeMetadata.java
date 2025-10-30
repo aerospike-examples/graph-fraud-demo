@@ -1,24 +1,19 @@
 package com.example.fraud.metadata;
 
 import com.aerospike.client.AerospikeClient;
-import com.aerospike.client.Bin;
 import com.aerospike.client.Key;
 import com.aerospike.client.Record;
-import com.example.fraud.graph.GraphService;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import lombok.Getter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class AerospikeMetadata {
-    private static final Logger logger = LoggerFactory.getLogger(AerospikeMetadata.class);
     protected final String metadataName;
     @Getter
     protected final Map<String, Long> binDefaults;
-    protected Map<String, LongAdder> binToCount;
+    protected final Map<String, LongAdder> binToCount;
     @Getter
     protected Key key;
 

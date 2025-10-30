@@ -8,11 +8,9 @@ import com.example.fraud.monitor.PerformanceMonitor;
 import com.example.fraud.util.FraudUtil;
 import java.time.Instant;
 import java.util.concurrent.ThreadLocalRandom;
-import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -145,11 +143,6 @@ public class GeneratorService {
                 ? ThreadLocalRandom.current().nextInt() & 0x7fffffff
                 : ThreadLocalRandom.current().nextInt((int) (numAccounts + 1));
         return padWithPrefix('A', n, numAccountsWidth);
-    }
-
-    private static int digits(int x) {
-        if (x < 10) return 1;
-        return 1 + (int)Math.floor(Math.log10(x));
     }
 
     private static String padWithPrefix(char prefix, int n, int width) {

@@ -1,7 +1,5 @@
 package com.example.fraud.metadata;
 
-import com.aerospike.client.Bin;
-import com.example.fraud.graph.GraphService;
 import java.util.concurrent.atomic.LongAdder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -12,7 +10,7 @@ public class UserMetadata extends AerospikeMetadata {
     protected UserMetadata(@Value("${metadata.userMetadataName:user}") String metadataName) {
         super(metadataName);
         // generator calculates risk_score as round(rnd.uniform(0, 100), 1)
-        Long users = 20000L;
+        long users = 20000L;
         binToCount.put("critical", new LongAdder());
         binToCount.put("high", new LongAdder());
         binToCount.put("medium", new LongAdder());

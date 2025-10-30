@@ -9,6 +9,7 @@ Architecture at a glance
 - `PerformanceMonitor` records transaction and per-rule performance for the Admin Performance UI.
 - Configuration is bound via Spring `@ConfigurationProperties` (e.g., `graph.*`, `generation.*`, `fraud.*`) and per-rule `@Value` properties.
 
+# Custom Rules
 Configuring rules
 Since this application uses Spring Boot, classes annotated with `@Service` or `@Component` can have properties and other services injected via constructors. Rules follow the same pattern: tag each rule with `@Component` and Spring will inject it into the fraud service automatically.
 
@@ -77,7 +78,8 @@ public class ExampleRuleX extends Rule {
 
 Why include details on “no fraud”?
 
-- The performance UI aggregates metrics by rule name. Returning a non-null `FraudCheckDetails` with the rule name on clear results ensures the metrics remain stable, even if most traffic is clean.
+- The performance UI aggregates metrics by rule name. Returning a non-null `FraudCheckDetails` with the rule name 
+- on clear results ensures the metrics remain stable, even if most traffic is clean.
 
 Expose per-rule configuration
 Add properties to `application.properties` (or env vars):
@@ -117,3 +119,59 @@ Testing end-to-end
 1. Seed a small dataset that triggers your rule.
 2. Submit transactions; verify the transaction detail page and Admin Performance reflect your rule.
 3. Increase load; ensure p95 latency remains acceptable.
+
+# Metadata
+The metadata is handled by the `AerospikeMetadataManager` singleton, which stores records of metadata directly
+in the Aerospike Database, in its own set, as opposed to through AGS.
+
+## AerospikeMetadataManager
+This singleton is used to increment, and write data from the `AerospikeMetadata` instances.
+When you find where you want to increment your data, inject `AerospikeMetadataManager` into its constructor (and as
+a final variable), and call 
+`metadataManager.incrementCount(MetadataRecord.MYENUM, <bin-name>, amountToIncrement);`
+
+When you want to read one of the metadatas, simply call 
+`metadataManager.readRecord(MetadataRecord.<TYPE>);`
+And it will return the Aerospike record specified as a `Map<String, Object>`, where you can extract each value.
+a
+## Creating Custom Metadata Records
+Adding a new metadata record is just as easy as adding a new rule, and follows very similar semantics.
+
+First start by creating a class that extends `AerospikeMetadata`, and tag it as a springboot component with
+`@Component("<metadata-name>")`.
+The `<metadata-name>` will be how your metadata is referred to in the application.
+Now in the `model/MetadataRecord` enum, create a value for your new metadata, this is how your metadata will be
+accessed by all services in the application.
+
+This class only needs a single constructor, and in this constructor there are two focuses: `binDefaults` and 
+`binToCount`.
+Currently, metadata is only used with Longs, so `binToCount` is a `Map<String, LongAdder>`, and `binDefaults` is
+a `Map<String, Long` with the key to both being the name of the bin.
+
+Set `binDefaults` to the default on first load, and `binToCount` to a `LongAdder`.
+
+Now your metadata is ready to go! It will be picked up automatically by springboot, and added into the
+`AerospikeMetadataManager` class.
+
+It should now look something like this:
+```java 
+@Component("example")
+public class ExampleMetadata extends AerospikeMetadata {
+
+    protected NameMetadata(@Value("${metadata.exampleMetadataName:example}") String metadataName) {
+        super(metadataName);
+        // Lets say you want to set a default based on something in your app
+        long parameter = 20000L;
+        // Set the adders for incrementation
+        binToCount.put("exampleMetadata", new LongAdder());
+        binToCount.put("exampleMetadata2", new LongAdder());
+        
+        // Set the defaults for loading when there is no record
+        Long defaultExampleMetadata = (long) (parameter * .2495);
+        Long defaultExampleMetadata2 = (long) (parameter * .1);
+        binDefaults.put("exampleMetadata", defaultExampleMetadata);
+        binDefaults.put("exampleMetadata2", defaultExampleMetadata2);
+
+    }
+}
+```
