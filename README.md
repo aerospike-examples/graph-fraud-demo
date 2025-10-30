@@ -1,29 +1,23 @@
 # Fraud Detection Application
 
-A comprehensive fraud detection system built with FastAPI backend and Next.js frontend, utilizing Aerospike Graph for real-time graph-based fraud detection.
+A comprehensive fraud detection system built with Springboot backend and Next.js frontend, utilizing Aerospike Graph for real-time graph-based fraud detection.
 
 ## 🚀 Quick Start
 
-Run Docker compose to build. the necessary containers
-```
-DOCKER_BUILDKIT=0 docker compose up -d
-```
+Follow the **[Local Dev Setup](./docs/local-setup.md)** for quick start
 
-**Access the application:**
-- Frontend: http://localhost:8080
 
 ## Data Generator
 ```bash
-python3 generate_user_data_pp_shards_inplace.py \
-  --users 500000 \
-  --region american \
+python3 ./scripts/generate_user_data_gcp.py \
+  --users 20000 --region american \
   --output ./data/graph_csv \
-  --workers 8 \
-  --gcs-bucket my-bucket-name \
-  --gcs-prefix demo/run-2025-10-22/ \
+  --workers 16 \
+  --gcs-bucket <bucket-name> \
+  --gcs-prefix demo/20kUser/ \
   --gcs-delete-local
+
 ```
-python3 generate_user_data_pp_shards_inplace.py --users 1000000 --region american --output ./data/graph_csv --workers 8 --gcs-bucket my-bucket-name --gcs-prefix demo/run-2025-10-22/ --gcs-delete-local
 
 ## 🏗️ Architecture
 
@@ -75,8 +69,9 @@ The system implements real-time fraud detection using graph-based analysis:
 
 - **[Setup Instructions](./docs/setup.md)** - Complete installation and configuration guide
 - **[Data Model](./docs/datamodel.md)** - Detailed data structure documentation
-- **[RT1 Fraud Detection](./docs/RT1_FRAUD_DETECTION.md)** - RT1 implementation details
-- **[Project Plan](./docs/plan.md)** - Development roadmap and milestones
+- **[Customizing Functionality](./docs/customizing.md)** - Details on extending this app for your unique use case
+- **[Deployment Instructions](./docs/deployment.md)** - Complete instructions for deployment on GCP with Caddy
+- **[Local Dev Setup](./docs/local-setup.md)** - Short instructions for setting up local development environment
 
 ## 📄 License
 
