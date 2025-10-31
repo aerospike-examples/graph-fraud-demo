@@ -14,11 +14,16 @@ public class MetadataProperties {
     private final String namespace;
     private final String setName;
     private final String aerospikeAddress;
+    private final Integer flushIntervalMs;
+    private final Integer flushThreshhold;
 
-    public MetadataProperties(String namespace, String setName, String aerospikeAddress) {
+    public MetadataProperties(String namespace, String setName, String aerospikeAddress,
+                              Integer flushIntervalMs, Integer flushThreshhold) {
         this.namespace = namespace;
         this.setName = setName;
         this.aerospikeAddress = aerospikeAddress;
+        this.flushIntervalMs = flushIntervalMs;
+        this.flushThreshhold = flushThreshhold;
     }
 
     @Bean(destroyMethod = "close")

@@ -20,7 +20,7 @@ public class AerospikeMetadata {
     protected AerospikeMetadata(String metadataName) {
         this.metadataName = metadataName;
         this.binDefaults = new ConcurrentHashMap<>();
-        this.binToCount = new HashMap<>();
+        this.binToCount = new ConcurrentHashMap<>();
     }
 
     public Map<String, Long> drainSnapshot() {

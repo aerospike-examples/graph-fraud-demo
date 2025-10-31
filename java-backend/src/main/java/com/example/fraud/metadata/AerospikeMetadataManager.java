@@ -12,10 +12,10 @@ import com.aerospike.client.policy.RecordExistsAction;
 import com.aerospike.client.policy.WritePolicy;
 import com.example.fraud.config.MetadataProperties;
 import com.example.fraud.model.MetadataRecord;
+import jakarta.annotation.PreDestroy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -26,13 +26,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.aerospike.client.AerospikeClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 @Component
 public class AerospikeMetadataManager {
     private static final Logger logger = LoggerFactory.getLogger(AerospikeMetadataManager.class);
-    private static final int LATCH_SIZE = 200;
-    private static final int LATCH_BREAK_TIME_MILLISECONDS = 1000;
+    private final int flushThreshold;
+    private final int flushIntervalMs;
     private final AerospikeClient client;
     private final WritePolicy writePolicy;
     private final Map<String, AerospikeMetadata> metadataMap;
@@ -48,26 +51,25 @@ public class AerospikeMetadataManager {
         t.setDaemon(true);
         return t;
     });
-    private final CountDownLatch latch = new CountDownLatch(LATCH_SIZE);
     private final AtomicInteger totalCount;
 
     private AerospikeMetadataManager(MetadataProperties props, Map<String, AerospikeMetadata> metadataMap,
-                                     AerospikeClient client, WritePolicy writePolicy) {
-        scheduler.scheduleAtFixedRate(this::writeAsync, LATCH_BREAK_TIME_MILLISECONDS, LATCH_BREAK_TIME_MILLISECONDS, TimeUnit.MILLISECONDS);
+                                     AerospikeClient client, WritePolicy writePolicy, Environment env) {
         this.client = client;
-        String namespace = props.getNamespace();
-        String setName = props.getSetName();
         this.writePolicy = writePolicy;
         this.props = props;
+        this.flushThreshold = props.getFlushThreshhold();
+        this.flushIntervalMs = props.getFlushIntervalMs();
         this.totalCount = new AtomicInteger(0);
         this.metadataMap = metadataMap;
         for (AerospikeMetadata metadata : metadataMap.values()) {
-            metadata.setKey(namespace, setName);
+            metadata.setKey(props.getNamespace(), props.getSetName());
         }
         this.writeDefaultsIfNone();
+        scheduler.scheduleAtFixedRate(this::writeAsync, flushIntervalMs, flushIntervalMs, TimeUnit.MILLISECONDS);
     }
 
-    private void writeDefaultsIfNone() {
+    public void writeDefaultsIfNone() {
         WritePolicy createOnly = new WritePolicy(writePolicy);
         createOnly.recordExistsAction = RecordExistsAction.CREATE_ONLY;
 
@@ -75,7 +77,7 @@ public class AerospikeMetadataManager {
             Map<String, Long> defaults = m.getBinDefaults();
             if (defaults == null || defaults.isEmpty()) continue;
 
-            Key key = new Key(props.getNamespace(), props.getSetName(), m.getName());
+            Key key = m.getKey();
 
             Bin[] bins = new Bin[defaults.size()];
             int i = 0;
@@ -91,13 +93,7 @@ public class AerospikeMetadataManager {
         }
     }
 
-    public void shutdown() {
-        scheduler.shutdown();
-        writeExecutor.shutdown();
-        for (int i = 0; i < LATCH_SIZE; i++) {
-            latch.countDown();
-        }
-    }
+
 
     public Map<String, Object> readRecord(final MetadataRecord metadataRecord) {
         Record record = metadataMap.get(metadataRecord.getValue()).getRecord(client);
@@ -111,7 +107,7 @@ public class AerospikeMetadataManager {
         AerospikeMetadata metadata = metadataMap.get(record.getValue());
         if (metadata == null) throw new IllegalArgumentException("Unknown metadata: " + record.getValue());
         metadata.incrementBin(bin, count);
-        if (totalCount.incrementAndGet() >= LATCH_SIZE) writeAsync();
+        if (totalCount.incrementAndGet() >= flushThreshold) writeAsync();
     }
 
     private void writeAsync() { writeExecutor.submit(this::doWrite); }
@@ -129,7 +125,7 @@ public class AerospikeMetadataManager {
         List<Operation> ops = new ArrayList<>();
         if (snapshot.isEmpty()) return;
         try {
-            final Key key = new Key(props.getNamespace(), props.getSetName(), metadata.getName());
+            final Key key = metadata.getKey();
             for (Map.Entry<String, Long> entry : snapshot.entrySet()) {
                 ops.add(Operation.add(new Bin(entry.getKey(), entry.getValue())));
             }
@@ -137,6 +133,26 @@ public class AerospikeMetadataManager {
         } catch (AerospikeException e) {
             throw new RuntimeException("Could not write Metadata Metric", e);
         }
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        try {
+            scheduler.shutdown();
+            doWrite();
+        } finally {
+            writeExecutor.shutdown();
+            try {
+                scheduler.awaitTermination(2, TimeUnit.SECONDS);
+                writeExecutor.awaitTermination(3, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                scheduler.shutdownNow();
+                writeExecutor.shutdownNow();
+            }
+        }
+
     }
 
     public void clear() {

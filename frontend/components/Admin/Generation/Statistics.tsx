@@ -90,17 +90,17 @@ const Statistics = ({ isGenerating, stats, setStats }: Props) => {
               <span>Quick Actions</span>
             </h4>
             <div className="text-xs text-muted-foreground mb-2">
-              This will remove all generated transactions from the system.
+              This is under maintenance currently and will be back soon.
             </div>
             <div className="space-y-3">
               <Confirm
                 title="Are you absolutely sure?"
-                message="This action cannot be undone. This will permanently delete all transactions."
+                message="This action cannot be undone. This will permanently delete all data."
                 action={clearTxns}
               >
                 <Button
                   variant="outline"
-                  disabled={isGenerating}
+                  disabled={true}
                   className="w-full"
                   size="sm"
                 >

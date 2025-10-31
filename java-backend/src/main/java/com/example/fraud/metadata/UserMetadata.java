@@ -15,7 +15,7 @@ public class UserMetadata extends AerospikeMetadata {
         binToCount.put("high", new LongAdder());
         binToCount.put("medium", new LongAdder());
         binToCount.put("low", new LongAdder());
-        Long defaultCritical = (long) (users * .2495); // 75-100
+        Long defaultCritical = (long) (users * .2495);
         Long defaultHigh = (long) (users * .25);
         Long defaultMedium = (long) (users * .25);
         Long defaultLow = (long) (users * .2495);

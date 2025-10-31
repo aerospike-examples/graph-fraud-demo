@@ -550,8 +550,10 @@ public class GraphService {
 
     public void seedSampleData() {
         mainG.V().drop().iterate();
-        String verticesPath = "gs://fraud-demo/demo/20kUser/vertices";
-        String edgesPath = "gs://fraud-demo/demo/20kUser/edges";
+        metadataManager.clear();
+        metadataManager.writeDefaultsIfNone();
+        String verticesPath = props.verticesPath();
+        String edgesPath = props.edgesPath();
 
         logger.info("Bulk load Starting");
         mainG.with("evaluationTimeout", 20000)
@@ -587,6 +589,8 @@ public class GraphService {
 
     public void dropAll() {
             mainG.V().drop().iterate();
+            metadataManager.clear();
+            metadataManager.writeDefaultsIfNone();
     }
 
     public boolean accountExists(String accountId) {

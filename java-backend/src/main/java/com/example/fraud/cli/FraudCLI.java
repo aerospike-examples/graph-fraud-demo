@@ -1,5 +1,6 @@
 package com.example.fraud.cli;
 
+import com.example.fraud.metadata.AerospikeMetadataManager;
 import com.example.fraud.util.FraudUtil;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,10 +31,12 @@ public class FraudCLI implements CommandLineRunner {
     private final ServiceOrchestrator orchestrator;
     private final RestClient http;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final AerospikeMetadataManager aerospikeMetadataManager;
 
-    public FraudCLI(ServiceOrchestrator orchestrator, RestClient http) {
+    public FraudCLI(ServiceOrchestrator orchestrator, RestClient http, AerospikeMetadataManager aerospikeMetadataManager) {
         this.orchestrator = orchestrator;
         this.http = http;
+        this.aerospikeMetadataManager = aerospikeMetadataManager;
     }
 
     private static void showHelp() {
@@ -50,6 +53,7 @@ public class FraudCLI implements CommandLineRunner {
                   stop                 - Stop transaction generator
                   status               - Show generator status
                   seed                 - Run GCP L2 Bulkload
+                  clear-metadata       - Clear Metadata and load defaults
                   threads [opts]       - Show JVM thread status. Options:
                                                         --stacks (include stack traces)
                                                         --sort cpu|name|id
@@ -148,12 +152,18 @@ public class FraudCLI implements CommandLineRunner {
                     shutdown();
                     System.exit(0);
                 }
+                case "clear-metadata" -> clearMetadata();
                 default -> System.out.println("Unknown command: " + cmd + ". Type 'help' for available commands.");
             }
         } catch (Exception e) {
             System.out.println(e.getMessage());
         }
 
+    }
+
+    private void clearMetadata() {
+        aerospikeMetadataManager.clear();
+        aerospikeMetadataManager.writeDefaultsIfNone();
     }
 
     private void generatorStatus() {

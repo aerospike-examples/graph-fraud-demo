@@ -10,5 +10,7 @@ import org.springframework.validation.annotation.Validated;
 public record GraphProperties(@Positive @NotNull Integer mainConnectionPoolSize,
                               @Positive @NotNull Integer fraudConnectionPoolSize,
                               @NotNull String gremlinHosts,
-                              @NotNull Integer gremlinPort) {
+                              @NotNull Integer gremlinPort,
+                              @NotNull String verticesPath,
+                              @NotNull String edgesPath) {
 }

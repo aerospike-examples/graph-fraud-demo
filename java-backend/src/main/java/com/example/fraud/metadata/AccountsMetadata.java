@@ -9,7 +9,6 @@ public class AccountsMetadata extends AerospikeMetadata {
     protected AccountsMetadata(@Value("${metadata.accountMetadataName:account}") String metadataName) {
         super(metadataName);
         // Generator states that .1% of accounts are generated as flagged
-        // TODO: Dynamically allocate this (make function call in graphService?)
         long accounts = 40000L;
         long defaultFlaggedAccounts = (long) (accounts * .1);
         binDefaults.put("flagged", defaultFlaggedAccounts);
