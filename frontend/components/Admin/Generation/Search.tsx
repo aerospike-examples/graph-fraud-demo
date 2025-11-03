@@ -34,6 +34,9 @@ const Search = ({
   const [exists, setExists] = useState<null | boolean>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestLoaded, setSuggestLoaded] = useState(false);
   const wrapper = useRef<HTMLDivElement | null>(null);
 
   const handleChange = (e: ChangeEvent) => {
@@ -41,6 +44,7 @@ const Search = ({
     setSearch(val);
     setExists(null);
     setError(false);
+    setOpen(true);
   };
 
   const checkExists = async () => {
@@ -83,13 +87,34 @@ const Search = ({
     setValue("");
     setExists(null);
     setError(false);
+    setOpen(false);
+  };
+
+  const loadSuggestions = async () => {
+    if (suggestLoaded) return;
+    try {
+      const res = await fetch(`/api/accounts/count`, { cache: "no-store" });
+      if (!res.ok) return;
+      const { count } = await res.json();
+      const total = Math.max(1, Number(count || 0));
+      const n = Math.min(50, total);
+      const uniq = new Set<string>();
+      let guard = 0;
+      while (uniq.size < n && guard < n * 5) {
+        const rnd = 1 + Math.floor(Math.random() * total);
+        uniq.add(`A${rnd.toString().padStart(9, "0")}`);
+        guard++;
+      }
+      setSuggestions(Array.from(uniq));
+      setSuggestLoaded(true);
+    } catch {}
   };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
       if (wrapper.current && !wrapper.current.contains(target)) {
-        // noop
+        setOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -110,6 +135,10 @@ const Search = ({
         placeholder="Search by account ID"
         value={search}
         onChange={handleChange}
+        onFocus={() => {
+          setOpen(true);
+          loadSuggestions();
+        }}
         className="w-full"
         disabled={loading}
       />
@@ -138,6 +167,25 @@ const Search = ({
           <div className="text-xs text-red-600">Account not found</div>
         )}
       </div>
+      {open && suggestions.length > 0 && (
+        <div className="absolute z-10 mt-2 max-h-48 overflow-y-auto w-full border rounded bg-background shadow">
+          {suggestions.map((s) => (
+            <div
+              key={s}
+              className="px-3 py-2 text-sm hover:bg-muted cursor-pointer"
+              onClick={() => {
+                setSearch(s);
+                setValue(s);
+                setExists(true);
+                setError(false);
+                setOpen(false);
+              }}
+            >
+              {s}
+            </div>
+          ))}
+        </div>
+      )}
       {value && exists && !error && (
         <div className="text-xs text-green-600 bg-green-50 p-2 rounded absolute w-full">
           ✓ {search}

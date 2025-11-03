@@ -2,6 +2,7 @@
 
 import Results, { type Option } from "@/components/ResultTable";
 import { Suspense } from "react";
+import { Buffer } from "buffer";
 import TransactionStats from "@/components/Transactions/Stats";
 import RefreshButton from "@/components/RefreshButton";
 
@@ -114,22 +115,32 @@ export default async function TransactionsPage() {
   ) {
     "use server";
     const q = (query ?? "").trim();
-    if (!q) return { results: [], total_pages: 0, total: 0 } as any;
-    try {
-      // Normalize to exactly-once encoding to avoid %252B double-encoding
-      let rawId = q;
+    if (!q) {
       try {
-        // If q was already encoded, decode once
-        rawId = decodeURIComponent(q);
-      } catch {}
-      const encodedId = encodeURIComponent(rawId);
-      const detailRes = await fetch(
-        `${API_BASE_URL}/transaction/${encodedId}`,
-        { cache: "no-store" }
-      );
+        const offset = (_page - 1) * _size;
+        const r = await fetch(
+          `${API_BASE_URL}/transactions/recent?limit=${_size}&offset=${offset}`,
+          {
+            cache: "no-store",
+          }
+        );
+        if (!r.ok) return { results: [], total_pages: 0, total: 0 } as any;
+        const data = await r.json();
+        const rows: any[] = (data?.results ?? []) as any[];
+        const total: number = Number(data?.total ?? rows.length);
+        const total_pages = Math.max(1, Math.ceil(total / _size));
+        return { results: rows, total_pages, total } as any;
+      } catch {
+        return { results: [], total_pages: 0, total: 0 } as any;
+      }
+    }
+    try {
+      const rawId = q;
+      const base64Id = Buffer.from(rawId, 'utf8').toString('base64url');
+      const detailRes = await fetch(`${API_BASE_URL}/transaction/${base64Id}`,
+          { cache: "no-store", method: "GET" });
       if (detailRes.ok) {
         const detail = await detailRes.json();
-        console.log(detail);
         const row = {
           id: rawId,
           txn_id: detail?.txn?.txn_id ?? rawId,
@@ -172,9 +183,11 @@ export default async function TransactionsPage() {
         handleSearch={handleSearch}
         title="Transactions"
         options={options}
-        requireQuery
+        requireQuery={false}
         minQueryLength={1}
-        disablePagination
+        disablePagination={false}
+        randomType="transaction"
+        randomLabel="Random Transaction"
       />
     </div>
   );

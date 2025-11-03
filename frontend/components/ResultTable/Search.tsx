@@ -10,6 +10,10 @@ interface Props {
     placeholder: string
     setCurrentPage: () => void
     minQueryLength?: number
+    register?: (api: {
+    setQuery: (s: string) => void;
+    submit: () => void;
+  }) => void
 }
 
 export const SearchNoProps = ({ placeholder }: { placeholder: string }) => <Search fetchData={() => {}} placeholder={placeholder} setCurrentPage={() => {}} />
@@ -19,6 +23,7 @@ const Search = ({
   placeholder = "Search",
   setCurrentPage,
   minQueryLength = 1,
+  register,
 }: Props) => {
   const [query, setQuery] = useState("");
   const debounce = useRef<NodeJS.Timeout | null>(null);
@@ -28,10 +33,29 @@ const Search = ({
     setQuery(q);
     setCurrentPage();
     if (debounce.current) clearTimeout(debounce.current);
+    const trimmed = q.trim();
+    if (trimmed.length === 0) {
+      fetchData("");
+      return;
+    }
     debounce.current = setTimeout(() => {
-      if (q.trim().length >= minQueryLength) fetchData(q);
+      if (trimmed.length >= minQueryLength) fetchData(q);
     }, 300);
   };
+
+  const submit = () => {
+    if (valid) fetchData(query);
+  };
+  if (register) {
+    register({
+      setQuery: (s: string) => {
+        setQuery(s);
+        setCurrentPage();
+        if (s.trim().length >= minQueryLength) fetchData(s);
+      },
+      submit,
+    });
+  }
 
   return (
     <div className="flex gap-2 items-center">

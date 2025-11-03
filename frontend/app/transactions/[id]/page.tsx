@@ -12,14 +12,18 @@ import {
 import TxnDetails, { type TxnDetail } from "@/components/Transactions/Details"
 import Stat from '@/components/Stat'
 import Label from '@/components/Label'
+import {Buffer} from "buffer";
 
 const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api"
 
 export default async function TransactionsPage({ params }: { params: Promise<{ id: string }>}) {
   const { id: transactionId } = await params;
-  const encodedID = encodeURIComponent(transactionId)
-
-  const response = await fetch(`${API_BASE_URL}/transaction/${encodedID}`, { cache: 'no-store' })
+    const decodedId = decodeURIComponent(transactionId)
+    const base64Id = Buffer.from(decodedId, 'utf8').toString('base64url');
+    const response = await fetch(
+        `${API_BASE_URL}/transaction/${base64Id}`,
+        { cache: "no-store", method: "GET" }
+    );
   const { txn, src, dest }: TxnDetail = await response.json()
 
   const calculateOverallRisk = (fraud_score: number = 0) => {
@@ -30,7 +34,6 @@ export default async function TransactionsPage({ params }: { params: Promise<{ i
       color: riskLevel.color
     }
   }
-
   const overallRisk = calculateOverallRisk(txn.fraud_score)
   const transactionTypeIcon = getTransactionTypeIcon(txn.type);
   const transactionStatusIcon = getStatusIcon(txn.status)

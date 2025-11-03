@@ -4,11 +4,12 @@ import com.example.fraud.config.GraphProperties;
 import com.example.fraud.fraud.PerformanceInfo;
 import com.example.fraud.fraud.TransactionInfo;
 import com.example.fraud.metadata.AerospikeMetadataManager;
+import com.example.fraud.fraud.RecentTransactions;
 import com.example.fraud.model.MetadataRecord;
 import com.example.fraud.model.TransactionType;
+import com.example.fraud.model.UserRiskStatus;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.UUID;
 import org.apache.tinkerpop.gremlin.driver.Cluster;
@@ -17,7 +18,6 @@ import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSo
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.apache.tinkerpop.gremlin.structure.T;
 import org.apache.tinkerpop.gremlin.process.traversal.Order;
-import org.apache.tinkerpop.gremlin.process.traversal.Scope;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,11 +40,14 @@ public class GraphService {
     private GraphTraversalSource fraudG;
     private GraphTraversalSource mainG;
     private final AerospikeMetadataManager metadataManager;
+    private final RecentTransactions recentTransactions;
 
 
-    public GraphService(GraphProperties graphProperties, AerospikeMetadataManager metadataManager) {
+    public GraphService(GraphProperties graphProperties, AerospikeMetadataManager metadataManager,
+                        RecentTransactions recentTransactions) {
         this.props = graphProperties;
         this.metadataManager = metadataManager;
+        this.recentTransactions = recentTransactions;
         connect();
     }
 
@@ -85,11 +88,35 @@ public class GraphService {
 
             logger.info("Connected to Aerospike Graph Service");
 
+            warmRecentTransactions();
+
         } catch (Exception e) {
             logger.error("Could not connect to Aerospike Graph: {}", e.getMessage());
             logger.error("Graph database connection is required. Please ensure Aerospike Graph is running on port {}",
                     props.gremlinPort());
             throw new RuntimeException("Failed to connect to Aerospike Graph", e);
+        }
+    }
+
+    private void warmRecentTransactions() {
+        if (mainG == null) return;
+        try {
+            List<Object> ids = mainG.with("evaluationTimeout", 15000)
+                    .E()
+                    .hasLabel("TRANSACTS")
+                    .limit(100)
+                    .id()
+                    .toList();
+            if (ids == null || ids.isEmpty()) {
+                logger.info("Recent transactions warm-up: no existing transactions found");
+                return;
+            }
+            for (Object id : ids) {
+                recentTransactions.add(id);
+            }
+            logger.info("Recent transactions warm-up loaded {} entries", ids.size());
+        } catch (Exception e) {
+            logger.warn("Recent transactions warm-up skipped: {}", e.getMessage());
         }
     }
 
@@ -458,10 +485,7 @@ public class GraphService {
 
                 Object rs = normalized.getOrDefault("risk_score", 0.0);
                 double riskScore = (rs instanceof Number) ? ((Number) rs).doubleValue() : 0.0;
-                String riskLevel = (riskScore < 25) ? "LOW"
-                        : (riskScore < 50) ? "MEDIUM"
-                        : (riskScore < 75) ? "HIGH"
-                        : "CRITICAL";
+                String riskLevel = UserRiskStatus.evaluateRiskScore(riskScore).toString();
                 userSummary.put("risk_level", riskLevel);
             }
 
@@ -480,9 +504,6 @@ public class GraphService {
                 throw new IllegalStateException("Graph client not available. Cannot get transaction detail.");
             }
 
-            logger.info(txnEdgeId);
-            logger.info(mainG.E().hasLabel("TRANSACTS").id().toList().toString());
-            logger.info(mainG.E(txnEdgeId).toList().toString());
             @SuppressWarnings("unchecked")
             Map<String, Object> detail = (Map<String, Object>) g.E(txnEdgeId)
                     .project("txn", "src", "dest")
@@ -556,7 +577,7 @@ public class GraphService {
         String edgesPath = props.edgesPath();
 
         logger.info("Bulk load Starting");
-        mainG.with("evaluationTimeout", 20000)
+        mainG.with("evaluationTimeout", 120000)
                 .call("aerospike.graphloader.admin.bulk-load.load")
                 .with("aerospike.graphloader.vertices", verticesPath)
                 .with("aerospike.graphloader.edges", edgesPath)
@@ -602,6 +623,52 @@ public class GraphService {
         } catch (Exception e) {
             logger.warn("accountExists check failed for {}: {}", accountId, e.getMessage());
             return false;
+        }
+    }
+
+    public List<Map<String, Object>> getTransactionsSummaryByIds(List<Object> edgeIds) {
+        try {
+            GraphTraversalSource g = getMainClient();
+            if (g == null || edgeIds == null || edgeIds.isEmpty()) return List.of();
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows = g.E(edgeIds.toArray())
+                    .project("id", "txn_id", "amount", "timestamp", "location", "fraud_score", "fraud_status", "sender", "receiver")
+                    .by(__.id())
+                    .by(__.values("txn_id").fold().coalesce(__.unfold(), __.constant("")))
+                    .by(__.values("amount").fold().coalesce(__.unfold(), __.constant(0)))
+                    .by(__.values("timestamp").fold().coalesce(__.unfold(), __.constant("")))
+                    .by(__.values("location").fold().coalesce(__.unfold(), __.constant("")))
+                    .by(__.values("fraud_score").fold().coalesce(__.unfold(), __.constant(0)))
+                    .by(__.values("fraud_status").fold().coalesce(__.unfold(), __.constant("")))
+                    .by(__.outV().id())
+                    .by(__.inV().id())
+                    .toList();
+            return rows;
+        } catch (Exception e) {
+            logger.error("Error building transactions summary: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    public List<Map<String, Object>> getUsersSummary(List<String> userIds) {
+        try {
+            GraphTraversalSource g = getMainClient();
+            if (g == null || userIds == null || userIds.isEmpty()) return List.of();
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows = g.V(userIds.toArray())
+                    .project("id", "name", "email", "risk_score", "age", "location", "signup_date")
+                    .by(__.id())
+                    .by(__.values("name").fold().coalesce(__.unfold(), __.constant("")))
+                    .by(__.values("email").fold().coalesce(__.unfold(), __.constant("")))
+                    .by(__.values("risk_score").fold().coalesce(__.unfold(), __.constant(0)))
+                    .by(__.values("age").fold().coalesce(__.unfold(), __.constant(0)))
+                    .by(__.values("location").fold().coalesce(__.unfold(), __.constant("")))
+                    .by(__.values("signup_date").fold().coalesce(__.unfold(), __.constant("")))
+                    .toList();
+            return rows;
+        } catch (Exception e) {
+            logger.error("Error getting users summary: {}", e.getMessage());
+            return List.of();
         }
     }
 }

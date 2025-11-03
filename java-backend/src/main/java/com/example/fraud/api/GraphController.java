@@ -1,6 +1,7 @@
 package com.example.fraud.api;
 
 import com.example.fraud.fraud.TransactionInfo;
+import com.example.fraud.fraud.RecentTransactions;
 import com.example.fraud.graph.GraphService;
 import com.example.fraud.model.TransactionType;
 import com.example.fraud.util.FraudUtil;
@@ -10,8 +11,8 @@ import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -20,9 +21,11 @@ import java.util.Map;
 public class GraphController {
 
     private final GraphService graph;
+    private final RecentTransactions recent;
 
-    public GraphController(GraphService graph) {
+    public GraphController(GraphService graph, RecentTransactions recent) {
         this.graph = graph;
+        this.recent = recent;
     }
 
     @GetMapping("/status")
@@ -39,7 +42,6 @@ public class GraphController {
     }
 
     @GetMapping("/dashboard/stats")
-    //TODO: Set this up to new meta data, will be done in graphservice function no change here
     @Operation(summary = "Dashboard Statistics", description = "Get overall system statistics for the dashboard")
     public Object dashboardStats() {
         return graph.getDashboardStats();
@@ -47,8 +49,18 @@ public class GraphController {
 
     @GetMapping("/users/stats")
     public Object getUsersStats() {
-        //TODO: Set this up to new meta data, will be done in graphservice function no change here
         return graph.getUserStats();
+    }
+
+    @GetMapping("/users/count")
+    public Map<String, Object> getUsersCount() {
+        return Map.of("count", graph.getUserCount());
+    }
+
+    @PostMapping("/users/summary")
+    public Object getUsersSummary(@RequestBody Map<String, List<String>> body) {
+        List<String> ids = body == null ? List.of() : body.getOrDefault("ids", List.of());
+        return graph.getUsersSummary(ids);
     }
 
     @GetMapping("/users/{user_id}")
@@ -56,7 +68,6 @@ public class GraphController {
         var summary = graph.getUserSummary(userId);
         return (summary == null) ? ResponseEntity.notFound().build() : ResponseEntity.ok(summary);
     }
-
 
     @DeleteMapping("/data")
     public void clearDB() {
@@ -74,12 +85,31 @@ public class GraphController {
         return Map.of("exists", exists, "id", accountId);
     }
 
+    @GetMapping("/accounts/count")
+    public Map<String, Object> getAccountsCount() {
+        return Map.of("count", graph.getAccountCount());
+    }
+
     @GetMapping("/transaction/{transaction_id}")
     public ResponseEntity<?> getTransactionDetail(@PathVariable("transaction_id") String transactionId) {
-        // Do not form-decode here; Spring already decodes percent-encoded path
-        // Using URLDecoder would turn '+' into space erroneously for path segments
-        var detail = graph.getTransactionSummary(transactionId);
+        // Transaction IDs come in base64 encoded since they have / and +
+        String onceDecoded = java.net.URLDecoder.decode(transactionId, java.nio.charset.StandardCharsets.UTF_8);
+        byte[] bytes = java.util.Base64.getUrlDecoder().decode(onceDecoded);
+        String id = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        var detail = graph.getTransactionSummary(id);
         return (detail == null) ? ResponseEntity.notFound().build() : ResponseEntity.ok(detail);
+    }
+
+    @GetMapping("/transactions/recent")
+    public Object recentTransactions(@RequestParam(name = "limit", defaultValue = "100") int limit,
+                                     @RequestParam(name = "offset", defaultValue = "0") int offset) {
+        int capped = Math.min(Math.max(1, limit), 100);
+        var ids = recent.page(offset, capped);
+        var rows = graph.getTransactionsSummaryByIds(ids);
+        return Map.of(
+                "total", recent.size(),
+                "results", rows
+        );
     }
 
     @PostMapping("/accounts/{account_id}/flag")
@@ -94,11 +124,10 @@ public class GraphController {
         )) : ResponseEntity.notFound().build();
     }
 
-
     @PostMapping("/bulk-load")
     public Object bulkLoadCsv() {
         graph.seedSampleData();
-        return ResponseEntity.ok();
+        return Boolean.TRUE;
     }
 
     @DeleteMapping("/accounts/{account_id}/flag")

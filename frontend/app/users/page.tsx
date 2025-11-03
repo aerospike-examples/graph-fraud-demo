@@ -85,6 +85,12 @@ const options: Option[] = [
 const API_BASE_URL = process.env.BASE_URL || "http://localhost:8080/api";
 
 export default async function UsersPage() {
+  const countRes = await fetch(`${API_BASE_URL}/users/count`, {
+    cache: "no-store",
+  });
+  const { count: totalUsers = 0 } = countRes.ok
+    ? await countRes.json()
+    : { count: 0 };
   async function handleSearch(
     _page: number = 1,
     _size: number = 10,
@@ -94,7 +100,37 @@ export default async function UsersPage() {
   ) {
     "use server";
     const q = (query ?? "").trim();
-    if (!q) return { results: [], total_pages: 0, total: 0 } as any;
+    if (!q) {
+      try {
+        const countRes = await fetch(`${API_BASE_URL}/users/count`, {
+          cache: "no-store",
+        });
+        const { count = 0 } = countRes.ok
+          ? await countRes.json()
+          : { count: 0 };
+        const limit = Math.min(100, Math.max(1, Number(count || 0)));
+        const ids: string[] = [];
+        for (let i = 0; i < limit; i++) {
+          const n =
+            1 + Math.floor(Math.random() * Math.max(1, Number(count || 1)));
+          ids.push(`U${n.toString().padStart(7, "0")}`);
+        }
+        const res = await fetch(`${API_BASE_URL}/users/summary`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+          cache: "no-store",
+        });
+        const rows = res.ok ? await res.json() : [];
+        const start = (_page - 1) * _size;
+        const end = start + _size;
+        const pageRows = rows.slice(start, end);
+        const total_pages = Math.max(1, Math.ceil(rows.length / _size));
+        return { results: pageRows, total_pages, total: rows.length } as any;
+      } catch {
+        return { results: [], total_pages: 0, total: 0 } as any;
+      }
+    }
     try {
       const res = await fetch(
         `${API_BASE_URL}/users/${encodeURIComponent(q)}`,
@@ -139,9 +175,12 @@ export default async function UsersPage() {
         handleSearch={handleSearch}
         title="Users"
         options={options}
-        requireQuery
+        requireQuery={false}
         minQueryLength={1}
-        disablePagination
+        disablePagination={false}
+        randomType="user"
+        randomLabel="Random User"
+        randomMax={Number(totalUsers || 0)}
       />
     </div>
   );

@@ -50,6 +50,9 @@ interface Props {
   requireQuery?: boolean;
   minQueryLength?: number;
   disablePagination?: boolean;
+  randomType?: "user" | "transaction";
+  randomLabel?: string;
+  randomMax?: number;
 }
 
 const Results = ({
@@ -59,6 +62,9 @@ const Results = ({
   requireQuery = false,
   minQueryLength = 1,
   disablePagination = false,
+  randomType,
+  randomLabel,
+  randomMax,
 }: Props) => {
   const pathname = usePathname();
   const [currentPage, setCurrentPage] = useState(1);
@@ -77,6 +83,10 @@ const Results = ({
   const [loading, setLoading] = useState(true);
   const loaded = useRef(false);
   const lastQueryRef = useRef<string>("");
+  const searchApiRef = useRef<{
+    setQuery: (s: string) => void;
+    submit: () => void;
+  } | null>(null);
 
   const fetchData = async (
     page: number = currentPage,
@@ -138,12 +148,53 @@ const Results = ({
     <Card className="grow flex flex-col">
       <CardHeader className="gap-4">
         <CardTitle>{title}</CardTitle>
-        <Search
-          fetchData={(q) => fetchData(currentPage, pageSize, orderBy, order, q)}
-          placeholder={`Search ${title}`}
-          setCurrentPage={() => setCurrentPage(1)}
-          minQueryLength={minQueryLength}
-        />
+        <div className="flex items-center gap-2 justify-between">
+          <Search
+            fetchData={(q) =>
+              fetchData(currentPage, pageSize, orderBy, order, q)
+            }
+            placeholder={`Search ${title} by ID`}
+            setCurrentPage={() => setCurrentPage(1)}
+            minQueryLength={minQueryLength}
+            register={(api) => {
+              searchApiRef.current = api;
+            }}
+          />
+          {randomType && searchApiRef.current ? (
+            <div className="ml-2">
+              <button
+                type="button"
+                className="text-xs px-2 py-1 border rounded"
+                onClick={() => {
+                  if (!searchApiRef.current) return;
+                  const { setQuery, submit } = searchApiRef.current;
+                  let id = "";
+                  if (randomType === "transaction") {
+                    if (results && results.length > 0) {
+                      const idx = Math.floor(Math.random() * results.length);
+                      console.log(results[0])
+                      id = String(results[idx]?.id ?? "");
+                    }
+                  } else {
+                    const max = Math.max(1, Number(randomMax || 9_999_999));
+                    const rnd = Math.floor(Math.random() * max) + 1;
+                    id = `U${rnd.toString().padStart(7, "0")}`;
+                  }
+                  if (id) {
+                    setQuery("");
+                    setQuery(id);
+                    submit();
+                  }
+                }}
+              >
+                {randomLabel ??
+                  (randomType === "user"
+                    ? "Random User"
+                    : "Random Transaction")}
+              </button>
+            </div>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent className="grow overflow-x-auto flex flex-col">
         <table className="w-full grow table-fixed">
