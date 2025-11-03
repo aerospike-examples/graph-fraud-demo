@@ -8,6 +8,8 @@ import com.example.fraud.model.MetadataRecord;
 import com.example.fraud.monitor.PerformanceMonitor;
 import com.example.fraud.graph.GraphService;
 import com.example.fraud.rules.Rule;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
@@ -128,15 +130,12 @@ public class FraudService {
     private FraudCheckStatus storeFraudResult(GraphTraversalSource g, Object edgeId, FraudResult check) {
         int fraudScore = 0;
         String status = check.status().getValue();
-        List<String> details = new ArrayList<>();
-
         Number s = check.fraudScore();
         int score = s.intValue();
         if (score > fraudScore) fraudScore = score;
 
-        Object det = check.details();
-        details.add(String.valueOf(det));
-
+        FraudCheckDetails details = check.details();
+        LocalDateTime detectionTime = LocalDateTime.ofInstant(details.detectionTime(), ZoneId.systemDefault());
         Map<Object, Object> curr = g.E(edgeId).valueMap("is_fraud", "fraud_score").next();
         if ((int) curr.getOrDefault("fraud_score", 0) < fraudScore) {
             g.E(edgeId)
@@ -144,7 +143,8 @@ public class FraudService {
                     .property("fraud_score", fraudScore)
                     .property("fraud_status", status)
                     .property("eval_timestamp", Instant.now().toString())
-                    .property("details", details)
+                    .property("rule_name", details.ruleName())
+                    .property("detection_time", detectionTime.toString())
                     .iterate();
 
             if (props.isAutoFlagEnabled()) {

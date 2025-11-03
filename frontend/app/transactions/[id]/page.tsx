@@ -79,7 +79,7 @@ export default async function TransactionsPage({ params }: { params: Promise<{ i
               }} />
           <Stat
               title='Fraud Rules'
-              stat={txn.is_fraud ? txn.details!.length : 0}
+              stat={txn.is_fraud ? 1 : 0}
               icon='shield' />
         </div>
         <div className="grid gap-4 md:grid-cols-2">
