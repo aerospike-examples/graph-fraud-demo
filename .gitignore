@@ -43,7 +43,8 @@ backend/venv/
 .env.test.local
 .env.production.local
 /secrets
-
+/scripts/*
+/scripts/set_variables.sh
 # Next.js
 .next/
 out/
