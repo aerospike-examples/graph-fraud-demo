@@ -34,12 +34,10 @@ public class FraudService {
     private final FraudProperties props;
     private final GraphService graphService;
     private final AerospikeMetadataManager metadataManager;
-    private final RecentTransactions recentTransactions;
 
     public FraudService(PerformanceMonitor performanceMonitor,
                         List<Rule> fraudRulesList, FraudProperties props,
-                        GraphService graphService, AerospikeMetadataManager metadataManager,
-                        RecentTransactions recentTransactions) {
+                        GraphService graphService, AerospikeMetadataManager metadataManager) {
         this.graph = graphService;
         this.perf = performanceMonitor;
         Map<String, Rule> fraudRulesMap = new HashMap<String, Rule>();
@@ -52,7 +50,6 @@ public class FraudService {
         this.exec = Executors.newFixedThreadPool(props.getFraudWorkerPoolSize(), new NamedFactory("fraud"));
         this.graphService = graphService;
         this.metadataManager = metadataManager;
-        this.recentTransactions = recentTransactions;
     }
 
     public void shutdown() {
@@ -104,7 +101,6 @@ public class FraudService {
         }
         final TransactionSummary summary = new TransactionSummary(results, transactionInfo);
         storeFraudResults(graph.getMainClient(), transactionInfo.edgeId(), summary);
-        recentTransactions.add(transactionInfo.edgeId());
         perf.recordTransactionCompletedDetailed(summary);
     }
 

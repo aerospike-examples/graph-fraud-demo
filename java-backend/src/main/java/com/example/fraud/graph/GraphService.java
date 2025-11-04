@@ -393,6 +393,7 @@ public class GraphService {
                     .next();
             metadataManager.incrementCount(MetadataRecord.FRAUD, "amount", (long) amount);
             metadataManager.incrementCount(MetadataRecord.FRAUD, "total", 1L);
+            recentTransactions.add(edgeId);
 
             logger.debug("{} transaction created: {} from {} to {} amount {}",
                     genType, txnId, fromId, toId, amount);
