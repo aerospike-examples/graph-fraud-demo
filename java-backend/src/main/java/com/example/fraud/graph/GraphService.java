@@ -407,39 +407,7 @@ public class GraphService {
 
     public TransactionInfo createManualTransaction(String fromId, String toId, double amount,
                                                    TransactionType type, String genType, String location, Instant start) {
-            Map<String, Object> accountCheck = mainG.V(fromId, toId)
-                    .project("fromExists", "toExists")
-                    .by(__.V(fromId).count())
-                    .by(__.V(toId).count())
-                    .next();
-
-        if (accountCheck.get("fromExists").equals(0)){
-            throw new RuntimeException("from vertex in manual transaction not found");
-        }
-        if (accountCheck.get("toExists").equals(0)){
-            throw new RuntimeException("to vertex in manual transaction not found");
-        }
-        if (Objects.equals(fromId, toId)) {
-            throw new RuntimeException("Source and destination accounts cannot be the same");
-        }
-        String txnId = UUID.randomUUID().toString();
-        Object edgeId = mainG.V(fromId)
-                .addE("TRANSACTS")
-                .to(__.V(toId))
-                .property("txn_id", txnId)
-                .property("amount", Math.round(amount * 100.0) / 100.0)
-                .property("currency", "USD")
-                .property("type", type.getValue())
-                .property("method", "electronic_transfer")
-                .property("location", location)
-                .property("timestamp", Instant.now().toString())
-                .property("status", "completed")
-                .property("gen_type", genType)
-                .id()
-                .next();
-
-        return new TransactionInfo(true, edgeId, txnId, fromId, toId, amount,
-                new PerformanceInfo(start, Duration.between(start, Instant.now()), true));
+        return createTransaction(fromId, toId, amount, type, genType, location, start);
     }
 
 
