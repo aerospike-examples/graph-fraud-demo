@@ -71,7 +71,7 @@ const Transactions = ({ txns, accounts, name }: Props) => {
                         const isFraud = txn.fraud_score > 0
                         
                         return (
-                            <Card key={txn[1]} className={`p-4 ${isFraud ? 'border-red-200 bg-red-50' : ''}`}>
+                            <Card key={txn[1]} className={`p-4 ${isFraud ? 'border-red-200 bg-auto' : ''}`}>
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
@@ -97,7 +97,7 @@ const Transactions = ({ txns, accounts, name }: Props) => {
                                             )}
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                                    <div className="flex items-center gap-3 p-3 border-t pt-3 mt-3 rounded-lg">
                                         <div className="flex-1">
                                             <p className="text-sm font-medium text-gray-600">From</p>
                                             {direction === 'sent' ? (
