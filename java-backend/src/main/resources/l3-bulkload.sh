@@ -8,7 +8,7 @@ region=us-central1
 zone=us-central1-a
 instance_type=n2d-highmem-8
 num_workers=8
-project=firefly-aerospike
+project=<GCP_PROJECT>
 bulk_jar_uri="gs://fraud-demo/jar/bulkload-3.00.jar"
 properties_file_uri="gs://fraud-demo/config/fraud.properties"
 
