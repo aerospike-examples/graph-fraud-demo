@@ -21,7 +21,7 @@ public class ExampleRule3 extends Rule {
     public ExampleRule3(@Qualifier("fraudG") GraphTraversalSource g,
                         @Value("${rules.example-rule-3.name:Transactions with Users Associated with Flagged Devices}") String name,
                         @Value("${rules.example-rule-3.description:Detect threats through flagged device usage}") String description,
-                        @Value("#{'Transactions directed to users associated with fradulent devices,Multi-hop neighborhood analysis,Transaction history analysis'.split(',')}") List<String> keyIndicators,
+                        @Value("${rules.example-rule-3.key-descriptors:Transactions directed to users associated with fradulent devices,Multi-hop neighborhood analysis,Transaction history analysis}") List<String> keyIndicators,
                         @Value("${rules.example-rule-3.common-use-case:Immediate threat detection, known fraudster connections}") String commonUseCase,
                         @Value("${rules.example-rule-3.complexity:HIGH}") String complexity,
                         @Value("${rules.example-rule-3.enabled:true}") boolean enabled,

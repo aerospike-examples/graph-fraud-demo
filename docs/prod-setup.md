@@ -19,28 +19,20 @@ Docs reference
 
 ---
 
-# Spin up Aerospike nodes via aerolab
+# Spin up Aerospike nodes via Aerolab
 
-1. Install aerolab and login
+1. Install aerolab and login, configuring for GCP `https://github.com/aerospike/aerolab/blob/master/docs/direnv.md`
 
 ```bash
 aerolab version
 ```
 
-2. Create a 2-node Aerospike cluster
+2. Create a 2-node Aerospike cluster with Aerolab
 
+Configure the variables for cluster creation in **[this script](./scripts/set_variables.sh)**
+Then, create the Aerospike DB cluster using this script, which takes variables from the first:
 ```bash
-aerolab cluster create -n asdb -c 2 -e enterprise -s 8 -r 32 -o ubuntu22
-# open ports 3000-3002 and any exporter ports if needed
-aerolab cluster attach -n asdb -- bash -lc "asinfo -v build"  # sanity check
-```
-
-3. Configure namespace (SSD vs memory-mode) as per your performance targets. Use aerolab templates or copy a custom
-   `aerospike.conf`:
-
-```bash
-aerolab conf apply -n asdb -f ./conf/aerospike.conf
-aerolab cluster restart -n asdb
+./aerolab.sh
 ```
 
 ---
@@ -62,7 +54,7 @@ gcloud compute firewall-rules create allow-ags --allow tcp:8182,tcp:9090 \
   --target-tags=ags --direction=INGRESS
 ```
 
-3. Install Docker on both VMs
+3. Install Docker on both AGS VMs
 
 ```bash
 sudo apt-get update && sudo apt-get install -y docker.io
@@ -72,7 +64,11 @@ sudo usermod -aG docker $USER
 ---
 
 # Start AGS
-
+Make sure you set `<AEROSPIKE_NODE_IPS>` to your aerolab IPs like `10.128.0.3, 10.128.0.4`.
+If you don't know them, use 
+```bash
+   aerolab cluster list
+```
 ```bash
 sudo docker run -d --name asgraph \
   -p 8182:8182 \
@@ -82,12 +78,9 @@ sudo docker run -d --name asgraph \
   aerospike/aerospike-graph-service:latest
 ```
 
-If using multiple aerospike node IPs, seperate by comma with no spacing.
-
-Health check
-
+Check the logs to make sure it started correctly:
 ```bash
-curl -s http://<GRAPH_VM>:9090/healthcheck
+   docker logs ags --tail 150
 ```
 
 ---

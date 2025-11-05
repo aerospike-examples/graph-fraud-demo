@@ -67,7 +67,8 @@ Create/edit the service for the backend:
 nano /etc/systemd/system/demo-backend.service
 ```
 
-Inside of it, paste this service file, replacing <YOUR_WEBSITE_URL> with your actual website URL:
+Inside of it, paste this service file, replacing `<YOUR_WEBSITE_URL>` with your actual website URL, and `<JAR_NAME>` 
+  with the name of the backend jar that was created:
 
 ```service
 [Unit]
@@ -132,7 +133,8 @@ WantedBy=multi-user.target
 ```
 
 This should be the default caddy file, with `CAP_NET_ADMIN` added in `AmbientCapabilities`
-Now edit the caddy file to configure the reverse proxy:
+Now edit the caddy file to configure the reverse proxy, substituting `<WEBSITE_URL>` for your actual website URL, and 
+your `<MONITORING_URL>` if you are opting to use Prometheus/Grafana:
 
 ```caddyfile
 <WEBSITE_URL> {
@@ -164,6 +166,7 @@ Now you can redirect your DNS entry to the IP of your Client VM.
 Then enable and start your services!
 
 ```bash
+ sudo systemctl daemon-reload
  sudo systemctl enable demo-backend
  sudo systemctl enable demo-frontend
  sudo systemctl enable caddy

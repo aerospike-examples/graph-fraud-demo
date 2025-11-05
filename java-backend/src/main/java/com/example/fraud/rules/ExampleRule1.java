@@ -21,7 +21,7 @@ public class ExampleRule1 extends Rule {
     public ExampleRule1(@Qualifier("fraudG") GraphTraversalSource g,
                         @Value("${rules.example-rule-1.name:Transaction to Flagged Account}") String name,
                         @Value("${rules.example-rule-1.description:Immediate threat detection via 1-hop lookup}") String description,
-                        @Value("#{'Transaction directed to known flagged account,1-hop graph lookup for immediate detection,Real-time risk assessment'.split(',')}") List<String> keyIndicators,
+                        @Value("${rules.example-rule-1.key-descriptors:keyindicator 1,key indicator2,keyindicator3}") List<String> keyIndicators,
                         @Value("${rules.example-rule-1.common-use-case:Immediate threat detection, known fraudster connections}") String commonUseCase,
                         @Value("${rules.example-rule-1.complexity:LOW}") String complexity,
                         @Value("${rules.example-rule-1.enabled:true}") boolean enabled,

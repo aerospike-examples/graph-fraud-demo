@@ -25,7 +25,6 @@ export interface Transaction {
 	method?: string
 	location?: string
 	is_fraud?: boolean
-	fraud_type?: string
 	sender_id: string
 	receiver_id: string
     detection_time?: string

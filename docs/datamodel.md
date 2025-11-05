@@ -10,7 +10,6 @@ This document defines the vertices and edges used in a graph database for modeli
 
 - **Label:** `user`
 - **Properties:**
-    - `user_id` (string) - Unique identifier for the user
     - `name` (string) - Full name of the user
     - `email` (string) - Email address
     - `phone` (string) - Phone number (optional)
@@ -26,44 +25,31 @@ This document defines the vertices and edges used in a graph database for modeli
 
 - **Label:** `account`
 - **Properties:**
-    - `account_id` (string) - Unique identifier for the account
     - `type` (string) - Account type (e.g., "checking", "savings")
     - `balance` (float) - Current account balance
     - `status` (string) - Account status (default: "active")
     - `bank_name` (string) - Name of the bank (default: "Demo Bank")
     - `created_date` (datetime) - Date when account was created
-    - `fraudFlag` (boolean) - Whether account is flagged as fraudulent (optional)
-    - `flagReason` (string) - Reason for fraud flag (optional)
-    - `flagTimestamp` (datetime) - When account was flagged (optional)
+**NOTE** The following properties are only found if your application has `fraud.auto-flag-enabled=true`
+  - `fraud_flag` (boolean) - Whether account is flagged as fraudulent (optional)
+  - `flag_reason` (string) - Reason for fraud flag (optional)
+  - `flag_timestamp` (datetime) - When account was flagged (optional)
 
 ---
+{device=[fraud_flag, login_count, first_seen, os, last_login, browser, fingerprint, type],
 
-### 3. Transaction
+### 3. Device
 
-- **Label:** `transaction`
+- **Label:** `device`
 - **Properties:**
-    - `transaction_id` (string) - Unique identifier for the transaction
-    - `amount` (float) - Transaction amount
-    - `currency` (string) - Currency code (e.g., "INR")
-    - `timestamp` (datetime) - When the transaction occurred
-    - `location` (string) - Geographic location of the transaction
-    - `fraud_score` (float) - Fraud risk score for this transaction
-    - `type` (string) - Transaction type (e.g., "transfer", "payment", "deposit", "withdrawal")
-
-    - `status` (string) - Transaction status (e.g., "completed", "pending")
-    - `is_fraud` (boolean) - Whether this transaction is flagged as fraudulent
-    - `fraud_type` (string) - Type of fraud if detected (optional)
-    - `fraud_scenario` (string) - Fraud scenario classification (optional)
-
-**Note:** For transactions created during data seeding, additional properties may include:
-
-- `method` (string) - Payment method (default: "transfer")
-- `ip_address` (string) - IP address from which transaction was initiated
-- `location_city` (string) - City where transaction occurred
-- `location_country` (string) - Country where transaction occurred
-- `latitude` (float) - Geographic latitude
-- `longitude` (float) - Geographic longitude
-
+    - `login_count` (int) - Amount of times the user has logged in with this device
+    - `first_seen` (datetime) - First time the user logged in with this device
+    - `os` (string) - OS of the device used to log in
+    - `last_login` (datetime) - When the user last logged in
+    - `browser` (string) - Name of browser that they logged into this application on
+    - `type` (string) - Type of device used (e.g., "tablet", "phone")
+    - `fingerprint` (string) - Identifier for the users fingerprint
+    - `fraud_flag` (boolean) - Whether this device is flagged as fraudulent
 ---
 
 ## Edges
@@ -79,65 +65,44 @@ This document defines the vertices and edges used in a graph database for modeli
 
 ---
 
-### 2. TRANSFERS_TO (Transaction Level)
+### 2. Uses
 
-- **From:** `account`
-- **To:** `transaction`
-- **Properties:** None
-
-**Description:** Represents that an account initiated/sent a transaction. This edge connects the sender account to the
-transaction.
-
----
-
-### 3. TRANSFERS_FROM
-
-- **From:** `transaction`
-- **To:** `account`
-- **Properties:** None
-
-**Description:** Represents that a transaction transfers money to an account. This edge connects the transaction to the
-receiver account.
-
----
-
-### 4. TRANSFERS_TO (Account Level)
-
-- **From:** `account`
-- **To:** `account`
+- **From:** `user`
+- **To:** `device`
 - **Properties:**
-    - `transaction_id` (string) - Reference to the transaction
-    - `amount` (float) - Amount transferred
-    - `timestamp` (datetime) - When the transfer occurred
-    - `status` (string) - Transfer status
-    - `method` (string) - Transfer method
+  - `usage_count` (int) - Amount of times the User as used the device its linked to
+  - `last_used` (datetime) - Timestamp of when the user last used the device
+  - `first_used` (datetime) - Timestamp of when the user first used the device
 
-**Description:** Direct transfer relationship between accounts. Used for RT1 fraud detection to identify
-account-to-account transfer patterns.
+**Description:** Represents the ownership relationship between a user and their accounts.
 
 ---
 
-### 5. flagged_by
-
-- **From:** `transaction`
-- **To:** `FraudCheckResult`
-- **Properties:** None
-
-**Description:** Links a transaction to its fraud check result. Created when RT1 fraud detection identifies a
-transaction as suspicious.
-
-### 4. FraudCheckResult
-
-- **Label:** `FraudCheckResult`
+### 3. Transaction
+TRANSACTS=[eval_timestamp, detection_time, type, fraud_score, txn_id,
+is_fraud, currency, location, gen_type, status, timestamp]}.
+- **Label:** `TRANSACTS`
 - **Properties:**
-    - `fraud_score` (float) - Fraud risk score (0-100)
-    - `status` (string) - Status of fraud check ("review", "blocked", "cleared")
-    - `rule` (string) - Name of the fraud detection rule applied (e.g., "flaggedAccountsRule")
-    - `evaluation_timestamp` (datetime) - When the fraud check was performed
-    - `reason` (string) - Human-readable reason for the fraud flag
-    - `details` (string) - Additional details about the fraud check (JSON string)
+  - `txn_id` (string) - Unique identifier for the transaction
+  - `amount` (float) - Transaction amount
+  - `currency` (string) - Currency code (e.g., "INR")
+  - `eval_timestamp` (datetime) - When the transaction started evaluation for fraud
+  - `timestamp` (datetime) - When the transaction was created
+  - `location` (string) - Geographic location of the transaction
+  - `method` (string) - Payment method (default: "transfer")
+  - `gen_type` (string) - Generation Type, one of ("AUTO", "MANUAL")
+  - `type` (string) - Transaction type (e.g., "transfer", "payment", "deposit", "withdrawal")
+  - `status` (string) - Transaction status (e.g., "completed", "pending")
+
+**NOTE** The following properties will only appear if the transaction is deemed fraudulent by the Fraud runs:
+- `is_fraud` (boolean) - Whether this transaction is flagged as fraudulent
+- `fraud_score` (float) - Fraud risk score for this transaction
+- `rule_name` (string) - Name of the Fraud Rule that triggered the flag
+- `fraud_status` (string) - FradStatus Enum values, one of ("review), "blocked", "cleared")
+- `detection_time` (datetime) - When the transaction was detected as fraudulent
 
 ---
+
 
 ## Data Flow
 
@@ -145,8 +110,7 @@ transaction as suspicious.
 
 The transaction model uses a vertex-centric approach:
 
-1. **Sender Account** → **Transaction** (via `TRANSFERS_TO` edge)
-2. **Transaction** → **Receiver Account** (via `TRANSFERS_FROM` edge)
+1. **Sender Account** → **Transaction** → **Receiver Account**
 
 This allows for:
 

@@ -30,6 +30,7 @@ python3 ./scripts/generate_user_data_gcp.py \
   - Distributed Bulkload Data Seeding
   - User and transaction management
   - Fraud pattern detection algorithms
+  - Metadata management and tracking
 
 ### Frontend (Next.js + TailwindCSS)
 - **Framework**: Next.js 14 with App Router
@@ -39,7 +40,6 @@ python3 ./scripts/generate_user_data_gcp.py \
   - Real-time data visualization
   - User and transaction exploration
   - Fraud pattern analysis
-  - Interactive graph visualization (Phase 2)
 
 
 ## 🕵️ Fraud Detection System

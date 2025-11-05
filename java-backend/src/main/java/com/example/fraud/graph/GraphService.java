@@ -506,8 +506,8 @@ public class GraphService {
             GraphTraversalSource g = getMainClient();
                 g.V(accountId)
                         .property("fraud_flag", true)
-                        .property("flagReason", reason)
-                        .property("flagTimestamp", Instant.now().toString())
+                        .property("flag_reason", reason)
+                        .property("flag_timestamp", Instant.now().toString())
                         .iterate();
             metadataManager.incrementCount(MetadataRecord.ACCOUNTS, "flagged", 1);
             logger.info("Account {} flagged as fraudulent: {}", accountId, reason);

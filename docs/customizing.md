@@ -9,9 +9,9 @@ Architecture at a glance
 - `FraudService.submitFraudDetection(...)` executes all enabled `Rule`s for each transaction and persists consolidated
   outcomes.
 - `PerformanceMonitor` records transaction and per-rule performance for the Admin Performance UI.
-- `AerospikeMetadataManager` records metadata stats and writes/reads directly to the Aerospike DB.
-- Configuration is bound via Spring `@ConfigurationProperties` (e.g., `graph.*`, `generation.*`, `fraud.*`) and per-rule
-  `@Value` properties.
+- `AerospikeMetadataManager` records metadata stats and writes/reads directly to the Aerospike DB to optimize performance.
+- Configuration is bound via SpringBoot `@ConfigurationProperties`, `application.properties` (e.g., `graph.*`, 
+- `generation.*`, `fraud.*`), and per-rule `@Value` properties.
 
 # Custom Rules
 
@@ -89,13 +89,21 @@ Why include details on “no fraud”?
 - on clear results ensures the metrics remain stable, even if most traffic is clean.
 
 Expose per-rule configuration
-Add properties to `application.properties` (or env vars):
+Add properties to `application.properties`, or to the alternatives in the `@Value` annotations:
 
+Properties:
 ```properties
 rules.example-rule-x.name=My Rule
 rules.example-rule-x.description=Detects my pattern
 rules.example-rule-x.enabled=true
 rules.example-rule-x.run-async=false
+```
+@Value Annotations:
+```properties
+@Value("${rules.example-rule-x.name:Alternative Name}") String name,
+@Value("${rules.example-rule-x.description:Alternative Description") String description,
+@Value("#{'Key indicator A,Key indicator B'.split(',')}") List<String> keyIndicators,
+@Value("${rules.example-rule-x.common-use-case:Alternative Use Case}") String commonUseCase,
 ```
 
 Enable/disable rules at runtime
@@ -106,14 +114,14 @@ Enable/disable rules at runtime
 
 Persisting outcomes
 
-- `FraudService` writes `is_fraud`, `fraud_score`, `fraud_status`, `eval_timestamp`, and `details` onto the transaction
+- `FraudService` writes `is_fraud`, `fraud_score`, `fraud_status`, `eval_timestamp`, `rule_name`, and `details` onto the transaction
   edge for UI consumption. Prefer concise, structured details.
 
 Performance tips for rule traversals
 
-- Ensure indexes exist on properties used in `has(...)`, `order().by(...)`, and joins.
 - Minimize fan-out; dedup early; fetch only necessary properties.
 - Benchmark each rule individually with representative data.
+- Only start from a id (vertex g.V(id) or edge g.E(id))
 
 Global tuning knobs
 
@@ -146,7 +154,6 @@ a final variable), and call
 When you want to read one of the metadatas, simply call
 `metadataManager.readRecord(MetadataRecord.<TYPE>);`
 And it will return the Aerospike record specified as a `Map<String, Object>`, where you can extract each value.
-a
 
 ## Creating Custom Metadata Records
 
@@ -175,17 +182,17 @@ It should now look something like this:
 @Component("example")
 public class ExampleMetadata extends AerospikeMetadata {
 
-    protected ExampleMetadata(@Value("${metadata.exampleMetadataName:example}") String metadataName) {
+    protected ExampleMetadata(@Value("${metadata.exampleMetadataName:example}") String metadataName,
+                              @Value("${metadata.exampleMetadataParameter:20000L}") Long parameter,
+                              @Value("${metadata.exampleMetadataParameterModifier:0.3}") Double modifier) {
         super(metadataName);
         // Lets say you want to set a default based on something in your app
-        long parameter = 20000L;
-        // Set the adders for incrementation
         binToCount.put("exampleMetadata", new LongAdder());
         binToCount.put("exampleMetadata2", new LongAdder());
 
         // Set the defaults for loading when there is no record
-        Long defaultExampleMetadata = (long) (parameter * .2495);
-        Long defaultExampleMetadata2 = (long) (parameter * .1);
+        Long defaultExampleMetadata = (long) (parameter * modifier);
+        Long defaultExampleMetadata2 = (long) (parameter * modifier * 2);
         binDefaults.put("exampleMetadata", defaultExampleMetadata);
         binDefaults.put("exampleMetadata2", defaultExampleMetadata2);
 
