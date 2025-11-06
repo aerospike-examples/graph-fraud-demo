@@ -542,6 +542,10 @@ public class GraphService {
         mainG.V().drop().iterate();
         metadataManager.clear();
         metadataManager.writeDefaultsIfNone();
+        if (props.verticesPath() == null || props.edgesPath() == null) {
+            logger.error("Vertices path and edges path are not set, make sure to set them if you want to bulkload through gcp");
+            return;
+        }
         String verticesPath = props.verticesPath();
         String edgesPath = props.edgesPath();
 
@@ -552,6 +556,41 @@ public class GraphService {
                 .with("aerospike.graphloader.edges", edgesPath)
                 .with("aerospike.graphloader.gcs-keyfile", "/opt/secrets/gcs-keyfile.json")
                 .with("incremental_load", false)
+                .next();
+
+        logger.info("Bulk load status:");
+        while (true) {
+            Map<String, Object> status = getBulkloadStatus();
+            logger.info("{}", status);
+
+            if (Objects.equals(status.get("complete"), true)) {
+                logger.info("Bulk load data seeding completed!");
+                break;
+            }
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                logger.warn("Bulk load wait interrupted", e.getMessage());
+            }
+        }
+    }
+
+    public void seedLocalData() {
+        mainG.V().drop().iterate();
+        metadataManager.clear();
+        metadataManager.writeDefaultsIfNone();
+        if (props.localVerticesPath() == null || props.localEdgesPath() == null) {
+            logger.error("Local vertices path and edges path are not set, make sure to set them if you want to bulkload locally");
+            return;
+        }
+        String verticesPath = props.localVerticesPath();
+        String edgesPath = props.localEdgesPath();
+
+        logger.info("Local Bulk load Starting");
+        mainG.with("evaluationTimeout", 120000)
+                .call("aerospike.graphloader.admin.bulk-load.load")
+                .with("aerospike.graphloader.vertices", verticesPath)
+                .with("aerospike.graphloader.edges", edgesPath)
                 .next();
 
         logger.info("Bulk load status:");

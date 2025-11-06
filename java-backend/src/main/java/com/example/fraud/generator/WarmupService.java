@@ -39,7 +39,7 @@ public class WarmupService {
         this.fraudService = fraudService;
     }
 
-    public void runWithCleanup() {
+    public void runWarmup() {
         if (!props.isEnabled()) {
             logger.warn("Warmup is disabled");
             return;

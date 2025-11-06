@@ -130,6 +130,12 @@ public class GraphController {
         return Boolean.TRUE;
     }
 
+    @PostMapping("/bulk-load/local")
+    public Object bulkLoadCsvLocal() {
+        graph.seedLocalData();
+        return Boolean.TRUE;
+    }
+
     @DeleteMapping("/accounts/{account_id}/flag")
     public ResponseEntity<?> unflagAccount(@PathVariable("account_id") String accountId) {
         boolean ok = graph.unflagAccount(accountId);

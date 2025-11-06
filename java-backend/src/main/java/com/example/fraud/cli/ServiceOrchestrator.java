@@ -29,7 +29,7 @@ public class ServiceOrchestrator {
     }
 
     public void runWarmupFlow() {
-        warmupService.runWithCleanup();
+        warmupService.runWarmup();
     }
 
     public void runShutdownFLow() {

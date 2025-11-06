@@ -15,13 +15,13 @@ Docs reference
 
 - AGS docs: `https://docs.aerospike.com/enterprise/graph`
 - Aerospike server: `https://docs.aerospike.com/server`
-- aerolab: `https://github.com/aerospike/aerolab`
+- Aerolab: `https://github.com/aerospike/aerolab`
 
 ---
 
 # Spin up Aerospike nodes via Aerolab
 
-1. Install aerolab and login, configuring for GCP `https://github.com/aerospike/aerolab/blob/master/docs/direnv.md`
+1. Install aerolab and login, configuring for GCP **[with this guide](https://github.com/aerospike/aerolab/blob/master/docs/gcp-setup.md)**
 
 ```bash
 aerolab version
@@ -29,7 +29,7 @@ aerolab version
 
 2. Create a 2-node Aerospike cluster with Aerolab
 
-Configure the variables for cluster creation in **[this script](./scripts/set_variables.sh)**
+Configure the variables for cluster creation in **[this script](../scripts/deployment/set_variables.sh)**
 Then, create the Aerospike DB cluster using this script, which takes variables from the first:
 ```bash
 ./aerolab.sh
@@ -40,10 +40,12 @@ Then, create the Aerospike DB cluster using this script, which takes variables f
 # Spin up Graph VMs
 
 1. Create 1 or more AGS VM's and a Client VM (Next.js + backend), pick machine types to match goals
+Since AGS is stateless, each instance of AGS does not need to know each other, so you can repeat these steps for each
+instance you would like to create.
 
 ```bash
-gcloud compute instances create graph-vm \
-  --machine-type=n2-highcpu-8 --image-family=debian-12 --image-project=debian-cloud \
+gcloud compute instances create fraud-demo-graph\
+  --machine-type=<GCP_INSTANCE_TYPE> --image-family=debian-12 --image-project=debian-cloud \
   --scopes=storage-ro,compute-rw --tags=ags,http-server,https-server
 ```
 
@@ -64,11 +66,13 @@ sudo usermod -aG docker $USER
 ---
 
 # Start AGS
-Make sure you set `<AEROSPIKE_NODE_IPS>` to your aerolab IPs like `10.128.0.3, 10.128.0.4`.
+Make sure you set `<AEROSPIKE_NODE_IPS>` to your aerolab IPs, like `10.128.0.3, 10.128.0.4`.
 If you don't know them, use 
 ```bash
    aerolab cluster list
 ```
+
+Now start AGS on your graph VM
 ```bash
 sudo docker run -d --name asgraph \
   -p 8182:8182 \
@@ -91,7 +95,7 @@ Create a VM for the client:
 
 ```bash
 gcloud compute instances create client-vm \
-  --machine-type=n2-standard-8 --image-family=debian-12 --image-project=debian-cloud \
+  --machine-type=<GCP_INSTANCE_TYPE> --image-family=debian-12 --image-project=debian-cloud \
   --scopes=storage-ro,compute-rw --tags=http-server,https-server
 ```
 
@@ -138,19 +142,38 @@ nano java-backend/src/main/resources/application.properties
 gcloud storage buckets create gs://<YOUR_BUCKET> --location=<REGION>
 ```
 
-2. Build/upload artifacts to GCP bucket
-
-- Latest Bulkloader JAR (`https://aerospike.com/download/graph/loader/`)
-- Bulkloader CSV/JSON data (`data/graph_csv` and `data/users*.json` if needed)
-- AGS config (if customized)
-
+2. Generate data into your GCP bucket:
+In your client VM, in the cloned repo, make a python venv and install the requirements
 ```bash
-gsutil -m cp -r data/graph_csv gs://<YOUR_BUCKET>/bulkload/
-gsutil cp bulk-load.jar gs://<YOUR_BUCKET>/artifacts/
-gsutil cp docs/*.properties gs://<YOUR_BUCKET>/config/ || true
+  python -m venv venv 
+  .\venv\Scripts\activate
+  pip install -r ./scripts/requirements.txt
+```
+This script will generate the data needed and transfer it into your GCP bucket.
+If you want to keep it locally as well, remove the `--gcs-delete-local` from the command:
+
+**NOTE** Your current user must be authorized to place files in the GCP bucket
+```bash
+python3 ./scripts/generate_user_data_gcp.py \
+  --users 20000 --region american \
+  --output ./data/graph_csv \
+  --workers 16 \
+  --gcs-bucket <YOUR_BUCKET> \
+  --gcs-prefix demo-data \
+  --gcs-delete-local
 ```
 
-3. Make bucket readable by your deployment service account or VM service accounts
+3. Build/upload artifacts to GCP bucket
+
+- Latest Bulkloader JAR (`https://aerospike.com/download/graph/loader/`)
+- Customize the config in **[this file](./../java-backend/src/main/resources/static/config_fraud.properties)**
+
+```bash
+gsutil cp bulk-load.jar gs://<YOUR_BUCKET>/artifacts/
+gsutil cp java-backend/src/main/resources/static/config_fraud.properties gs://<YOUR_BUCKET>/config/
+```
+
+4. Make bucket readable by your deployment service account or VM service accounts
 
 ```bash
 gsutil iam ch serviceAccount:<SA>@<PROJECT>.iam.gserviceaccount.com:objectViewer gs://<YOUR_BUCKET>
@@ -158,7 +181,7 @@ gsutil iam ch serviceAccount:<SA>@<PROJECT>.iam.gserviceaccount.com:objectViewer
 
 ## Configure bulkload script with your GCP data
 
-Set the following variables in `java-backend/src/main/resources/l3-bulkload.sh`:
+Set the following variables in `java-backend/src/main/resources/distributed-bulkload.sh`:
 
 ```bash
 dataproc_name="<Dataproc-cluster-name>"
@@ -168,15 +191,19 @@ instance_type=n2d-highmem-8
 num_workers=8
 project=<Your-GCP-Project-Name>
 bulk_jar_uri="gs://<Your-GCP-Bucket>/<path-to-bulkload-jar>"
+properties_file_uri="gs://<Your-GCP-Bucket>/<path-to-properties-file>"
 ```
 
 Then invoke the script to kick off bulk load.
+This will create a dataproc cluster in your GCP project, alongside workers to efficiently load massive quantities
+of data into AGS.
+**NOTE** Make sure after loading has completed successfully to destroy the dataproc cluster to save resources.
 
 ---
 
 # Testing / Running
 
-If you want a quick way to test the backend, start the CLI with
+If you want a quick way to test the backend quickly, start the CLI with
 
 ```bash
 cd java-backend
@@ -185,7 +212,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=cli
 
 _Useful commands_
 
-- stats: check indexes and counts
+- txns: returns stats on transactions
 - start #: Starts generator at given amount
 - stop: Stops the generator
 
@@ -196,55 +223,4 @@ cd ../frontend
 npm run dev
 ```
 
-If you would like to deploy this, refer to the `deployment.md` file in the docs.
-
-# Connect Gremlin Console to your AGS VM
-
-Use the Apache TinkerPop Gremlin Console to run ad‑hoc traversals against your AGS.
-
-1. Install Gremlin Console on your workstation
-
-```bash
-curl -LO https://archive.apache.org/dist/tinkerpop/3.6.4/apache-tinkerpop-gremlin-console-3.6.4-bin.zip
-unzip apache-tinkerpop-gremlin-console-3.6.4-bin.zip
-cd apache-tinkerpop-gremlin-console-3.6.4
-```
-
-2. Create a remote configuration YAML pointing to your AGS external IP
-   Create `conf/graph-remote.yaml` with the following contents (adjust IP/port as needed):
-
-```yaml
-hosts: [ "<AGS_EXTERNAL_IP>" ]
-port: 8182
-serializer:
-  {
-    className: org.apache.tinkerpop.gremlin.util.serializer.GraphBinaryMessageSerializerV1,
-    config: { ioRegistries: [ ] },
-  }
-connectionPool:
-  {
-    enableSsl: false,
-    maxInProcessPerConnection: 64,
-    maxSimultaneousUsagePerConnection: 64,
-    minConnectionPoolSize: 8,
-    maxConnectionPoolSize: 64,
-  }
-channelizer: org.apache.tinkerpop.gremlin.server.channel.WsAndHttpChannelizer
-```
-
-Notes:
-
-- For multiple AGS instances, list all IPs: `hosts: [ "10.0.0.10", "10.0.0.11" ]` (client round‑robins).
-- If AGS is fronted by TLS (HTTPS/WSS), set `enableSsl: true` and ensure certificates are trusted.
-
-3. Connect and run traversals
-
-```bash
-./bin/gremlin.sh
-gremlin> :remote connect tinkerpop.server conf/graph-remote.yaml
-gremlin> :remote console
-gremlin> g.V().limit(5).valueMap(true)
-```
-
-If you maintain separate endpoints for admin and main graphs, create additional YAML files (e.g.,
-`conf/graph-admin.yaml`) and connect accordingly.
+If you would like to deploy this, refer to the [deployment docs file](./deployment.md)

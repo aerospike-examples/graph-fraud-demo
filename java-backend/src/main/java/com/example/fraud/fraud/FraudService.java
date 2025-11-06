@@ -119,8 +119,6 @@ public class FraudService {
         if (fraud) {
             metadataManager.incrementCount(MetadataRecord.FRAUD, status.getValue(), 1);
         }
-
-
     }
 
     private FraudCheckStatus storeFraudResult(GraphTraversalSource g, Object edgeId, FraudResult check) {

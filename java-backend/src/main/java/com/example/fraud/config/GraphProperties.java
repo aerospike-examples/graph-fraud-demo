@@ -12,5 +12,7 @@ public record GraphProperties(@Positive @NotNull Integer mainConnectionPoolSize,
                               @NotNull String gremlinHosts,
                               @NotNull Integer gremlinPort,
                               @NotNull String verticesPath,
-                              @NotNull String edgesPath) {
+                              @NotNull String edgesPath,
+                              String localVerticesPath,
+                              String localEdgesPath) {
 }
