@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 const DocsPage = () => {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  const [height, setHeight] = useState("100vh");
+  const [heightPx, setHeightPx] = useState(800);
 
   useEffect(() => {
     const iframe = frameRef.current;
@@ -14,10 +14,10 @@ const DocsPage = () => {
         const doc = iframe.contentWindow?.document;
         const h =
           doc?.documentElement?.scrollHeight || doc?.body?.scrollHeight || 0;
-        if (h && h > 400) setHeight(`${h}px`);
-        else setHeight("100vh");
+        if (h && h > 400) setHeightPx(h);
+        else setHeightPx(800);
       } catch (e) {
-        setHeight("100vh");
+        setHeightPx(800);
       }
     };
     iframe.addEventListener("load", onLoad);
@@ -27,8 +27,8 @@ const DocsPage = () => {
   return (
     <iframe
       src="/swagger-ui/index.html"
-      className="iframe"
-      style={{ width: "100%", height }}
+      className="w-full"
+      height={heightPx}
       ref={frameRef}
     />
   );

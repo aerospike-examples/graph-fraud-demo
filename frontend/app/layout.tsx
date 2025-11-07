@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import Navbar from '@/components/Navbar'
 import { Toaster } from "@/components/ui/sonner"
+import { headers } from "next/headers"
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -11,16 +12,17 @@ export const metadata: Metadata = {
   description: 'Real-time fraud detection using Aerospike Graph',
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   	children,
 }: {
   	children: React.ReactNode
 }) {
+    const nonce = (await headers()).get("x-nonce") ?? undefined;
   	return (
     	<html lang="en" suppressHydrationWarning>
       		<body className={inter.className}>
         		<div className="min-h-screen bg-background flex flex-col">
-          			<Navbar />
+          			<Navbar nonce={nonce}/>
 					<main className="container relative mx-auto px-4 py-8 flex flex-col grow">
 						{children}
 					</main>

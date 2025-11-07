@@ -150,8 +150,7 @@ const Manual = () => {
           <Button
             type="submit"
             disabled={loading || !fromAcct || !toAcct || !amount}
-            className="w-full"
-            style={{ marginTop: "auto" }}
+            className="w-full mt-auto"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 mr-2 animate-spin" />

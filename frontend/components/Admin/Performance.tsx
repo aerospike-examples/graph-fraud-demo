@@ -316,6 +316,16 @@ export default function Performance() {
 
     const methods = ["rt1", "rt2", "rt3"] as const;
     const colors = { rt1: "#3b82f6", rt2: "#10b981", rt3: "#8b5cf6" };
+    const textColor = {
+      rt1: "text-[#3b82f6]",
+      rt2: "text-[#10b981]",
+      rt3: "text-[#8b5cf6]",
+    } as const;
+    const bgColor = {
+      rt1: "bg-[#3b82f6]",
+      rt2: "bg-[#10b981]",
+      rt3: "bg-[#8b5cf6]",
+    } as const;
     const methodNames = { rt1: "RT1", rt2: "RT2", rt3: "RT3" };
 
     // Get all execution times across all methods for consistent scaling
@@ -353,7 +363,6 @@ export default function Performance() {
 
     // Simple, reliable scaling - use the actual data range with proper padding
     const globalMaxTime = Math.max(...allExecutionTimes);
-    const globalMinTime = Math.min(...allExecutionTimes);
 
     // Chart scaling: Start from 0, go to max + 10%
     const chartMinTime = 0;
@@ -363,7 +372,6 @@ export default function Performance() {
     // Maximum number of points to show
     const maxPoints = 100;
     const chartHeight = 160;
-    const chartWidth = "auto"; // Will be calculated dynamically
 
     // Create SVG path for each method
     const createLinePath = (data: TimelineData[], width: number) => {
@@ -404,8 +412,7 @@ export default function Performance() {
                     <div
                       className={`w-2 h-2 rounded-full ${
                         hasData ? "" : "opacity-30"
-                      }`}
-                      style={{ backgroundColor: colors[method] }}
+                      } ${bgColor[method]}`}
                     />
                     <span
                       className={`text-xs font-medium ${
@@ -429,33 +436,18 @@ export default function Performance() {
           </div>
 
           {/* Full-width Chart Area */}
-          <div
-            className="relative w-full"
-            style={{ height: `${chartHeight + 40}px` }}
-          >
+          <div className="relative w-full h-[200px]">
             {/* Chart container with responsive width */}
             <div className="absolute inset-0 pl-12 pr-4 py-3">
               {/* Y-axis labels */}
-              <div
-                className="absolute left-1 top-3 h-full flex flex-col justify-between text-xs text-gray-500"
-                style={{ height: `${chartHeight}px` }}
-              >
-                <span
-                  className="bg-white/80 px-1 rounded text-right"
-                  style={{ transform: "translateY(-50%)" }}
-                >
+              <div className="absolute left-1 top-3 flex flex-col justify-between text-xs text-gray-500 h-[160px]">
+                <span className="bg-white/80 px-1 rounded text-right -translate-y-1/2 transform">
                   {chartMaxTime.toFixed(0)}ms
                 </span>
-                <span
-                  className="bg-white/80 px-1 rounded text-right"
-                  style={{ transform: "translateY(-50%)" }}
-                >
+                <span className="bg-white/80 px-1 rounded text-right -translate-y-1/2 transform">
                   {((chartMaxTime + chartMinTime) / 2).toFixed(0)}ms
                 </span>
-                <span
-                  className="bg-white/80 px-1 rounded text-right"
-                  style={{ transform: "translateY(-50%)" }}
-                >
+                <span className="bg-white/80 px-1 rounded text-right -translate-y-1/2 transform">
                   {chartMinTime.toFixed(0)}ms
                 </span>
               </div>
@@ -463,18 +455,13 @@ export default function Performance() {
               {/* Responsive chart area */}
               <div className="ml-10 mr-2 h-full relative">
                 {/* Grid and chart container */}
-                <div
-                  className="w-full h-full relative"
-                  style={{ height: `${chartHeight}px`, marginTop: "12px" }}
-                >
+                <div className="w-full h-full relative h-[160px] mt-3">
                   {/* Horizontal grid lines */}
-                  {[0, 0.25, 0.5, 0.75, 1].map((ratio, index) => (
-                    <div
-                      key={`h-${index}`}
-                      className="absolute w-full border-t border-gray-100"
-                      style={{ top: `${ratio * chartHeight}px` }}
-                    />
-                  ))}
+                  <div className="absolute w-full border-t border-gray-100 top-0" />
+                  <div className="absolute w-full border-t border-gray-100 top-1/4" />
+                  <div className="absolute w-full border-t border-gray-100 top-1/2" />
+                  <div className="absolute w-full border-t border-gray-100 top-3/4" />
+                  <div className="absolute w-full border-t border-gray-100 bottom-0" />
 
                   {/* SVG Chart that fills available width */}
                   <svg
@@ -502,7 +489,7 @@ export default function Performance() {
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             className="drop-shadow-sm"
-                            style={{ vectorEffect: "non-scaling-stroke" }}
+                            vectorEffect="non-scaling-stroke"
                           />
                           {/* Data points - only show recent ones */}
                           {data
@@ -530,7 +517,7 @@ export default function Performance() {
                                   stroke="white"
                                   strokeWidth="1"
                                   className="cursor-help hover:r-3 transition-all duration-200"
-                                  style={{ vectorEffect: "non-scaling-stroke" }}
+                                  vectorEffect="non-scaling-stroke"
                                 >
                                   <title>
                                     {`${
@@ -587,15 +574,11 @@ export default function Performance() {
                 return (
                   <div key={method} className="text-center">
                     <div
-                      className="text-xs font-medium mb-1"
-                      style={{ color: colors[method] }}
+                      className={`text-xs font-medium mb-1 ${textColor[method]}`}
                     >
                       {methodNames[method]}
                     </div>
-                    <div
-                      className="text-lg font-bold"
-                      style={{ color: colors[method] }}
-                    >
+                    <div className={`text-lg font-bold ${textColor[method]}`}>
                       {avgTime.toFixed(1)}ms
                     </div>
                     <div className="text-xs text-muted-foreground">

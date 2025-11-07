@@ -22,7 +22,7 @@ import TableData from "./TableData";
 export interface Option {
   name: string;
   item: string;
-  width?: string;
+  widthClass?: string;
   sortable?: boolean;
   defaultSort?: boolean;
   defaultOrder?: "asc" | "desc";
@@ -200,13 +200,14 @@ const Results = ({
         <table className="w-full grow table-fixed">
           <thead>
             <tr className="border-b">
-              {options.map(({ name, item, sortable, width }) => (
+              {options.map(({ name, item, sortable, widthClass }) => (
                 <th
                   key={item}
-                  className={`text-left p-3 font-medium ${
-                    sortable ? "cursor-pointer hover:bg-muted/50" : ""
-                  }`}
-                  {...(width ? { style: { width } } : {})}
+                  className={clsx(
+                    "text-left p-3 font-medium",
+                    sortable && "cursor-pointer hover:bg-muted/50",
+                    widthClass
+                  )}
                   {...(sortable ? { onClick: () => handleSort(item) } : {})}
                 >
                   {name +

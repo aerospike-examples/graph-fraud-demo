@@ -17,7 +17,7 @@ const options: Option[] = [
   {
     name: "Transaction ID",
     item: "id",
-    width: "250px",
+    widthClass: "w-[250px]",
     label: {
       size: "sm",
       text: "txn_id",
@@ -27,7 +27,7 @@ const options: Option[] = [
   {
     name: "Sender",
     item: "sender",
-    width: "100px",
+    widthClass: "w-[100px]",
     label: {
       size: "sm",
       text: "sender",
@@ -37,7 +37,7 @@ const options: Option[] = [
   {
     name: "Receiver",
     item: "receiver",
-    width: "100px",
+    widthClass: "w-[100px]",
     label: {
       size: "sm",
       text: "receiver",
@@ -47,7 +47,7 @@ const options: Option[] = [
   {
     name: "Amount",
     item: "amount",
-    width: "125px",
+    widthClass: "w-[125px]",
     type: "currency",
     sortable: true,
     label: {
@@ -57,7 +57,7 @@ const options: Option[] = [
   {
     name: "Risk Score",
     item: "fraud_score",
-    width: "125px",
+    widthClass: "w-[125px]",
     type: "risk",
     sortable: true,
     label: {
@@ -70,7 +70,7 @@ const options: Option[] = [
     name: "Date",
     item: "timestamp",
     type: "datetime",
-    width: "225px",
+    widthClass: "w-[225px]",
     label: {
       size: "sm",
       text: "timestamp",
@@ -83,7 +83,7 @@ const options: Option[] = [
   {
     name: "Location",
     item: "location",
-    width: "225px",
+    widthClass: "w-[225px]",
     label: {
       size: "sm",
       text: "location",
@@ -93,7 +93,7 @@ const options: Option[] = [
   {
     name: "Status",
     item: "fraud_status",
-    width: "125px",
+    widthClass: "w-[125px]",
     type: "fraud",
     label: {
       badge: {

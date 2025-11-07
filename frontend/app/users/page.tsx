@@ -9,7 +9,7 @@ const options: Option[] = [
   {
     name: "Name",
     item: "name",
-    width: "275px",
+    widthClass: "w-[275px]",
     sortable: true,
     defaultSort: true,
     label: {
@@ -21,7 +21,7 @@ const options: Option[] = [
   {
     name: "ID",
     item: "id",
-    width: "75px",
+    widthClass: "w-[75px]",
     label: {
       subtitle: "id",
     },
@@ -29,7 +29,7 @@ const options: Option[] = [
   {
     name: "Email",
     item: "email",
-    width: "300px",
+    widthClass: "w-[300px]",
     label: {
       size: "sm",
       text: "email",
@@ -40,7 +40,7 @@ const options: Option[] = [
   {
     name: "Location",
     item: "location",
-    width: "175px",
+    widthClass: "w-[175px]",
     label: {
       size: "sm",
       text: "location",
@@ -50,7 +50,7 @@ const options: Option[] = [
   {
     name: "Age",
     item: "age",
-    width: "100px",
+    widthClass: "w-[100px]",
     label: {
       size: "sm",
       text: "age",
@@ -59,7 +59,7 @@ const options: Option[] = [
   {
     name: "Risk Score",
     item: "risk_score",
-    width: "150px",
+    widthClass: "w-[150px]",
     type: "risk",
     sortable: true,
     label: {
@@ -72,7 +72,7 @@ const options: Option[] = [
     name: "Signup Date",
     item: "signup_date",
     type: "date",
-    width: "200px",
+    widthClass: "w-[200px]",
     sortable: true,
     label: {
       size: "sm",
