@@ -17,18 +17,19 @@ export default async function RootLayout({
 }: {
   	children: React.ReactNode
 }) {
-    const nonce = (await headers()).get("x-nonce") ?? undefined;
-  	return (
-    	<html lang="en" suppressHydrationWarning>
-      		<body className={inter.className}>
-        		<div className="min-h-screen bg-background flex flex-col">
-          			<Navbar nonce={nonce}/>
-					<main className="container relative mx-auto px-4 py-8 flex flex-col grow">
-						{children}
-					</main>
-				</div>
-				<Toaster richColors />
-      		</body>
-    	</html>
-  	)
-} 
+  const headersList = await headers();
+  const nonce = headersList.get("x-csp-nonce") ?? undefined;
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body className={inter.className}>
+        <div className="min-h-screen bg-background flex flex-col">
+          <Navbar nonce={nonce} />
+          <main className="container relative mx-auto px-4 py-8 flex flex-col grow">
+            {children}
+          </main>
+        </div>
+        <Toaster richColors />
+      </body>
+    </html>
+  );
+}
