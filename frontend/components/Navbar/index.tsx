@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { Activity } from 'lucide-react'
 import { ThemeProvider } from 'next-themes'
 import clsx from 'clsx'
+import { useNonce } from '../NonceProvider'
 
 const navigation = [
   // { name: 'Dashboard', href: '/' },
@@ -17,8 +18,9 @@ const navigation = [
   { name: 'API Docs', href: '/docs' },
 ]
 
-export default function Navbar({ nonce }: { nonce?: string }) {
+export default function Navbar({ children }: { children?: React.ReactNode }) {
           const pathname = usePathname();
+	  const nonce = useNonce();
           return (
             <ThemeProvider attribute="data-theme" enableSystem nonce={nonce}>
       		<nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -52,6 +54,7 @@ export default function Navbar({ nonce }: { nonce?: string }) {
           			</div>
         		</div>
       		</nav>
+			{children}
     	</ThemeProvider>
   	)
 } 

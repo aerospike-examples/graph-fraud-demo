@@ -3,7 +3,6 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import Navbar from '@/components/Navbar'
 import { Toaster } from "@/components/ui/sonner"
-import { headers } from "next/headers"
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -12,23 +11,22 @@ export const metadata: Metadata = {
   description: 'Real-time fraud detection using Aerospike Graph',
 }
 
-export default async function RootLayout({
+export default function RootLayout({
   	children,
 }: {
   	children: React.ReactNode
 }) {
-  const headersList = await headers();
-  const nonce = headersList.get("x-csp-nonce") ?? undefined;
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <div className="min-h-screen bg-background flex flex-col">
-          <Navbar nonce={nonce} />
-          <main className="container relative mx-auto px-4 py-8 flex flex-col grow">
-            {children}
-          </main>
-        </div>
-        <Toaster richColors />
+        <Navbar>
+          <div className="min-h-screen bg-background flex flex-col">
+            <main className="container relative mx-auto px-4 py-8 flex flex-col grow">
+              {children}
+            </main>
+          </div>
+          <Toaster richColors />
+        </Navbar>
       </body>
     </html>
   );

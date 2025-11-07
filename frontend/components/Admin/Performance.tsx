@@ -68,7 +68,9 @@ export default function Performance() {
       setError(null);
 
       const statsResponse = await fetch(
-        `/api/performance/stats?time_window=${timeWindow}`
+        `/api/performance/stats?time_window=${timeWindow}`, {
+		cache: "no-store"
+	  }
       );
 
       if (!statsResponse.ok) {

@@ -31,7 +31,9 @@ const Generation = ({ isGenerating, setIsGenerating }: Props) => {
   const pollingRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   const getGenerationStats = async (): Promise<GenerationStats> => {
-    const response = await fetch("/api/generate/status");
+    const response = await fetch("/api/generate/status", {
+	  cache: "no-store"
+	});
     const status = (await response.json()) as GenerationStats;
     return status;
   };
