@@ -12,21 +12,18 @@ services:
     ports:
       - "3000-3002:3000-3002"
   aerospike-graph-service:
-    image: aerospike/aerospike-graph-service:3.0.0
+    image: ghcr.io/citrusleaf/firefly:3.1.0-rc2
     container_name: asgraph-service
     depends_on:
       aerospike-db:
         condition: service_healthy
-      zipkin:
-        condition: service_healthy
     volumes:
-      - ./data:/data
+      -  ./data:/opt/data
+      -  ./secrets:/opt/secrets/
     environment:
       - aerospike.client.namespace=test
       - aerospike.client.host=aerospike-db
       - aerospike.graph.index.vertex.label.enabled=true
-      - aerospike.graph.query-tracing.threshold-ms=5
-      - aerospike.graph.query-tracing.opentelemetry-host=zipkin
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/healthcheck"]
       interval: 5s
@@ -37,56 +34,6 @@ services:
     ports:
       - "8182:8182"
       - "9090:9090"
-  zipkin:
-    image: openzipkin/zipkin
-    container_name: asgraph-zipkin
-    networks:
-      - asgraph_net
-    ports:
-      - "9411:9411"
-  backend:
-    build:
-      context: .
-      dockerfile: backend.Dockerfile
-    container_name: "asgraph-backend"
-    depends_on:
-      aerospike-db:
-        condition: service_healthy
-      aerospike-graph-service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://0.0.0.0:4000/health"]
-      interval: 5s
-      timeout: 10s
-      retries: 4
-    networks:
-      - asgraph_net
-    ports:
-      - "4000:4000"
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend.Dockerfile
-    container_name: "asgraph-frontend"
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - asgraph_net
-    ports:
-      - "8080:8080"
-  generator:
-    build:
-      context: .
-      dockerfile: generator.Dockerfile
-    container_name: "asgraph-generator"
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - asgraph_net
-    ports:
-      - "4001:4001"
 networks:
   asgraph_net:
     name: asgraph_net
