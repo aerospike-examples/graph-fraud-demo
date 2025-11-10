@@ -1,8 +1,13 @@
 package com.example.fraud.fraud;
 
-
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
-// TODO: Rename TransactionSummary, should also take in TransactionInfo.
-public record TransactionSummary(List<FraudResult> fraudOutcomes, TransactionInfo transactionInfo) {
+public record TransactionSummary(
+        @Schema(description = "List of fraud check results from all executed rules")
+        List<FraudResult> fraudOutcomes,
+        
+        @Schema(description = "Transaction creation information and metadata")
+        TransactionInfo transactionInfo
+) {
 }

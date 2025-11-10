@@ -82,4 +82,35 @@
   .progress::-moz-progress-bar {
     background-color: hsl(var(--primary));
   }
+
+  .swagger-ui,
+  .swagger-ui h1,
+  .swagger-ui h2,
+  .swagger-ui h3,
+  .swagger-ui h4,
+  .swagger-ui h5,
+  .swagger-ui h6,
+  .swagger-ui .info .title,
+  .swagger-ui .info .title small,
+  .swagger-ui .info .base-url,
+  .swagger-ui .opblock .opblock-summary-description,
+  .swagger-ui .opblock-description-wrapper p,
+  .swagger-ui .parameter__name,
+  .swagger-ui .parameter__type,
+  .swagger-ui .parameter__deprecated,
+  .swagger-ui .parameter__in,
+  .swagger-ui .response-col_status,
+  .swagger-ui .response-col_description,
+  .swagger-ui table thead tr th,
+  .swagger-ui table tbody tr td,
+  .swagger-ui .model-title,
+  .swagger-ui .prop-type,
+  .swagger-ui .prop-format,
+  .swagger-ui section.models h4,
+  .swagger-ui .model .property.primitive,
+  .swagger-ui .renderedMarkdown p,
+  .swagger-ui .renderedMarkdown code,
+  .swagger-ui .opblock-tag {
+    color: white !important;
+  }
 }

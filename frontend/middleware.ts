@@ -8,13 +8,9 @@ function b64url(u8: Uint8Array) {
 }
 
 export function middleware(req: NextRequest) {
-  console.log('[Middleware] Running for:', req.nextUrl.pathname);
-  
   const bytes = new Uint8Array(20);
   crypto.getRandomValues(bytes);
   const nonce = b64url(bytes);
-  
-  console.log('[Middleware] Generated nonce:', nonce);
 
   const reqHeaders = new Headers(req.headers);
   reqHeaders.set("x-csp-nonce", nonce);
@@ -22,6 +18,5 @@ export function middleware(req: NextRequest) {
   const res = NextResponse.next({ request: { headers: reqHeaders } });
   res.headers.set("X-CSP-Nonce", nonce);
   
-  console.log('[Middleware] Set headers, returning response');
   return res;
 }
