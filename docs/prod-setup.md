@@ -42,6 +42,8 @@ Then, create the Aerospike DB cluster using this script, which takes variables f
 1. Create 1 or more AGS VM's and a Client VM (Next.js + backend), pick machine types to match goals
 Since AGS is stateless, each instance of AGS does not need to know each other, so you can repeat these steps for each
 instance you would like to create.
+**NOTE** Arm CPUs have been found to perform significantly better with AGS, for production if your application
+is latency sensitive, consider using the C4A family of machines in GCP:
 
 ```bash
 gcloud compute instances create fraud-demo-graph\
@@ -121,7 +123,9 @@ sudo apt install nodejs
 mkdir /var/www
 cd /var/www
 git clone https://github.com/aerospike-examples/graph-fraud-demo.git
-cd graph-fraud-demo/java-backend
+cd graph-fraud-demo
+git checkout java
+cd java-backend
 ```
 
 3. Update Application Properties
@@ -173,10 +177,10 @@ gsutil cp bulk-load.jar gs://<YOUR_BUCKET>/artifacts/
 gsutil cp java-backend/src/main/resources/static/config_fraud.properties gs://<YOUR_BUCKET>/config/
 ```
 
-4. Make bucket readable by your deployment service account or VM service accounts
-
+4. Sign into your GCloud Account
+Using the bulkloader creates a dataproc cluster and job, which means that it needs elevated permissions.
 ```bash
-gsutil iam ch serviceAccount:<SA>@<PROJECT>.iam.gserviceaccount.com:objectViewer gs://<YOUR_BUCKET>
+gcloud auth login
 ```
 
 ## Configure bulkload script with your GCP data

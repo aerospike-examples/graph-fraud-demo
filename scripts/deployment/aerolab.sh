@@ -1,5 +1,5 @@
 set -e #force script to fail if any step fails
-source ./scripts/set_variables.sh
+source ./set_variables.sh
 
 aerolab cluster create \
     --name "$name" \
