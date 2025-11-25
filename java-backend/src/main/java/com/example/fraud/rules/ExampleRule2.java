@@ -51,7 +51,7 @@ public class ExampleRule2 extends Rule {
                 return new FraudResult(false, 0, "No flagged entities involved",
                         FraudCheckStatus.CLEARED, new FraudCheckDetails(List.of(), info.fromId(), info.toId(),
                         0, Instant.now(), this.getName()), false,
-                        new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
+                        new PerformanceInfo(null, null, true));
             }
 
             final List<Object> flagged = new ArrayList<Object>(
@@ -78,7 +78,7 @@ public class ExampleRule2 extends Rule {
         } catch (Exception e) {
             return new FraudResult(false, 0, e.getMessage(),
                     FraudCheckStatus.CLEARED, null, true,
-                    new PerformanceInfo(t0, Duration.between(t0, Instant.now()), false));
+                    new PerformanceInfo(null, null, false));
         }
     }
 }

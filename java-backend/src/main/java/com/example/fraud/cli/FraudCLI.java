@@ -42,6 +42,7 @@ public class FraudCLI implements CommandLineRunner {
                 Available Commands:
                   help                 - Show this help message
                   transactions, txns   - Show transaction statistics
+                  performance, perf    - Show performance statistics for all rules (default: 5 minutes)
                   seed                 - Bulk load users from data/graph_csv (demo)
                   start <tps>          - Start generator at specified TPS
                   stop                 - Stop transaction generator
@@ -102,6 +103,22 @@ public class FraudCLI implements CommandLineRunner {
             switch (cmd) {
                 case "help" -> showHelp();
                 case "transactions", "txns" -> showTransactions();
+                case "performance", "perf" -> {
+                    int timeWindow = 5;
+                    if (args.length > 0) {
+                        try {
+                            timeWindow = Integer.parseInt(args[0]);
+                            if (timeWindow < 1 || timeWindow > 60) {
+                                System.out.println("Time window must be between 1 and 60 minutes. Using default: 5 minutes");
+                                timeWindow = 5;
+                            }
+                        } catch (NumberFormatException e) {
+                            System.out.println("Invalid time window. Using default: 5 minutes");
+                            timeWindow = 5;
+                        }
+                    }
+                    showPerformanceStats(timeWindow);
+                }
                 case "indexes" -> showIndexes();
                 case "seed" -> {
                     if(Objects.equals(args[0], "gcp")) {
@@ -251,6 +268,103 @@ public class FraudCLI implements CommandLineRunner {
         } catch (Exception e) {
             System.out.println("Error getting transaction stats: " + e.getMessage());
         }
+    }
+
+    private void showPerformanceStats(int timeWindow) {
+        try {
+            String json = http.get()
+                    .uri(uri -> uri.path("/performance/stats")
+                            .queryParam("time_window", timeWindow)
+                            .build())
+                    .retrieve()
+                    .body(String.class);
+
+            if (json == null) {
+                System.out.println("Error getting performance stats");
+                return;
+            }
+
+            JsonNode root = mapper.readTree(json);
+            JsonNode performanceStats = root.get("performance_stats");
+
+            if (performanceStats == null) {
+                System.out.println("No performance statistics available");
+                return;
+            }
+
+            boolean isRunning = performanceStats.has("is_running") && performanceStats.get("is_running").asBoolean();
+            String timestamp = performanceStats.has("timestamp") ? performanceStats.get("timestamp").asText() : "N/A";
+
+            System.out.printf("""
+                    
+                    Performance Statistics (Time Window: %d minutes)
+                    Generator Status: %s
+                    Timestamp: %s
+                    
+                    """, timeWindow, isRunning ? "RUNNING" : "STOPPED", timestamp);
+
+            List<RulePerformance> ruleStats = new ArrayList<>();
+            performanceStats.fieldNames().forEachRemaining(key -> {
+                if (!key.equals("timestamp") && !key.equals("is_running") && !key.equals("transaction_stats")) {
+                    JsonNode ruleData = performanceStats.get(key);
+                    if (ruleData != null && ruleData.isObject()) {
+                        long totalSuccess = ruleData.has("total_success") ? ruleData.get("total_success").asLong() : 0;
+                        long totalFailure = ruleData.has("total_failure") ? ruleData.get("total_failure").asLong() : 0;
+                        long totalQueries = totalSuccess + totalFailure;
+                        double successRate = totalQueries > 0 ? (double) totalSuccess / totalQueries * 100 : 0.0;
+
+                        ruleStats.add(new RulePerformance(
+                                key,
+                                ruleData.has("average") ? ruleData.get("average").asDouble() : 0.0,
+                                ruleData.has("max") ? ruleData.get("max").asDouble() : 0.0,
+                                ruleData.has("min") ? ruleData.get("min").asDouble() : 0.0,
+                                totalQueries,
+                                successRate,
+                                ruleData.has("QPS") ? ruleData.get("QPS").asDouble() : 0.0
+                        ));
+                    }
+                }
+            });
+
+            if (ruleStats.isEmpty()) {
+                System.out.println("No rule performance data available");
+                return;
+            }
+
+            // Display table header
+            System.out.printf("%-50s %12s %12s %12s %12s %10s %12s%n",
+                    "Rule Name", "Avg (ms)", "Max (ms)", "Min (ms)", "Total Queries", "Success %", "QPS");
+            System.out.printf("%-50s %12s %12s %12s %12s %10s %12s%n",
+                    repeat('-', 50), repeat('-', 12), repeat('-', 12), repeat('-', 12),
+                    repeat('-', 12), repeat('-', 10), repeat('-', 12));
+
+            for (RulePerformance rule : ruleStats) {
+                System.out.printf("%-50s %12.2f %12.2f %12.2f %12d %10.1f %12.2f%n",
+                        rule.ruleName().length() > 50 ? rule.ruleName().substring(0, 47) + "..." : rule.ruleName(),
+                        rule.avgExecutionTime(),
+                        rule.maxExecutionTime(),
+                        rule.minExecutionTime(),
+                        rule.totalQueries(),
+                        rule.successRate(),
+                        rule.qps());
+            }
+
+            System.out.println();
+
+        } catch (Exception e) {
+            System.out.println("Error getting performance stats: " + e.getMessage());
+        }
+    }
+
+    private record RulePerformance(
+            String ruleName,
+            double avgExecutionTime,
+            double maxExecutionTime,
+            double minExecutionTime,
+            long totalQueries,
+            double successRate,
+            double qps
+    ) {
     }
 
     private void shutdown() {
