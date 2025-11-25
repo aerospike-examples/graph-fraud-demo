@@ -30,7 +30,7 @@ public class PerformanceMetric {
         this.ruleMetrics = new PerfMetric[maxHistory];
     }
 
-    private record PerfMetric(double executionTimeMs,
+    private record PerfMetric(long executionTimeNanoseconds,
                               boolean success,
                               Instant startTime,
                               Instant storedTime) {
@@ -45,7 +45,9 @@ public class PerformanceMetric {
             }
 
             final boolean hasTiming = perfInfo.start() != null && perfInfo.totalTime() != null;
-            final Long timing = hasTiming ? perfInfo.totalTime().toMillis() : null;
+            final Integer timePartNano = hasTiming ? perfInfo.totalTime().getNano() : null;
+            final Long timePartSeconds = hasTiming ? perfInfo.totalTime().getSeconds() : null;
+            final Long nanoSeconds = (1_000_000 * timePartSeconds) + timePartNano;
 
             if (hasTiming && perfInfo.isSuccessful()) {
                 int idx = index.getAndIncrement();
@@ -54,7 +56,7 @@ public class PerformanceMetric {
                 }
 
                 ruleMetrics[idx % maxHistory] = new PerfMetric(
-                        timing,
+                        nanoSeconds,
                         true,
                         perfInfo.start(),
                         storedTime
@@ -71,7 +73,7 @@ public class PerformanceMetric {
                 transactionPerSecond[slot] = window;
             }
 
-            window.recordCall(timing);
+            window.recordCall(nanoSeconds);
         }
     }
 
@@ -114,8 +116,9 @@ public class PerformanceMetric {
 
                 firstBucket = Math.min(firstBucket, b);
                 lastBucket = Math.max(lastBucket, b);
-
                 if (!window.executionTimes.isEmpty()) {
+                    if (debug)
+                        System.out.println("Window stats: \n\tMAX: " + window.maxTime + "\n\tMIN: " + window.minTime + "\n\tEXEC TIMES: " + window.executionTimes.size() + "\n\tCNTR: " + window.queryCounter.get());
                     min = Math.min(min, window.minTime);
                     max = Math.max(max, window.maxTime);
                     long entriesBefore = entries;
@@ -125,7 +128,7 @@ public class PerformanceMetric {
                         entries++;
                     }
                     if (debug) {
-                        System.out.println("Found max " + max + " min " + min + " with starting entries " + entriesBefore + " and ending entries " + entries + " sum before " + sumbefore + " and sum after " + sum);
+                        System.out.println("FOUND:  \n\tMAX: " + max + " \n\t MIN: " + min + " with starting entries " + entriesBefore + " and ending entries " + entries + " sum before " + sumbefore + " and sum after " + sum);
                     }
                 }
             }
@@ -137,8 +140,11 @@ public class PerformanceMetric {
             currentIndex = WINDOW_SIZE - 1;
         }
         double qps = transactionPerSecond[currentIndex] != null ? transactionPerSecond[currentIndex].getQPS() : 0.0;
-        System.out.println("Metric Entries: " + entries  + " Metric Sum: " + sum + " Metric Average: " + sum / entries + " qps " + qps);
-        return new MetricInfo(min, max, sum / entries, qps);
+        double minMicros = min / 1_000_000;
+        double maxMicros = max / 1_000_000;
+        double avgMicros = (sum / entries) / 1_000_000;
+        System.out.println("Metric Entries: " + entries  + " Metric Sum: " + sum / 1_000_000 + " Metric Average: " + avgMicros + " qps " + qps);
+        return new MetricInfo(minMicros, maxMicros, avgMicros, qps);
     }
 
     public record MetricInfo(Double min, Double max, Double avg, Double qps) {
@@ -148,7 +154,6 @@ public class PerformanceMetric {
     private static class Window {
         final Long startTime; // bucket index
         final AtomicInteger queryCounter = new AtomicInteger(); // all calls
-
         Long minTime = Long.MAX_VALUE;
         Long maxTime = -1L;
         final List<Long> executionTimes = new ArrayList<>();    // successful, timed calls only
@@ -161,17 +166,15 @@ public class PerformanceMetric {
             return this.queryCounter.get() / UPDATE_FREQUENCY;
         }
 
-        public void recordCall(final Long executionTimeMs) {
+        public void recordCall(final Long executionTimeNanoseconds) {
             synchronized (queryCounter) {
-                if (executionTimeMs == null) {
+                if (executionTimeNanoseconds == null) {
                     return;
                 }
                 queryCounter.incrementAndGet();
-
-                long t = executionTimeMs;
-                minTime = Math.min(minTime, t);
-                maxTime = Math.max(maxTime, t);
-                executionTimes.add(t);
+                minTime = Math.min(minTime, executionTimeNanoseconds);
+                maxTime = Math.max(maxTime, executionTimeNanoseconds);
+                executionTimes.add(executionTimeNanoseconds);
             }
         }
     }
