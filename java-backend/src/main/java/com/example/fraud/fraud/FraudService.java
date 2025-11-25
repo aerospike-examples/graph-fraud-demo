@@ -7,6 +7,7 @@ import com.example.fraud.model.FraudCheckStatus;
 import com.example.fraud.model.MetadataRecord;
 import com.example.fraud.monitor.PerformanceMonitor;
 import com.example.fraud.graph.GraphService;
+import com.example.fraud.rules.ExampleRule1;
 import com.example.fraud.rules.Rule;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -77,9 +78,16 @@ public class FraudService {
         return true;
     }
 
+    int i = 0;
+
     public void submitFraudDetection(final TransactionInfo transactionInfo) {
         final List<Future<FraudResult>> futures = new ArrayList<>();
         for (final Rule rule : fraudRulesList) {
+            if (rule instanceof ExampleRule1) {
+                if (i++ % 1000 == 0) {
+                    System.out.println("Running rule 1");
+                }
+            }
             if (rule.isEnabled()) {
                 futures.add(exec.submit(() -> rule.executeRule(transactionInfo)));
             }

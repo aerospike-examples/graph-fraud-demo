@@ -33,6 +33,7 @@ public class ExampleRule1 extends Rule {
                         @Value("${rules.example-rule-1.run-async:false}") boolean runAsync) {
         super(name, description, keyIndicators, commonUseCase, complexity, enabled, runAsync, g);
     }
+    static int idx = 0;
 
     @Override
     public FraudResult executeRule(final TransactionInfo info) {
@@ -41,6 +42,10 @@ public class ExampleRule1 extends Rule {
         try {
             final var fraudVertices =
                     g.V(info.toId(), info.fromId()).has("fraud_flag", true).toList();
+
+            if (idx++ % 1000 == 0) {
+                System.out.println("Rule 1: " + (Duration.between(t0, Instant.now()).getNano() / 1000) + " us.");
+            }
 
             if (fraudVertices.isEmpty()) {
                 return new FraudResult(false, 0, "No flagged accounts found",
@@ -70,7 +75,7 @@ public class ExampleRule1 extends Rule {
                     new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
 
         } catch (Exception e) {
-            logger.error("ERROR: " + e.getMessage());
+            System.out.println("ERROR: " + e.getMessage());
             e.printStackTrace();
             return new FraudResult(false, 0, e.getMessage(), FraudCheckStatus.CLEARED,
                     null, true,

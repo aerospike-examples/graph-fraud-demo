@@ -48,6 +48,11 @@ public class PerformanceMetric {
             final Long timing = hasTiming ? perfInfo.totalTime().toMillis() : null;
 
             if (hasTiming && perfInfo.isSuccessful()) {
+                int idx = index.getAndIncrement();
+                if (idx % 1000 == 0) {
+                    System.out.println("Inserting metric: " + (perfInfo.totalTime().getNano() / 1000) + " us.");
+                }
+
                 ruleMetrics[index.getAndIncrement() % maxHistory] = new PerfMetric(
                         timing,
                         true,
