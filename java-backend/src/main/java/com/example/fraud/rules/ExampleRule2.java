@@ -12,12 +12,15 @@ import java.util.List;
 import java.util.Map;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ExampleRule2 extends Rule {
+    private static final Logger logger = LoggerFactory.getLogger(ExampleRule2.class);
 
     public ExampleRule2(@Qualifier("fraudG") GraphTraversalSource g,
                         @Value("${rules.example-rule-2.name:Transaction with Users Associated with Flagged Accounts}") String name,
@@ -51,7 +54,7 @@ public class ExampleRule2 extends Rule {
                 return new FraudResult(false, 0, "No flagged entities involved",
                         FraudCheckStatus.CLEARED, new FraudCheckDetails(List.of(), info.fromId(), info.toId(),
                         0, Instant.now(), this.getName()), false,
-                        new PerformanceInfo(null, null, true));
+                        new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
             }
 
             final List<Object> flagged = new ArrayList<Object>(
@@ -76,7 +79,7 @@ public class ExampleRule2 extends Rule {
                     new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
 
         } catch (Exception e) {
-            System.out.println("ERROR: " + e.getMessage());
+            logger.error("ERROR: " + e.getMessage());
             e.printStackTrace();
             return new FraudResult(false, 0, e.getMessage(),
                     FraudCheckStatus.CLEARED, null, true,

@@ -2,6 +2,7 @@ package com.example.fraud.rules;
 
 import com.example.fraud.fraud.FraudCheckDetails;
 import com.example.fraud.fraud.PerformanceInfo;
+import com.example.fraud.generator.WarmupService;
 import com.example.fraud.model.FraudCheckStatus;
 import com.example.fraud.fraud.FraudResult;
 import com.example.fraud.fraud.TransactionInfo;
@@ -11,6 +12,8 @@ import java.util.ArrayList;
 import java.util.List;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -18,6 +21,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class ExampleRule1 extends Rule {
+    private static final Logger logger = LoggerFactory.getLogger(ExampleRule1.class);
+
     public ExampleRule1(@Qualifier("fraudG") GraphTraversalSource g,
                         @Value("${rules.example-rule-1.name:Transaction to Flagged Account}") String name,
                         @Value("${rules.example-rule-1.description:Immediate threat detection via 1-hop lookup}") String description,
@@ -43,7 +48,7 @@ public class ExampleRule1 extends Rule {
                         new FraudCheckDetails(List.of(), info.fromId(), info.toId(), 0,
                                 Instant.now(), this.getName()),
                         false,
-                        new PerformanceInfo(null, null, true));
+                        new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
             }
 
             int score = 0;
@@ -65,7 +70,7 @@ public class ExampleRule1 extends Rule {
                     new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
 
         } catch (Exception e) {
-            System.out.println("ERROR: " + e.getMessage());
+            logger.error("ERROR: " + e.getMessage());
             e.printStackTrace();
             return new FraudResult(false, 0, e.getMessage(), FraudCheckStatus.CLEARED,
                     null, true,

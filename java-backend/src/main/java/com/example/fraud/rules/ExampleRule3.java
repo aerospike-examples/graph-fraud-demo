@@ -50,7 +50,7 @@ public class ExampleRule3 extends Rule {
                 return new FraudResult(false, 0, "No flagged entities involved",
                         FraudCheckStatus.CLEARED, new FraudCheckDetails(List.of(), info.fromId(),
                         info.toId(), 0, Instant.now(), this.getName()), false,
-                        new PerformanceInfo(null, null, true));
+                        new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
             }
 
             int score = 85;

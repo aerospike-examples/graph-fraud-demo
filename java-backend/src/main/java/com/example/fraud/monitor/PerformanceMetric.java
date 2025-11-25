@@ -1,6 +1,7 @@
 package com.example.fraud.monitor;
 
 import com.example.fraud.fraud.PerformanceInfo;
+import com.example.fraud.rules.ExampleRule1;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -8,11 +9,14 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import lombok.Getter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class PerformanceMetric {
     private static final int UPDATE_FREQUENCY = 5;
     private static final int WINDOW_SIZE = 10 * 60 / UPDATE_FREQUENCY; // 10 minutes * 60 seconds / update every 5 seconds
     final int maxHistory;
+    private static final Logger logger = LoggerFactory.getLogger(PerformanceMetric.class);
 
     private final Object lock = new Object();
     private PerfMetric[] ruleMetrics;
