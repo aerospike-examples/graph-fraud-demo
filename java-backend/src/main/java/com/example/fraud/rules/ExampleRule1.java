@@ -43,7 +43,7 @@ public class ExampleRule1 extends Rule {
             final var fraudVertices =
                     g.V(info.toId(), info.fromId()).has("fraud_flag", true).toList();
 
-            if (idx++ % 1000 == 0) {
+            if (idx++ % 10000 == 0) {
                 System.out.println("Rule 1: " + (Duration.between(t0, Instant.now()).getNano() / 1000) + " us.");
             }
 

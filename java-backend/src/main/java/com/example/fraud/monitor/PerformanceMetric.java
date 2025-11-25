@@ -49,7 +49,7 @@ public class PerformanceMetric {
 
             if (hasTiming && perfInfo.isSuccessful()) {
                 int idx = index.getAndIncrement();
-                if (idx % 1000 == 0) {
+                if (idx % 10000 == 0) {
                     System.out.println("Inserting metric: " + (perfInfo.totalTime().getNano() / 1000) + " us.");
                 }
 
@@ -71,7 +71,7 @@ public class PerformanceMetric {
                 transactionPerSecond[slot] = window;
             }
 
-            window.recordCall(perfInfo.isSuccessful(), timing);
+            window.recordCall(timing);
         }
     }
 
@@ -93,6 +93,8 @@ public class PerformanceMetric {
         }
     }
 
+    int widx = 0;
+
     public MetricInfo getMetricInfo(int minutes) {
         long nowBucket = Instant.now().getEpochSecond() / UPDATE_FREQUENCY; // bucket index
         long lookbackBuckets = Math.max(1, (minutes * 60L) / UPDATE_FREQUENCY);
@@ -101,6 +103,8 @@ public class PerformanceMetric {
         double min = Double.MAX_VALUE, max = Double.MIN_VALUE, sum = 0d;
         long entries = 0L;
         long firstBucket = Long.MAX_VALUE, lastBucket = Long.MIN_VALUE;
+
+        boolean debug = widx++ % 10 == 0;
 
         synchronized (lock) {
             for (final Window window : transactionPerSecond) {
@@ -114,9 +118,14 @@ public class PerformanceMetric {
                 if (!window.executionTimes.isEmpty()) {
                     min = Math.min(min, window.minTime);
                     max = Math.max(max, window.maxTime);
+                    long entriesBefore = entries;
+                    double sumbefore = sum;
                     for (Long t : window.executionTimes) {
                         sum += t;
                         entries++;
+                    }
+                    if (debug) {
+                        System.out.println("Found max " + max + " min " + min + " with starting entries " + entriesBefore + " and ending entries " + entries + " sum before " + sumbefore + " and sum after " + sum);
                     }
                 }
             }
@@ -128,6 +137,7 @@ public class PerformanceMetric {
             currentIndex = WINDOW_SIZE - 1;
         }
         double qps = transactionPerSecond[currentIndex] != null ? transactionPerSecond[currentIndex].getQPS() : 0.0;
+        System.out.println("Metric Entries: " + entries  + " Metric Sum: " + sum + " Metric Average: " + sum / entries + " qps " + qps);
         return new MetricInfo(min, max, sum / entries, qps);
     }
 
@@ -151,11 +161,11 @@ public class PerformanceMetric {
             return this.queryCounter.get() / UPDATE_FREQUENCY;
         }
 
-        public void recordCall(boolean success, final Long executionTimeMs) {
+        public void recordCall(final Long executionTimeMs) {
             synchronized (queryCounter) {
                 queryCounter.incrementAndGet();
 
-                if (!success || executionTimeMs == null) {
+                if (executionTimeMs == null) {
                     return;
                 }
 

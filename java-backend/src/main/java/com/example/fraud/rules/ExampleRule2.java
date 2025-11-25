@@ -79,7 +79,7 @@ public class ExampleRule2 extends Rule {
                     new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
 
         } catch (Exception e) {
-            logger.error("ERROR: " + e.getMessage());
+            System.out.println("ERROR: " + e.getMessage());
             e.printStackTrace();
             return new FraudResult(false, 0, e.getMessage(),
                     FraudCheckStatus.CLEARED, null, true,

@@ -84,7 +84,7 @@ public class FraudService {
         final List<Future<FraudResult>> futures = new ArrayList<>();
         for (final Rule rule : fraudRulesList) {
             if (rule instanceof ExampleRule1) {
-                if (i++ % 1000 == 0) {
+                if (i++ % 10000 == 0) {
                     System.out.println("Running rule 1");
                 }
             }
