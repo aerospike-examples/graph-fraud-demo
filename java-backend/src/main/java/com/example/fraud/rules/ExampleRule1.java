@@ -65,6 +65,8 @@ public class ExampleRule1 extends Rule {
                     new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
 
         } catch (Exception e) {
+            System.out.println("ERROR: " + e.getMessage());
+            e.printStackTrace();
             return new FraudResult(false, 0, e.getMessage(), FraudCheckStatus.CLEARED,
                     null, true,
                     new PerformanceInfo(null, null, false));

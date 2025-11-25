@@ -43,10 +43,10 @@ public class PerformanceMetric {
             final boolean hasTiming = perfInfo.start() != null && perfInfo.totalTime() != null;
             final Long timing = hasTiming ? perfInfo.totalTime().toMillis() : null;
 
-            if (hasTiming) {
+            if (hasTiming && perfInfo.isSuccessful()) {
                 ruleMetrics[index.getAndIncrement() % maxHistory] = new PerfMetric(
                         timing,
-                        perfInfo.isSuccessful(),
+                        true,
                         perfInfo.start(),
                         storedTime
                 );

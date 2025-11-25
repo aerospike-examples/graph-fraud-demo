@@ -62,6 +62,8 @@ public class ExampleRule3 extends Rule {
                     FraudCheckStatus.REVIEW, details, false,
                     new PerformanceInfo(t0, Duration.between(t0, Instant.now()), true));
         } catch (Exception e) {
+            System.out.println("ERROR: " + e.getMessage());
+            e.printStackTrace();
             return new FraudResult(true, 0, e.getMessage(),
                     FraudCheckStatus.CLEARED, null, true,
                     new PerformanceInfo(null, null, false));
