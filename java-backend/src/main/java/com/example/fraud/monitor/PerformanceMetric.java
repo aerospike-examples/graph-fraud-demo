@@ -53,7 +53,7 @@ public class PerformanceMetric {
                     System.out.println("Inserting metric: " + (perfInfo.totalTime().getNano() / 1000) + " us.");
                 }
 
-                ruleMetrics[index.getAndIncrement() % maxHistory] = new PerfMetric(
+                ruleMetrics[idx % maxHistory] = new PerfMetric(
                         timing,
                         true,
                         perfInfo.start(),
@@ -163,11 +163,10 @@ public class PerformanceMetric {
 
         public void recordCall(final Long executionTimeMs) {
             synchronized (queryCounter) {
-                queryCounter.incrementAndGet();
-
                 if (executionTimeMs == null) {
                     return;
                 }
+                queryCounter.incrementAndGet();
 
                 long t = executionTimeMs;
                 minTime = Math.min(minTime, t);
