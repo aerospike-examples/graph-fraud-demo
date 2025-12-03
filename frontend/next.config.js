@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 
 const backend = process.env.BACKEND_URL ?? "http://localhost:8080";
-
+console.log(backend)
 const nextConfig = {
   async rewrites() {
     return [
