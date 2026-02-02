@@ -11,6 +11,7 @@ const navigation = [
   // { name: 'Dashboard', href: '/' },
   { name: 'Users', href: '/users' },
   { name: 'Transactions', href: '/transactions' },
+  { name: 'Flagged Accounts', href: '/flagged' },
   // { name: 'Fraud Patterns', href: '/fraud-patterns' },
   // { name: 'Graph View', href: '/graph' },
   { name: 'Admin', href: '/admin' },

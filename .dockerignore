@@ -1,0 +1,24 @@
+# Exclude node_modules from Docker builds
+frontend/node_modules
+frontend/.next
+frontend/package-lock.json
+
+# Exclude Python virtual environments
+backend/venv
+backend/__pycache__
+backend/**/__pycache__
+
+# Exclude git
+.git
+.gitignore
+
+# Exclude IDE files
+.vscode
+.idea
+*.swp
+*.swo
+
+# Exclude other build artifacts
+*.log
+.DS_Store
+

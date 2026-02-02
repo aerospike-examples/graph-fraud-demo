@@ -2,10 +2,11 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
-import { Activity, BarChart3, RefreshCw, Zap  } from 'lucide-react'
+import { Activity, BarChart3, RefreshCw, Zap, Database } from 'lucide-react'
 import Performance from '@/components/Admin/Performance'
 import Generation from '@/components/Admin/Generation'
 import Scenarios from '@/components/Admin/Scenarios'
+import DataManagement from '@/components/Admin/DataManagement'
 
 export default function AdminPage() {
 	const [active, setActive] = useState('generation');
@@ -26,7 +27,7 @@ export default function AdminPage() {
 				</h3>
       		</div>
 			<Tabs value={active} onValueChange={setActive} className="space-y-4">
-				<TabsList className="grid w-full grid-cols-3">
+				<TabsList className="grid w-full grid-cols-4">
 					<TabsTrigger value="generation" className="flex items-center space-x-2">
 						<Activity className="w-4 h-4" />
 						<span>Transaction Generation</span>
@@ -34,6 +35,10 @@ export default function AdminPage() {
 					<TabsTrigger value="real-time-fraud" className="flex items-center space-x-2">
 						<Zap className="w-4 h-4" />
 						<span>Real Time Fraud Scenarios</span>
+					</TabsTrigger>
+					<TabsTrigger value="data" className="flex items-center space-x-2">
+						<Database className="w-4 h-4" />
+						<span>Data Management</span>
 					</TabsTrigger>
 					<TabsTrigger value="performance" className="flex items-center space-x-2">
 						<BarChart3 className="w-4 h-4" />
@@ -45,6 +50,9 @@ export default function AdminPage() {
 				</TabsContent>
 				<TabsContent value="real-time-fraud" className="space-y-4">
 					<Scenarios />
+				</TabsContent>
+				<TabsContent value="data" className="space-y-4">
+					<DataManagement />
 				</TabsContent>
 				<TabsContent value="performance" className="space-y-4">
 					<Performance />                

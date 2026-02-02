@@ -1040,6 +1040,8 @@ class GraphService:
             # Use Aerospike Graph Status API to check bulk load progress
             status_result = self.client.call("aerospike.graphloader.admin.bulk-load.status").next()
             
+            logger.info(f"Raw bulk load status result: {status_result}")
+            
             # Parse the status result
             status_info = {
                 "step": status_result.get("step", "unknown"),
@@ -1057,25 +1059,28 @@ class GraphService:
             # Clean up None values
             status_info = {k: v for k, v in status_info.items() if v is not None}
             
-            logger.info(f"Bulk load status: {status_info['status']} - {status_info['step']}")
+            logger.info(f"Bulk load status: {status_info.get('status', 'unknown')} - {status_info.get('step', 'unknown')}")
             
-            if status_result["success"]:
-                return {
-                    "success": True,
-                    "message": "Bulk load status retrieved successfully",
-                    "status": status_result["status_info"]
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": status_result["error"],
-                    "message": "Failed to retrieve bulk load status"
-                }
+            # Determine if bulk load is complete or still running
+            is_complete = status_info.get("complete", False)
+            current_status = status_info.get("status", "unknown")
+            
+            return {
+                "success": True,
+                "message": f"Bulk load {current_status}" if current_status != "unknown" else "Status retrieved",
+                "status": current_status,
+                "step": status_info.get("step", "unknown"),
+                "complete": is_complete,
+                "elements_written": status_info.get("elements_written"),
+                "progress_percentage": status_info.get("complete_partitions_percentage"),
+                "details": status_info
+            }
                 
         except Exception as e:
             logger.error(f"Error getting bulk load status: {e}")
             return {
                 "success": False,
                 "error": str(e),
-                "message": "Error occurred while checking bulk load status"
+                "message": "Error occurred while checking bulk load status",
+                "status": "error"
             }
