@@ -1,14 +1,21 @@
-from fastapi import FastAPI, HTTPException, Query, Path
+from fastapi import FastAPI, HTTPException, Query, Path, Body, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import Optional
 from datetime import datetime
 import urllib.parse
+import tempfile
+import zipfile
+import os
+import shutil
 
 from services.fraud_service import FraudService
 from services.graph_service import GraphService
 from services.transaction_generator import TransactionGeneratorService
 from services.performance_monitor import performance_monitor
+from services.flagged_account_service import FlaggedAccountService
+from services.scheduler_service import scheduler_service
+from services.aerospike_service import aerospike_service
 
 from logging_config import setup_logging, get_logger
 
@@ -20,20 +27,46 @@ logger = get_logger('fraud_detection.api')
 graph_service = GraphService()
 fraud_service = FraudService(graph_service)
 transaction_generator = TransactionGeneratorService(graph_service, fraud_service)
+flagged_account_service = FlaggedAccountService(graph_service)
 
 # Configuration variables
 max_generation_rate = 50  # Default max rate, can be changed via API
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-# Startup
+    # Startup
     logger.info("Starting Fraud Detection API")
     graph_service.connect()
+    
+    # Connect to Aerospike KV store
+    if aerospike_service.connect():
+        logger.info("Aerospike KV service connected")
+        # Update flagged account service to use Aerospike
+        flagged_account_service.set_aerospike_service(aerospike_service)
+    else:
+        logger.warning("Aerospike KV service not available, using file-based storage")
+    
+    # Setup scheduler with detection callback
+    scheduler_service.set_detection_callback(flagged_account_service.run_detection)
+    scheduler_service.start()
+    
+    # Schedule detection job based on config
+    config = flagged_account_service.get_config()
+    if config.get("schedule_enabled", True):
+        try:
+            schedule_time = config.get("schedule_time", "21:30")
+            hour, minute = map(int, schedule_time.split(":"))
+            scheduler_service.schedule_detection_job(hour, minute)
+            logger.info(f"Detection job scheduled for {schedule_time}")
+        except Exception as e:
+            logger.error(f"Failed to schedule detection job: {e}")
     
     yield
     
     # Shutdown
     logger.info("Shutting down Fraud Detection API")
+    scheduler_service.shutdown()
+    aerospike_service.close()
     graph_service.close()
 
 app = FastAPI(
@@ -536,26 +569,93 @@ def reset_performance_metrics():
 
 
 @app.post("/bulk-load-csv")
-def bulk_load_csv_data(vertices_path: Optional[str] = None, edges_path: Optional[str] = None):
-    """Bulk load data from CSV files using Aerospike Graph bulk loader"""
+def bulk_load_csv_data(
+    vertices_path: Optional[str] = None, 
+    edges_path: Optional[str] = None,
+    load_graph: bool = True,
+    load_aerospike: bool = True
+):
+    """
+    Bulk load data from CSV files.
+    
+    By default loads to both:
+    - Aerospike Graph (vertices and edges)
+    - Aerospike KV (users for risk evaluation tracking)
+    
+    This simulates receiving account data from a third-party system.
+    
+    Args:
+        vertices_path: Path to vertices CSV directory
+        edges_path: Path to edges CSV directory
+        load_graph: Load data into Aerospike Graph (default: True)
+        load_aerospike: Load users into Aerospike KV for tracking (default: True)
+    """
+    result = {
+        "success": True,
+        "graph": None,
+        "aerospike": None,
+        "message": ""
+    }
+    
     try:
-        result = graph_service.bulk_load_csv_data(vertices_path, edges_path)
+        # Load to Graph DB
+        if load_graph:
+            graph_result = graph_service.bulk_load_csv_data(vertices_path, edges_path)
+            result["graph"] = graph_result
+            
+            if not graph_result["success"]:
+                result["success"] = False
+                result["message"] = f"Graph load failed: {graph_result.get('error', 'Unknown error')}"
         
-        if result["success"]:
-            return result
-        else:
-            raise HTTPException(
-                status_code=500, 
-                detail={
-                    "error": result["error"],
-                    "vertices_path": result["vertices_path"],
-                    "edges_path": result["edges_path"]
+        # Load users to Aerospike KV
+        if load_aerospike:
+            if aerospike_service.is_connected():
+                # Determine the CSV path for users
+                users_csv_path = None
+                if vertices_path:
+                    users_csv_path = f"{vertices_path}/users/users.csv"
+                
+                aerospike_result = aerospike_service.load_users_from_csv(users_csv_path)
+                result["aerospike"] = aerospike_result
+                
+                if aerospike_result["success"]:
+                    # Load sample flagged accounts for demo
+                    flagged_result = aerospike_service.load_sample_flagged_accounts()
+                    result["aerospike"]["flagged_accounts"] = flagged_result.get("loaded", 0)
+                    logger.info(f"Loaded {flagged_result.get('loaded', 0)} sample flagged accounts")
+                else:
+                    # Don't fail entire operation, just note the error
+                    logger.warning(f"Aerospike load warning: {aerospike_result.get('message', 'Unknown error')}")
+            else:
+                result["aerospike"] = {
+                    "success": False,
+                    "message": "Aerospike KV service not available - skipped",
+                    "loaded": 0
                 }
-            )
-    except HTTPException:
-        raise
+                logger.warning("Aerospike KV not available, skipping user load")
+        
+        # Build summary message
+        messages = []
+        if load_graph and result["graph"]:
+            if result["graph"]["success"]:
+                stats = result["graph"].get("statistics", {})
+                messages.append(f"Graph: {stats.get('users', 0)} users, {stats.get('accounts', 0)} accounts")
+            else:
+                messages.append(f"Graph: Failed")
+        
+        if load_aerospike and result["aerospike"]:
+            if result["aerospike"]["success"]:
+                messages.append(f"Aerospike KV: {result['aerospike'].get('loaded', 0)} users")
+            else:
+                messages.append(f"Aerospike KV: {result['aerospike'].get('message', 'Failed')}")
+        
+        result["message"] = " | ".join(messages) if messages else "No operations performed"
+        
+        return result
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to bulk load CSV data: {str(e)}")
+        logger.error(f"Bulk load failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to bulk load data: {str(e)}")
 
 @app.get("/bulk-load-status")
 def get_bulk_load_status():
@@ -573,3 +673,371 @@ def get_bulk_load_status():
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get bulk load status: {str(e)}")
+
+
+@app.post("/bulk-load-upload")
+async def bulk_load_upload(
+    file: UploadFile = File(...),
+    load_graph: bool = Form(True),
+    load_aerospike: bool = Form(True)
+):
+    """
+    Upload and bulk load data from a ZIP file.
+    
+    The ZIP file should contain:
+    - vertices/users/users.csv
+    - vertices/accounts/accounts.csv  
+    - vertices/devices/devices.csv
+    - edges/ownership/owns.csv
+    - edges/usage/uses.csv
+    
+    Args:
+        file: ZIP file containing CSV data
+        load_graph: Load data into Aerospike Graph (default: True)
+        load_aerospike: Load users into Aerospike KV for tracking (default: True)
+    """
+    result = {
+        "success": True,
+        "graph": None,
+        "aerospike": None,
+        "message": ""
+    }
+    
+    temp_dir = None
+    
+    try:
+        # Validate file type
+        if not file.filename or not file.filename.endswith('.zip'):
+            raise HTTPException(status_code=400, detail="File must be a ZIP archive")
+        
+        # Create temporary directory
+        temp_dir = tempfile.mkdtemp(prefix="bulk_load_")
+        zip_path = os.path.join(temp_dir, "upload.zip")
+        extract_dir = os.path.join(temp_dir, "extracted")
+        
+        # Save uploaded file
+        with open(zip_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        
+        # Extract ZIP file
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
+        
+        logger.info(f"Extracted uploaded ZIP to {extract_dir}")
+        
+        # Find the vertices and edges directories
+        vertices_path = None
+        edges_path = None
+        
+        for root, dirs, files in os.walk(extract_dir):
+            if 'vertices' in dirs:
+                vertices_path = os.path.join(root, 'vertices')
+            if 'edges' in dirs:
+                edges_path = os.path.join(root, 'edges')
+        
+        if not vertices_path or not edges_path:
+            raise HTTPException(
+                status_code=400, 
+                detail="ZIP file must contain 'vertices' and 'edges' directories"
+            )
+        
+        # Load to Graph DB
+        if load_graph:
+            graph_result = graph_service.bulk_load_csv_data(vertices_path, edges_path)
+            result["graph"] = graph_result
+            
+            if not graph_result["success"]:
+                result["success"] = False
+                result["message"] = f"Graph load failed: {graph_result.get('error', 'Unknown error')}"
+        
+        # Load users to Aerospike KV
+        if load_aerospike:
+            if aerospike_service.is_connected():
+                users_csv_path = os.path.join(vertices_path, "users", "users.csv")
+                
+                if os.path.exists(users_csv_path):
+                    aerospike_result = aerospike_service.load_users_from_csv(users_csv_path)
+                    result["aerospike"] = aerospike_result
+                    
+                    if aerospike_result["success"]:
+                        # Load sample flagged accounts for demo
+                        flagged_result = aerospike_service.load_sample_flagged_accounts()
+                        result["aerospike"]["flagged_accounts"] = flagged_result.get("loaded", 0)
+                        logger.info(f"Loaded {flagged_result.get('loaded', 0)} sample flagged accounts")
+                else:
+                    result["aerospike"] = {
+                        "success": False,
+                        "message": "users.csv not found in uploaded data",
+                        "loaded": 0
+                    }
+            else:
+                result["aerospike"] = {
+                    "success": False,
+                    "message": "Aerospike KV service not available - skipped",
+                    "loaded": 0
+                }
+        
+        # Build summary message
+        messages = []
+        if load_graph and result["graph"]:
+            if result["graph"]["success"]:
+                stats = result["graph"].get("statistics", {})
+                messages.append(f"Graph: {stats.get('users', 0)} users, {stats.get('accounts', 0)} accounts")
+            else:
+                messages.append(f"Graph: Failed")
+        
+        if load_aerospike and result["aerospike"]:
+            if result["aerospike"]["success"]:
+                messages.append(f"Aerospike KV: {result['aerospike'].get('loaded', 0)} users")
+            else:
+                messages.append(f"Aerospike KV: {result['aerospike'].get('message', 'Failed')}")
+        
+        result["message"] = " | ".join(messages) if messages else "No operations performed"
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Bulk load upload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to process uploaded file: {str(e)}")
+    finally:
+        # Cleanup temporary directory
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as e:
+                logger.warning(f"Failed to cleanup temp directory: {e}")
+
+
+@app.post("/load-users-aerospike")
+def load_users_to_aerospike(csv_path: Optional[str] = None):
+    """Load users from CSV into Aerospike key-value store for risk evaluation"""
+    try:
+        if not aerospike_service.is_connected():
+            raise HTTPException(status_code=503, detail="Aerospike KV service not available")
+        
+        result = aerospike_service.load_users_from_csv(csv_path)
+        
+        if result["success"]:
+            # Load sample flagged accounts for demo
+            flagged_result = aerospike_service.load_sample_flagged_accounts()
+            result["flagged_accounts"] = flagged_result.get("loaded", 0)
+            return result
+        else:
+            raise HTTPException(status_code=500, detail=result["message"])
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to load users to Aerospike: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load users: {str(e)}")
+
+
+@app.get("/aerospike/stats")
+def get_aerospike_stats():
+    """Get statistics about data stored in Aerospike"""
+    try:
+        if not aerospike_service.is_connected():
+            return {
+                "connected": False,
+                "message": "Aerospike KV service not available"
+            }
+        
+        stats = aerospike_service.get_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Failed to get Aerospike stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+
+
+# ----------------------------------------------------------------------------------------------------------
+# Flagged Accounts Detection endpoints
+# ----------------------------------------------------------------------------------------------------------
+
+
+@app.get("/flagged-accounts")
+def get_flagged_accounts_list(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Number of accounts per page"),
+    status: Optional[str] = Query(None, description="Filter by status (pending_review, under_investigation, confirmed_fraud, cleared)"),
+    search: Optional[str] = Query(None, description="Search by account holder name or ID")
+):
+    """Get paginated list of flagged accounts detected by the ML model"""
+    try:
+        result = flagged_account_service.get_flagged_accounts(page, page_size, status, search)
+        return result
+    except Exception as e:
+        logger.error(f"❌ Failed to get flagged accounts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get flagged accounts: {str(e)}")
+
+
+@app.get("/flagged-accounts/stats")
+def get_flagged_accounts_stats():
+    """Get statistics for flagged accounts"""
+    try:
+        stats = flagged_account_service.get_flagged_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"❌ Failed to get flagged accounts stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+
+
+@app.get("/flagged-accounts/{account_id}")
+def get_flagged_account_detail(account_id: str = Path(..., description="Account ID")):
+    """Get details of a specific flagged account"""
+    try:
+        account = flagged_account_service.get_flagged_account(account_id)
+        if not account:
+            raise HTTPException(status_code=404, detail="Flagged account not found")
+        return account
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to get flagged account {account_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get flagged account: {str(e)}")
+
+
+@app.post("/flagged-accounts/{account_id}/resolve")
+def resolve_flagged_account(
+    account_id: str = Path(..., description="Account ID"),
+    resolution: str = Query(..., description="Resolution: confirmed_fraud or cleared"),
+    notes: str = Query("", description="Resolution notes")
+):
+    """Resolve a flagged account as confirmed fraud or cleared"""
+    try:
+        if resolution not in ["confirmed_fraud", "cleared", "under_investigation"]:
+            raise HTTPException(status_code=400, detail="Invalid resolution. Must be 'confirmed_fraud', 'cleared', or 'under_investigation'")
+        
+        result = flagged_account_service.resolve_flagged_account(account_id, resolution, notes)
+        if not result:
+            raise HTTPException(status_code=404, detail="Flagged account not found")
+        
+        return {
+            "message": f"Account {account_id} resolved as {resolution}",
+            "account": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to resolve flagged account {account_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to resolve account: {str(e)}")
+
+
+@app.post("/flagged-accounts/detect")
+def trigger_detection_job():
+    """Manually trigger the flagged account detection job"""
+    try:
+        # Check if Aerospike KV is connected - required for risk evaluation
+        if not aerospike_service.is_connected():
+            raise HTTPException(
+                status_code=503, 
+                detail="Aerospike KV service is not available. Risk evaluation requires Aerospike to be connected."
+            )
+        
+        logger.info("Manual detection job triggered via API")
+        result = scheduler_service.run_detection_now()
+        return {
+            "message": "Detection job completed",
+            "result": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to run detection job: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to run detection job: {str(e)}")
+
+
+@app.delete("/flagged-accounts")
+def clear_flagged_accounts():
+    """Clear all flagged accounts (for testing/demo purposes)"""
+    try:
+        flagged_account_service.clear_flagged_accounts()
+        return {"message": "All flagged accounts cleared"}
+    except Exception as e:
+        logger.error(f"❌ Failed to clear flagged accounts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear flagged accounts: {str(e)}")
+
+
+# ----------------------------------------------------------------------------------------------------------
+# Detection Configuration endpoints
+# ----------------------------------------------------------------------------------------------------------
+
+
+@app.get("/detection/config")
+def get_detection_config():
+    """Get current detection configuration (schedule, cooldown, threshold)"""
+    try:
+        config = flagged_account_service.get_config()
+        scheduler_status = scheduler_service.get_status()
+        
+        return {
+            "config": config,
+            "scheduler": scheduler_status
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to get detection config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get config: {str(e)}")
+
+
+@app.post("/detection/config")
+def update_detection_config(
+    schedule_enabled: Optional[bool] = Body(None, description="Enable/disable scheduled detection"),
+    schedule_time: Optional[str] = Body(None, description="Schedule time in HH:MM format (24-hour)"),
+    cooldown_days: Optional[int] = Body(None, ge=1, description="Cooldown period in days"),
+    risk_threshold: Optional[float] = Body(None, ge=0, le=100, description="Risk score threshold for flagging")
+):
+    """Update detection configuration"""
+    try:
+        # Build config update dict
+        config_update = {}
+        if schedule_enabled is not None:
+            config_update["schedule_enabled"] = schedule_enabled
+        if schedule_time is not None:
+            config_update["schedule_time"] = schedule_time
+        if cooldown_days is not None:
+            config_update["cooldown_days"] = cooldown_days
+        if risk_threshold is not None:
+            config_update["risk_threshold"] = risk_threshold
+        
+        # Update config
+        new_config = flagged_account_service.update_config(config_update)
+        
+        # Update scheduler if schedule changed
+        if schedule_time is not None or schedule_enabled is not None:
+            if new_config.get("schedule_enabled"):
+                try:
+                    time_str = new_config.get("schedule_time", "21:30")
+                    hour, minute = map(int, time_str.split(":"))
+                    scheduler_service.schedule_detection_job(hour, minute)
+                    logger.info(f"Detection job rescheduled for {time_str}")
+                except Exception as e:
+                    logger.error(f"Failed to reschedule detection job: {e}")
+            else:
+                scheduler_service.remove_detection_job()
+                logger.info("Detection job disabled")
+        
+        return {
+            "message": "Configuration updated",
+            "config": new_config,
+            "scheduler": scheduler_service.get_status()
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to update detection config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update config: {str(e)}")
+
+
+@app.get("/detection/history")
+def get_detection_history(
+    limit: int = Query(20, ge=1, le=100, description="Number of history records to return")
+):
+    """Get detection job run history"""
+    try:
+        history = flagged_account_service.get_detection_history(limit)
+        return {
+            "history": history,
+            "total": len(history)
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to get detection history: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get history: {str(e)}")

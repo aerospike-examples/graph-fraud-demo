@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import { 
     Database, 
-    Upload, 
     RefreshCw, 
     CheckCircle, 
     XCircle, 
@@ -16,7 +17,11 @@ import {
     Smartphone,
     GitBranch,
     AlertTriangle,
-    Play
+    Play,
+    Server,
+    Upload,
+    FolderOpen,
+    FileText
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -30,14 +35,18 @@ interface BulkLoadStatus {
     complete?: boolean
     progress_percentage?: number
     elements_written?: number
-    statistics?: {
-        total_vertices: number
-        total_edges: number
-        users: number
-        accounts: number
-        devices: number
-        vertex_counts_by_label: Record<string, number>
-        edge_counts_by_label: Record<string, number>
+    graph?: {
+        success: boolean
+        statistics?: {
+            users: number
+            accounts: number
+            devices: number
+        }
+    }
+    aerospike?: {
+        success: boolean
+        loaded?: number
+        message?: string
     }
 }
 
@@ -50,11 +59,30 @@ interface GraphStats {
     total_edges: number
 }
 
+interface AerospikeStats {
+    connected: boolean
+    users_count: number
+    flagged_accounts_count: number
+    pending_review: number
+    confirmed_fraud: number
+    cleared: number
+}
+
 const DataManagement = () => {
     const [bulkLoadStatus, setBulkLoadStatus] = useState<BulkLoadStatus>({ loading: false })
     const [isLoading, setIsLoading] = useState(false)
     const [graphStats, setGraphStats] = useState<GraphStats | null>(null)
+    const [aerospikeStats, setAerospikeStats] = useState<AerospikeStats | null>(null)
     const [loadingStats, setLoadingStats] = useState(false)
+    
+    // Load options
+    const [loadGraph, setLoadGraph] = useState(true)
+    const [loadAerospike, setLoadAerospike] = useState(true)
+    
+    // Data source options
+    const [useDefaultData, setUseDefaultData] = useState(true)
+    const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+    const fileInputRef = useRef<HTMLInputElement>(null)
 
     // Fetch current graph statistics
     const fetchGraphStats = async () => {
@@ -65,7 +93,7 @@ const DataManagement = () => {
                 const data = await response.json()
                 setGraphStats({
                     users: data.users || 0,
-                    accounts: 0, // Will get from detailed stats
+                    accounts: 0,
                     devices: 0,
                     transactions: data.txns || 0,
                     total_vertices: 0,
@@ -79,19 +107,65 @@ const DataManagement = () => {
         }
     }
 
+    // Fetch Aerospike stats
+    const fetchAerospikeStats = async () => {
+        try {
+            const response = await fetch('/api/aerospike/stats')
+            if (response.ok) {
+                const data = await response.json()
+                setAerospikeStats(data)
+            }
+        } catch (error) {
+            console.error('Failed to fetch Aerospike stats:', error)
+        }
+    }
+
     useEffect(() => {
         fetchGraphStats()
+        fetchAerospikeStats()
     }, [])
 
     // Trigger bulk load
     const handleBulkLoad = async () => {
+        if (!loadGraph && !loadAerospike) {
+            toast.error('Please select at least one target system')
+            return
+        }
+        
+        if (!useDefaultData && !uploadedFile) {
+            toast.error('Please select a file to upload or use default data')
+            return
+        }
+
         setIsLoading(true)
         setBulkLoadStatus({ loading: true, message: 'Starting bulk load...' })
         
         try {
-            const response = await fetch('/api/bulk-load-csv', {
-                method: 'POST',
-            })
+            let response: Response
+            
+            if (useDefaultData) {
+                // Use default data - simple query params
+                const params = new URLSearchParams()
+                params.set('load_graph', String(loadGraph))
+                params.set('load_aerospike', String(aerospikeStats?.connected ? loadAerospike : false))
+                
+                response = await fetch(`/api/bulk-load-csv?${params.toString()}`, {
+                    method: 'POST',
+                })
+            } else if (uploadedFile) {
+                // Upload custom file
+                const formData = new FormData()
+                formData.append('file', uploadedFile)
+                formData.append('load_graph', String(loadGraph))
+                formData.append('load_aerospike', String(aerospikeStats?.connected ? loadAerospike : false))
+                
+                response = await fetch('/api/bulk-load-upload', {
+                    method: 'POST',
+                    body: formData,
+                })
+            } else {
+                throw new Error('No data source selected')
+            }
             
             const data = await response.json()
             
@@ -99,20 +173,29 @@ const DataManagement = () => {
                 setBulkLoadStatus({
                     loading: false,
                     success: true,
-                    message: data.message || 'Bulk load started successfully',
-                    statistics: data.statistics
+                    message: data.message || 'Bulk load completed successfully',
+                    graph: data.graph,
+                    aerospike: data.aerospike
                 })
-                toast.success('Bulk load initiated successfully!')
+                toast.success('Bulk load completed!')
                 
-                // Start polling for status
-                pollBulkLoadStatus()
+                // If graph was loaded, poll for status
+                if (loadGraph && data.graph?.success) {
+                    pollBulkLoadStatus()
+                }
+                
+                // Refresh stats
+                fetchGraphStats()
+                fetchAerospikeStats()
             } else {
                 setBulkLoadStatus({
                     loading: false,
                     success: false,
-                    error: data.detail || data.error || 'Failed to start bulk load'
+                    error: data.detail || data.message || 'Failed to start bulk load',
+                    graph: data.graph,
+                    aerospike: data.aerospike
                 })
-                toast.error('Failed to start bulk load')
+                toast.error('Bulk load failed')
             }
         } catch (error) {
             setBulkLoadStatus({
@@ -129,28 +212,26 @@ const DataManagement = () => {
     // Poll for bulk load status
     const pollBulkLoadStatus = async () => {
         let attempts = 0
-        const maxAttempts = 60 // 5 minutes max
+        const maxAttempts = 60
         
         const checkStatus = async (): Promise<boolean> => {
             try {
                 const response = await fetch('/api/bulk-load-status')
                 const data = await response.json()
                 
-                // Update status display with current progress
-                setBulkLoadStatus({
+                setBulkLoadStatus(prev => ({
+                    ...prev,
                     loading: !data.complete,
-                    success: data.complete,
-                    message: data.message || `Status: ${data.status}`,
                     status: data.status,
                     step: data.step,
                     complete: data.complete,
                     progress_percentage: data.progress_percentage,
                     elements_written: data.elements_written
-                })
+                }))
                 
                 if (data.complete) {
-                    toast.success('Bulk load completed!')
-                    fetchGraphStats() // Refresh stats
+                    toast.success('Graph bulk load completed!')
+                    fetchGraphStats()
                     return true
                 } else if (data.status?.toLowerCase().includes('failed') || data.status?.toLowerCase().includes('error')) {
                     setBulkLoadStatus(prev => ({
@@ -159,7 +240,7 @@ const DataManagement = () => {
                         success: false,
                         error: data.error || 'Bulk load failed'
                     }))
-                    toast.error('Bulk load failed')
+                    toast.error('Graph bulk load failed')
                     return true
                 }
                 
@@ -183,11 +264,10 @@ const DataManagement = () => {
             const done = await checkStatus()
             if (!done) {
                 attempts++
-                setTimeout(poll, 3000) // Check every 3 seconds
+                setTimeout(poll, 3000)
             }
         }
         
-        // Wait a bit before starting to poll
         setTimeout(poll, 2000)
     }
 
@@ -199,7 +279,8 @@ const DataManagement = () => {
             const data = await response.json()
             
             if (data.success) {
-                setBulkLoadStatus({
+                setBulkLoadStatus(prev => ({
+                    ...prev,
                     loading: !data.complete,
                     success: data.complete,
                     message: data.message || `Status: ${data.status}`,
@@ -208,7 +289,7 @@ const DataManagement = () => {
                     complete: data.complete,
                     progress_percentage: data.progress_percentage,
                     elements_written: data.elements_written
-                })
+                }))
                 
                 if (data.complete) {
                     toast.success('Bulk load completed!')
@@ -216,16 +297,17 @@ const DataManagement = () => {
                     toast.info(`Bulk load ${data.status}: ${data.step || 'processing...'}`)
                 }
             } else {
-                setBulkLoadStatus({
+                setBulkLoadStatus(prev => ({
+                    ...prev,
                     loading: false,
                     success: false,
                     error: data.error || data.message || 'Unknown error'
-                })
+                }))
                 toast.error(data.error || 'Failed to get status')
             }
             
-            // Also refresh graph stats
             await fetchGraphStats()
+            await fetchAerospikeStats()
         } catch (error) {
             toast.error('Failed to check status')
         } finally {
@@ -236,41 +318,161 @@ const DataManagement = () => {
     return (
         <div className="grid gap-6 md:grid-cols-2">
             {/* Bulk Load Controls */}
-            <Card>
+            <Card className="md:col-span-2">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Database className="h-5 w-5" />
                         Bulk Data Load
                     </CardTitle>
                     <CardDescription>
-                        Load sample data from CSV files into the graph database
+                        Simulates receiving account data from a third-party system. Load sample data into Graph DB and/or Aerospike KV store.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="p-4 bg-muted/50 rounded-lg space-y-2">
-                        <p className="text-sm font-medium">Data Sources:</p>
-                        <ul className="text-sm text-muted-foreground space-y-1">
-                            <li className="flex items-center gap-2">
-                                <Users className="h-4 w-4" />
-                                <span>10,000 Users</span>
-                            </li>
-                            <li className="flex items-center gap-2">
-                                <CreditCard className="h-4 w-4" />
-                                <span>~21,000 Accounts</span>
-                            </li>
-                            <li className="flex items-center gap-2">
-                                <Smartphone className="h-4 w-4" />
-                                <span>~25,000 Devices</span>
-                            </li>
-                            <li className="flex items-center gap-2">
-                                <GitBranch className="h-4 w-4" />
-                                <span>Ownership & Usage relationships</span>
-                            </li>
-                        </ul>
+                    <div className="grid md:grid-cols-3 gap-4">
+                        {/* Data Source Selection */}
+                        <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                            <p className="text-sm font-medium">Data Source:</p>
+                            <div className="space-y-2">
+                                <button
+                                    onClick={() => {
+                                        setUseDefaultData(true)
+                                        setUploadedFile(null)
+                                    }}
+                                    className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
+                                        useDefaultData 
+                                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' 
+                                            : 'border-transparent bg-background hover:bg-muted'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <FolderOpen className={`h-4 w-4 ${useDefaultData ? 'text-blue-500' : 'text-muted-foreground'}`} />
+                                        <span className="text-sm font-medium">Use Default Data</span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                                        Pre-loaded sample data
+                                    </p>
+                                </button>
+                                
+                                <button
+                                    onClick={() => {
+                                        setUseDefaultData(false)
+                                        fileInputRef.current?.click()
+                                    }}
+                                    className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
+                                        !useDefaultData 
+                                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' 
+                                            : 'border-transparent bg-background hover:bg-muted'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <Upload className={`h-4 w-4 ${!useDefaultData ? 'text-blue-500' : 'text-muted-foreground'}`} />
+                                        <span className="text-sm font-medium">Upload CSV Files</span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                                        {uploadedFile ? (
+                                            <span className="flex items-center gap-1 text-blue-600">
+                                                <FileText className="h-3 w-3" />
+                                                {uploadedFile.name}
+                                            </span>
+                                        ) : (
+                                            'Select a ZIP file'
+                                        )}
+                                    </p>
+                                </button>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".zip"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0]
+                                        if (file) {
+                                            setUploadedFile(file)
+                                            setUseDefaultData(false)
+                                            toast.success(`Selected: ${file.name}`)
+                                        }
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Default Data Info (only show when using default) */}
+                        <div className={`p-4 bg-muted/50 rounded-lg space-y-2 ${!useDefaultData ? 'opacity-50' : ''}`}>
+                            <p className="text-sm font-medium">Default Data Contains:</p>
+                            <ul className="text-sm text-muted-foreground space-y-1">
+                                <li className="flex items-center gap-2">
+                                    <Users className="h-4 w-4" />
+                                    <span>10,000 Users</span>
+                                </li>
+                                <li className="flex items-center gap-2">
+                                    <CreditCard className="h-4 w-4" />
+                                    <span>~21,000 Accounts</span>
+                                </li>
+                                <li className="flex items-center gap-2">
+                                    <Smartphone className="h-4 w-4" />
+                                    <span>~25,000 Devices</span>
+                                </li>
+                                <li className="flex items-center gap-2">
+                                    <GitBranch className="h-4 w-4" />
+                                    <span>Ownership & Usage relationships</span>
+                                </li>
+                            </ul>
+                        </div>
+
+                        {/* Target Systems */}
+                        <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                            <p className="text-sm font-medium">Target Systems:</p>
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <HardDrive className="h-4 w-4 text-blue-500" />
+                                        <Label htmlFor="load-graph" className="text-sm cursor-pointer">
+                                            Aerospike Graph
+                                        </Label>
+                                    </div>
+                                    <Switch 
+                                        id="load-graph" 
+                                        checked={loadGraph} 
+                                        onCheckedChange={setLoadGraph}
+                                    />
+                                </div>
+                                <p className="text-xs text-muted-foreground ml-6">
+                                    Loads vertices and edges
+                                </p>
+                                
+                                <div className={`flex items-center justify-between ${!aerospikeStats?.connected ? 'opacity-50' : ''}`}>
+                                    <div className="flex items-center gap-2">
+                                        <Server className={`h-4 w-4 ${aerospikeStats?.connected ? 'text-green-500' : 'text-gray-400'}`} />
+                                        <Label 
+                                            htmlFor="load-aerospike" 
+                                            className={`text-sm ${aerospikeStats?.connected ? 'cursor-pointer' : 'cursor-not-allowed text-muted-foreground'}`}
+                                        >
+                                            Aerospike KV Store
+                                        </Label>
+                                    </div>
+                                    <Switch 
+                                        id="load-aerospike" 
+                                        checked={aerospikeStats?.connected ? loadAerospike : false}
+                                        onCheckedChange={setLoadAerospike}
+                                        disabled={!aerospikeStats?.connected}
+                                    />
+                                </div>
+                                <p className="text-xs text-muted-foreground ml-6">
+                                    {aerospikeStats?.connected ? (
+                                        'Loads users for tracking'
+                                    ) : (
+                                        <span className="text-amber-600">
+                                            Not connected - disabled
+                                        </span>
+                                    )}
+                                </p>
+                            </div>
+                        </div>
                     </div>
 
                     {/* Status Display */}
-                    {(bulkLoadStatus.message || bulkLoadStatus.status) && (
+                    {(bulkLoadStatus.message || bulkLoadStatus.status || bulkLoadStatus.graph || bulkLoadStatus.aerospike) && (
                         <div className={`p-4 rounded-lg flex items-start gap-3 ${
                             bulkLoadStatus.complete || bulkLoadStatus.success
                                 ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800' 
@@ -295,6 +497,39 @@ const DataManagement = () => {
                                 }`}>
                                     {bulkLoadStatus.error || bulkLoadStatus.message}
                                 </p>
+                                
+                                {/* Individual system results */}
+                                <div className="mt-2 space-y-1">
+                                    {bulkLoadStatus.graph && (
+                                        <p className="text-xs flex items-center gap-1">
+                                            {bulkLoadStatus.graph.success ? (
+                                                <CheckCircle className="h-3 w-3 text-green-500" />
+                                            ) : (
+                                                <XCircle className="h-3 w-3 text-red-500" />
+                                            )}
+                                            <span className="text-muted-foreground">
+                                                Graph: {bulkLoadStatus.graph.success 
+                                                    ? `${bulkLoadStatus.graph.statistics?.users || 0} users loaded`
+                                                    : 'Failed'}
+                                            </span>
+                                        </p>
+                                    )}
+                                    {bulkLoadStatus.aerospike && (
+                                        <p className="text-xs flex items-center gap-1">
+                                            {bulkLoadStatus.aerospike.success ? (
+                                                <CheckCircle className="h-3 w-3 text-green-500" />
+                                            ) : (
+                                                <XCircle className="h-3 w-3 text-amber-500" />
+                                            )}
+                                            <span className="text-muted-foreground">
+                                                Aerospike KV: {bulkLoadStatus.aerospike.success 
+                                                    ? `${bulkLoadStatus.aerospike.loaded || 0} users loaded`
+                                                    : bulkLoadStatus.aerospike.message || 'Skipped'}
+                                            </span>
+                                        </p>
+                                    )}
+                                </div>
+                                
                                 {bulkLoadStatus.step && !bulkLoadStatus.complete && (
                                     <p className="text-xs text-muted-foreground mt-1">
                                         Current step: <span className="font-medium">{bulkLoadStatus.step}</span>
@@ -335,7 +570,7 @@ const DataManagement = () => {
                     <div className="flex gap-3">
                         <Button 
                             onClick={handleBulkLoad} 
-                            disabled={isLoading}
+                            disabled={isLoading || (!loadGraph && !(aerospikeStats?.connected && loadAerospike)) || (!useDefaultData && !uploadedFile)}
                             className="flex-1"
                         >
                             {isLoading ? (
@@ -345,8 +580,12 @@ const DataManagement = () => {
                                 </>
                             ) : (
                                 <>
-                                    <Play className="h-4 w-4 mr-2" />
-                                    Start Bulk Load
+                                    {useDefaultData ? (
+                                        <Play className="h-4 w-4 mr-2" />
+                                    ) : (
+                                        <Upload className="h-4 w-4 mr-2" />
+                                    )}
+                                    {useDefaultData ? 'Start Bulk Load' : 'Upload & Load'}
                                 </>
                             )}
                         </Button>
@@ -365,15 +604,15 @@ const DataManagement = () => {
                 </CardContent>
             </Card>
 
-            {/* Current Database Statistics */}
+            {/* Graph Database Statistics */}
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                        <HardDrive className="h-5 w-5" />
-                        Database Statistics
+                        <HardDrive className="h-5 w-5 text-blue-500" />
+                        Aerospike Graph
                     </CardTitle>
                     <CardDescription>
-                        Current data in the graph database
+                        Graph database for relationships and traversals
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -388,28 +627,6 @@ const DataManagement = () => {
                                 )}
                             </p>
                             <p className="text-sm text-muted-foreground">Users</p>
-                        </div>
-                        <div className="p-4 bg-muted/50 rounded-lg text-center">
-                            <CreditCard className="h-6 w-6 mx-auto mb-2 text-blue-500" />
-                            <p className="text-2xl font-bold">
-                                {loadingStats ? (
-                                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                                ) : (
-                                    '~21K'
-                                )}
-                            </p>
-                            <p className="text-sm text-muted-foreground">Accounts</p>
-                        </div>
-                        <div className="p-4 bg-muted/50 rounded-lg text-center">
-                            <Smartphone className="h-6 w-6 mx-auto mb-2 text-cyan-500" />
-                            <p className="text-2xl font-bold">
-                                {loadingStats ? (
-                                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                                ) : (
-                                    '~25K'
-                                )}
-                            </p>
-                            <p className="text-sm text-muted-foreground">Devices</p>
                         </div>
                         <div className="p-4 bg-muted/50 rounded-lg text-center">
                             <GitBranch className="h-6 w-6 mx-auto mb-2 text-green-500" />
@@ -429,6 +646,95 @@ const DataManagement = () => {
                             variant="outline" 
                             className="w-full"
                             onClick={fetchGraphStats}
+                            disabled={loadingStats}
+                        >
+                            {loadingStats ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    Refreshing...
+                                </>
+                            ) : (
+                                <>
+                                    <RefreshCw className="h-4 w-4 mr-2" />
+                                    Refresh Statistics
+                                </>
+                            )}
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Aerospike KV Statistics */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <Server className="h-5 w-5 text-green-500" />
+                        Aerospike KV Store
+                        {aerospikeStats?.connected ? (
+                            <span className="ml-auto text-xs font-normal text-green-600 flex items-center gap-1">
+                                <CheckCircle className="h-3 w-3" />
+                                Connected
+                            </span>
+                        ) : (
+                            <span className="ml-auto text-xs font-normal text-amber-600 flex items-center gap-1">
+                                <XCircle className="h-3 w-3" />
+                                Not Available
+                            </span>
+                        )}
+                    </CardTitle>
+                    <CardDescription>
+                        Key-value storage for risk evaluation and workflow
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {aerospikeStats?.connected ? (
+                        <>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-4 bg-muted/50 rounded-lg text-center">
+                                    <Users className="h-6 w-6 mx-auto mb-2 text-purple-500" />
+                                    <p className="text-2xl font-bold">
+                                        {aerospikeStats.users_count?.toLocaleString() || '0'}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">Users Loaded</p>
+                                </div>
+                                <div className="p-4 bg-muted/50 rounded-lg text-center">
+                                    <AlertTriangle className="h-6 w-6 mx-auto mb-2 text-amber-500" />
+                                    <p className="text-2xl font-bold">
+                                        {aerospikeStats.flagged_accounts_count?.toLocaleString() || '0'}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">Flagged</p>
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                                <div className="p-2 bg-amber-50 dark:bg-amber-950/20 rounded">
+                                    <p className="text-lg font-bold text-amber-600">{aerospikeStats.pending_review || 0}</p>
+                                    <p className="text-xs text-muted-foreground">Pending</p>
+                                </div>
+                                <div className="p-2 bg-red-50 dark:bg-red-950/20 rounded">
+                                    <p className="text-lg font-bold text-red-600">{aerospikeStats.confirmed_fraud || 0}</p>
+                                    <p className="text-xs text-muted-foreground">Fraud</p>
+                                </div>
+                                <div className="p-2 bg-green-50 dark:bg-green-950/20 rounded">
+                                    <p className="text-lg font-bold text-green-600">{aerospikeStats.cleared || 0}</p>
+                                    <p className="text-xs text-muted-foreground">Cleared</p>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <p className="text-sm text-red-800 dark:text-red-300 flex items-center gap-2">
+                                <XCircle className="h-4 w-4" />
+                                Aerospike KV service is not available. Risk evaluation features are disabled.
+                            </p>
+                        </div>
+                    )}
+
+                    <div className="pt-4 border-t">
+                        <Button 
+                            variant="outline" 
+                            className="w-full"
+                            onClick={fetchAerospikeStats}
                             disabled={loadingStats}
                         >
                             {loadingStats ? (

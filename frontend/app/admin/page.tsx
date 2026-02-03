@@ -2,11 +2,11 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
-import { Activity, BarChart3, RefreshCw, Zap, Database } from 'lucide-react'
+import { Activity, BarChart3, RefreshCw, Database, Shield } from 'lucide-react'
 import Performance from '@/components/Admin/Performance'
 import Generation from '@/components/Admin/Generation'
-import Scenarios from '@/components/Admin/Scenarios'
 import DataManagement from '@/components/Admin/DataManagement'
+import FraudDetection from '@/components/Admin/FraudDetection'
 
 export default function AdminPage() {
 	const [active, setActive] = useState('generation');
@@ -28,18 +28,19 @@ export default function AdminPage() {
       		</div>
 			<Tabs value={active} onValueChange={setActive} className="space-y-4">
 				<TabsList className="grid w-full grid-cols-4">
+				<TabsTrigger value="data" className="flex items-center space-x-2">
+						<Database className="w-4 h-4" />
+						<span>Data Management</span>
+					</TabsTrigger>
 					<TabsTrigger value="generation" className="flex items-center space-x-2">
 						<Activity className="w-4 h-4" />
 						<span>Transaction Generation</span>
 					</TabsTrigger>
-					<TabsTrigger value="real-time-fraud" className="flex items-center space-x-2">
-						<Zap className="w-4 h-4" />
-						<span>Real Time Fraud Scenarios</span>
+					<TabsTrigger value="fraud-detection" className="flex items-center space-x-2">
+						<Shield className="w-4 h-4" />
+						<span>Fraud Detection</span>
 					</TabsTrigger>
-					<TabsTrigger value="data" className="flex items-center space-x-2">
-						<Database className="w-4 h-4" />
-						<span>Data Management</span>
-					</TabsTrigger>
+	
 					<TabsTrigger value="performance" className="flex items-center space-x-2">
 						<BarChart3 className="w-4 h-4" />
 						<span>Performance</span>
@@ -48,8 +49,8 @@ export default function AdminPage() {
 				<TabsContent value="generation" className="space-y-4">
 					<Generation isGenerating={isGenerating} setIsGenerating={setIsGenerating} />
 				</TabsContent>
-				<TabsContent value="real-time-fraud" className="space-y-4">
-					<Scenarios />
+				<TabsContent value="fraud-detection" className="space-y-4">
+					<FraudDetection />
 				</TabsContent>
 				<TabsContent value="data" className="space-y-4">
 					<DataManagement />
