@@ -1,28 +1,36 @@
 # Fraud Detection Application
 
-A comprehensive fraud detection system built with FastAPI backend and Next.js frontend, utilizing Aerospike Graph for real-time graph-based fraud detection.
+A comprehensive fraud detection system built with Springboot backend and Next.js frontend, utilizing Aerospike Graph for real-time graph-based fraud detection.
 
 ## 🚀 Quick Start
 
-Run Docker compose to build. the necessary containers
-```
-DOCKER_BUILDKIT=0 docker compose up -d
-```
+Follow the **[Local Dev Setup](./docs/local-setup.md)** for quick start
 
-**Access the application:**
-- Frontend: http://localhost:8080
+
+## Data Generator
+```bash
+python3 ./scripts/generate_user_data_gcp.py \
+  --users 20000 --region american \
+  --output ./data/graph_csv \
+  --workers 16 \
+  --gcs-bucket <bucket-name> \
+  --gcs-prefix demo/20kUser/ \
+  --gcs-delete-local
+
+```
 
 ## 🏗️ Architecture
 
-### Backend (Python + FastAPI)
-- **Framework**: FastAPI with async support
+### Backend (Java + Springboot)
+- **Framework**: Springboot
 - **Graph Database**: Aerospike Graph Service (AGS) via Gremlin queries
 - **Features**:
   - RESTful API endpoints for fraud detection
   - Real-time Gremlin query execution
-  - Sample data seeding
+  - Distributed Bulkload Data Seeding
   - User and transaction management
   - Fraud pattern detection algorithms
+  - Metadata management and tracking
 
 ### Frontend (Next.js + TailwindCSS)
 - **Framework**: Next.js 14 with App Router
@@ -32,7 +40,6 @@ DOCKER_BUILDKIT=0 docker compose up -d
   - Real-time data visualization
   - User and transaction exploration
   - Fraud pattern analysis
-  - Interactive graph visualization (Phase 2)
 
 
 ## 🕵️ Fraud Detection System
@@ -62,8 +69,9 @@ The system implements real-time fraud detection using graph-based analysis:
 
 - **[Setup Instructions](./docs/setup.md)** - Complete installation and configuration guide
 - **[Data Model](./docs/datamodel.md)** - Detailed data structure documentation
-- **[RT1 Fraud Detection](./docs/RT1_FRAUD_DETECTION.md)** - RT1 implementation details
-- **[Project Plan](./docs/plan.md)** - Development roadmap and milestones
+- **[Customizing Functionality](./docs/customizing.md)** - Details on extending this app for your unique use case
+- **[Deployment Instructions](./docs/deployment.md)** - Complete instructions for deployment on GCP with Caddy
+- **[Local Dev Setup](./docs/local-setup.md)** - Short instructions for setting up local development environment
 
 ## 📄 License
 

@@ -28,29 +28,26 @@ interface Props {
 }
 
 const Analysis = ({ txn }: Props) => {
-    const { is_fraud, details = [] } = txn
+    const { is_fraud, reason, fraud_score, detection_time, rule_name} = txn
     return (
         <Card>
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <Shield className="h-5 w-5" />
-                    Fraud Detection Results ({details.length})
+                    Fraud Detection Results
                 </CardTitle>
                 <CardDescription>
-                    Detailed analysis of fraud detection rules and their results
+                    Detailed analysis of the fraud detection that flagged this transaction
                 </CardDescription>
             </CardHeader>
             <CardContent>
                 {is_fraud ? (
                     <div className="space-y-4">
-                        {details.map((detail, idx) => {
-                            const { reason, fraud_score, detection_time = txn.timestamp, rule, ...rest }: Detail = JSON.parse(detail ?? "{}")
-                            return (
-                            <Card key={idx} className="p-4 border-red-200 bg-red-50">
+                            <Card key={1} className="p-4 border-red-200 bg-auto">
                             <div className="flex items-start justify-between">
                                 <div className="flex-1 space-y-2">
                                     <div className="flex items-center gap-2">
-                                        <h4 className="font-semibold">{rule}</h4>
+                                        <h4 className="font-semibold">{rule_name}</h4>
                                         <Badge variant="destructive" className="text-xs">
                                             <AlertTriangle className="h-3 w-3 mr-1" />
                                             Triggered
@@ -66,7 +63,7 @@ const Analysis = ({ txn }: Props) => {
                                         <div className="flex items-center gap-1">
                                             <Clock className="h-4 w-4 text-muted-foreground" />
                                             <span className="text-muted-foreground">Detected:</span>
-                                            <span className="font-medium">{formatDateTime(detection_time)}</span>
+                                            <span className="font-medium">{formatDateTime(detection_time!)}</span>
                                         </div>
                                         <div className="flex items-center gap-1">
                                             <Flag className="h-4 w-4 text-muted-foreground" />
@@ -74,12 +71,6 @@ const Analysis = ({ txn }: Props) => {
                                             <span className="font-medium capitalize">{txn.status}</span>
                                         </div>
                                     </div>
-                                    {rest && (
-                                    <div className="mt-3 p-3 bg-gray-100 rounded-lg">
-                                        <div className="text-sm text-gray-600">
-                                            <pre className="whitespace-pre-wrap">{JSON.stringify(rest, null, 2)}</pre>
-                                        </div>
-                                    </div>)}
                                 </div>
                                 <div className="ml-4">
                                     <Badge 
@@ -91,7 +82,6 @@ const Analysis = ({ txn }: Props) => {
                                 </div>
                             </div>
                         </Card>
-                        )})}
                     </div>
                 ) : (
                     <div className="text-center py-8">

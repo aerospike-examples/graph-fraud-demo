@@ -16,17 +16,18 @@ export default function RootLayout({
 }: {
   	children: React.ReactNode
 }) {
-  	return (
-    	<html lang="en" suppressHydrationWarning>
-      		<body className={inter.className}>
-        		<div className="min-h-screen bg-background flex flex-col">
-          			<Navbar />
-					<main className="container relative mx-auto px-4 py-8 flex flex-col grow">
-						{children}
-					</main>
-				</div>
-				<Toaster richColors />
-      		</body>
-    	</html>
-  	)
-} 
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body className={inter.className}>
+        <Navbar>
+          <div className="min-h-screen bg-background flex flex-col">
+            <main className="container relative mx-auto px-4 py-8 flex flex-col grow">
+              {children}
+            </main>
+          </div>
+          <Toaster richColors />
+        </Navbar>
+      </body>
+    </html>
+  );
+}

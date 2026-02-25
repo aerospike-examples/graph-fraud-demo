@@ -13,10 +13,7 @@ const Progress = React.forwardRef<
     className={cn("relative h-2 w-full overflow-hidden rounded-full bg-secondary", className)}
     {...props}
   >
-    <div
-      className="h-full w-full flex-1 bg-primary transition-all"
-      style={{ width: `${(value / max) * 100}%` }}
-    />
+    <progress value={value} max={max} className="progress w-full h-2" />
   </div>
 ))
 Progress.displayName = "Progress"

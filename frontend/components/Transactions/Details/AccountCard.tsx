@@ -64,7 +64,7 @@ const AccountCard = ({
                     text={location} />
             </CardContent>
             <CardFooter>
-                <Link href={`/users/${user[1]}`} className="w-full">
+                <Link href={`/users/${user.id}`} className="w-full">
                     <Button variant="outline" className="w-full">
                         <ExternalLink className="h-4 w-4 mr-2" />
                         View User Profile
